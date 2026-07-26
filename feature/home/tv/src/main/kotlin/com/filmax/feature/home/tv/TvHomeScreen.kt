@@ -163,6 +163,7 @@ private fun TvHomeContent(
                     // Фильм — единственный трек, эпизод выбирать не из чего: PlayerRoute.videoId = -1.
                     onPlay = { actions.onPlay(hero.id, NO_SEASON, NO_VIDEO_ID) },
                     onDetails = { actions.onOpenItem(hero.id) },
+                    returnFocus = returnFocus,
                 )
             }
         }
@@ -230,8 +231,11 @@ private fun LazyListScope.tvContinueRail(
                             entry.progress?.videoId ?: NO_VIDEO_ID,
                         )
                     },
-                    focusRequester = returnFocus.target("continue:${entry.itemId}")
-                        ?: firstItemFocus.takeIf { index == 0 },
+                    focusRequester = returnFocus.target(
+                        key = "continue:${entry.itemId}",
+                        railFallback = firstItemFocus,
+                        isFirstInRail = index == 0,
+                    ),
                 )
             }
         }
@@ -262,8 +266,11 @@ private fun LazyListScope.tvPosterRail(
                         returnFocus.onOpen("${rail.key}:${catalogItem.id}")
                         onOpenItem(catalogItem.id)
                     },
-                    focusRequester = returnFocus.target("${rail.key}:${catalogItem.id}")
-                        ?: firstItemFocus.takeIf { index == 0 },
+                    focusRequester = returnFocus.target(
+                        key = "${rail.key}:${catalogItem.id}",
+                        railFallback = firstItemFocus,
+                        isFirstInRail = index == 0,
+                    ),
                 )
             }
         }
@@ -292,8 +299,11 @@ private fun LazyListScope.tvCollectionsRail(
                         returnFocus.onOpen("collections:${collection.id}")
                         onOpenCollection(collection.id, collection.title)
                     },
-                    focusRequester = returnFocus.target("collections:${collection.id}")
-                        ?: firstItemFocus.takeIf { index == 0 },
+                    focusRequester = returnFocus.target(
+                        key = "collections:${collection.id}",
+                        railFallback = firstItemFocus,
+                        isFirstInRail = index == 0,
+                    ),
                 )
             }
         }
@@ -340,6 +350,7 @@ private fun TvHero(
     item: Item,
     onPlay: () -> Unit,
     onDetails: () -> Unit,
+    returnFocus: TvReturnFocus,
 ) {
     Box(
         modifier = Modifier
@@ -356,12 +367,17 @@ private fun TvHero(
         Box(Modifier.fillMaxSize().background(HeroScrimHorizontal))
         Box(Modifier.fillMaxSize().background(HeroScrimVertical))
 
-        TvHeroOverlay(item = item, onPlay = onPlay, onDetails = onDetails)
+        TvHeroOverlay(item = item, onPlay = onPlay, onDetails = onDetails, returnFocus = returnFocus)
     }
 }
 
 @Composable
-private fun BoxScope.TvHeroOverlay(item: Item, onPlay: () -> Unit, onDetails: () -> Unit) {
+private fun BoxScope.TvHeroOverlay(
+    item: Item,
+    onPlay: () -> Unit,
+    onDetails: () -> Unit,
+    returnFocus: TvReturnFocus,
+) {
     Column(
         modifier = Modifier
             .align(Alignment.BottomStart)
@@ -382,9 +398,27 @@ private fun BoxScope.TvHeroOverlay(item: Item, onPlay: () -> Unit, onDetails: ()
         Spacer(Modifier.height(20.dp))
         // «Буду смотреть» из макета не выводим: события watchlist в HomeEvent нет, а кнопка,
         // которая ничего не делает, хуже отсутствующей.
+        // Кнопки hero помечаются так же, как карточки рядов: без этого возврат с деталей или из
+        // плеера не находил, куда ставить фокус, и он доставался фоллбеку графа — таб-бару.
+        // А заход фокуса в таб-бар это сигнал «контент — в начало», и лента ещё и отскакивала вверх.
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TvButton("Смотреть", onClick = onPlay)
-            TvButton("Подробнее", onClick = onDetails, primary = false)
+            TvButton(
+                "Смотреть",
+                onClick = {
+                    returnFocus.onOpen(HERO_PLAY_KEY)
+                    onPlay()
+                },
+                focusRequester = returnFocus.target(HERO_PLAY_KEY),
+            )
+            TvButton(
+                "Подробнее",
+                onClick = {
+                    returnFocus.onOpen(HERO_DETAILS_KEY)
+                    onDetails()
+                },
+                primary = false,
+                focusRequester = returnFocus.target(HERO_DETAILS_KEY),
+            )
         }
     }
 }
@@ -496,6 +530,13 @@ private fun TvOfflineBanner(onReload: () -> Unit) {
 }
 
 // ── Форматирование ────────────────────────────────────────────────────────
+
+/**
+ * Ключи возврата фокуса на кнопки hero. В одном пространстве с ключами карточек
+ * («continue:42», «trending:17») — hero единственный на экране, поэтому без id.
+ */
+private const val HERO_PLAY_KEY = "hero:play"
+private const val HERO_DETAILS_KEY = "hero:details"
 
 /** `PlayerRoute.videoId` для фильма/неизвестного эпизода — плеер возьмёт первый трек. */
 private const val NO_VIDEO_ID = -1

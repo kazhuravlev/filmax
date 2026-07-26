@@ -24,22 +24,59 @@ import androidx.compose.ui.focus.FocusRequester
 class TvReturnFocus internal constructor(
     private val savedKey: MutableState<String?>,
 ) {
-    internal val requester = FocusRequester()
+    private val ownRequester = FocusRequester()
+
+    /** Реквестер, через который поедет возврат: свой либо занятый фоллбеком ряда (см. [target]). */
+    private var boundRequester: FocusRequester = ownRequester
+
+    internal val requester: FocusRequester
+        get() = boundRequester
 
     /** Вызывать в onClick карточки перед навигацией: сюда вернётся фокус. */
     fun onOpen(key: String) {
         savedKey.value = key
     }
 
-    /** FocusRequester для карточки с этим ключом; null для всех остальных. */
-    fun target(key: String): FocusRequester? = requester.takeIf { savedKey.value == key }
+    /**
+     * FocusRequester для карточки ряда: помеченной — тот, через который вернётся фокус.
+     *
+     * [railFallback] — фоллбек `focusRestorer` ряда (см. TvRail). Он обязан быть привязан
+     * ВСЕГДА: restorer дёргает его при каждом входе фокуса в ряд и падает с «FocusRequester is
+     * not initialized», если узла нет. При этом на одном реквестере не может висеть два узла —
+     * фокус уехал бы на первый из них. Отсюда правило владения:
+     *
+     *  - в ряду есть помеченная карточка → фоллбек забирает она;
+     *  - иначе → первая карточка ряда ([isFirstInRail]).
+     *
+     * Так возврат приезжает прямо на помеченную карточку. Раньше фоллбек всегда сидел на первой:
+     * фокус входил в ряд, restorer перехватывал вход и уводил его на первую карточку, ряд
+     * отматывался в начало — и только следующим кадром фокус доезжал до нужной карточки.
+     */
+    fun target(
+        key: String,
+        railFallback: FocusRequester? = null,
+        isFirstInRail: Boolean = false,
+    ): FocusRequester? {
+        val saved = savedKey.value
+        if (saved == key) {
+            boundRequester = railFallback ?: ownRequester
+            return boundRequester
+        }
+        // Ключи карточек — «ряд:id», поэтому префикс помеченного ключа и говорит, чей это ряд.
+        val markedInSameRail = saved != null && saved.railOf() == key.railOf()
+        return railFallback?.takeIf { isFirstInRail && !markedInSameRail }
+    }
 
     internal fun consume() {
         savedKey.value = null
+        boundRequester = ownRequester
     }
 
     internal fun pending(): Boolean = savedKey.value != null
 }
+
+/** Ряд, которому принадлежит ключ карточки («continue:42» → «continue»). */
+private fun String.railOf(): String = substringBefore(':')
 
 /**
  * Создаёт [TvReturnFocus] и восстанавливает фокус при возврате на экран.
@@ -60,9 +97,9 @@ fun rememberTvReturnFocus(): TvReturnFocus {
             withFrameNanos { }
             val granted = runCatching { returnFocus.requester.requestFocus() }.isSuccess
             if (granted) {
-                // focusRestorer ряда перехватывает ВХОД фокуса в группу и уводит его на свой
-                // fallback — первую карточку. Повторный реквест идёт уже изнутри группы,
-                // enter не срабатывает, и фокус встаёт ровно на помеченную карточку.
+                // Страховка на случай, когда вход фокуса в группу кто-то перехватил и увёл на
+                // свой fallback: повторный реквест идёт уже изнутри группы, enter не срабатывает.
+                // Для рядов это давно no-op — фоллбек ряда держит сама помеченная карточка.
                 withFrameNanos { }
                 runCatching { returnFocus.requester.requestFocus() }
                 returnFocus.consume()
