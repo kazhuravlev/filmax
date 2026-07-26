@@ -14,19 +14,19 @@ object ProfileRoute
 object DeviceSettingsRoute
 
 fun NavGraphBuilder.profileScreen(
-    onLogout: () -> Unit,
-    onOpenDesignSystem: (() -> Unit)? = null,
+    onCheckUpdates: () -> Unit,
+    showDesignSystem: Boolean = false,
 ) {
     composable<ProfileRoute> {
         ProfileScreen(
-            onLogout = onLogout,
-            onOpenDesignSystem = onOpenDesignSystem,
+            onCheckUpdates = onCheckUpdates,
+            showDesignSystem = showDesignSystem,
         )
     }
 }
 
-fun NavGraphBuilder.deviceSettingsScreen(onBack: () -> Unit) {
+fun NavGraphBuilder.deviceSettingsScreen() {
     composable<DeviceSettingsRoute> {
-        DeviceSettingsScreen(onBack = onBack)
+        DeviceSettingsScreen()
     }
 }

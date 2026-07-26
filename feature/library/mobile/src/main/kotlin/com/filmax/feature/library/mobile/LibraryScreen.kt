@@ -69,6 +69,8 @@ import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchProgress
+import com.filmax.core.navigation.Destination
+import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxEmptyState
 import com.filmax.core.ui.components.FilmaxPosterCard
 import com.filmax.core.ui.components.FilmaxProgressCard
@@ -79,6 +81,7 @@ import com.filmax.feature.library.common.LibraryScreenModel
 import com.filmax.feature.library.common.LibraryState
 import com.filmax.feature.library.common.OpenBookmarkFolder
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 /**
  * Сегменты раздела «Моё» — четыре непересекающихся ответа на вопрос «что у меня есть».
@@ -126,12 +129,15 @@ private class BookmarkDialogs {
  */
 @Composable
 fun LibraryScreen(
-    onOpenItem: (Int) -> Unit,
-    onOpenCatalog: () -> Unit,
     modifier: Modifier = Modifier,
     screenModel: LibraryScreenModel = koinViewModel(),
+    navigator: Navigator = koinInject(),
 ) {
     val state by screenModel.collectAsState()
+    // Все карточки раздела ведут в карточку тайтла — играть оттуда: «Продолжить · SxEy».
+    val onOpenItem: (Int) -> Unit = { itemId -> navigator.open(Destination.Details(itemId)) }
+    // Единственное действие пустых состояний раздела.
+    val onOpenCatalog: () -> Unit = { navigator.open(Destination.Catalog) }
     var segment by rememberSaveable { mutableStateOf(MineSegment.CONTINUE) }
     val dialogs = remember { BookmarkDialogs() }
 

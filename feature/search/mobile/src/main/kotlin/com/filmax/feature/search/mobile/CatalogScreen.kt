@@ -77,6 +77,8 @@ import com.filmax.core.domain.catalog.SortOption
 import com.filmax.core.domain.catalog.model.Genre
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
+import com.filmax.core.navigation.Destination
+import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxEmptyState
 import com.filmax.core.ui.components.FilmaxPosterCard
 import com.filmax.core.ui.components.VoiceListeningDialog
@@ -92,6 +94,7 @@ import com.filmax.feature.search.common.TypeOptions
 import com.filmax.feature.search.common.itemTypeLabel
 import com.filmax.feature.search.common.sortLabel
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 /** Сетка каталога: 3×98dp постера + 2×12dp зазора + поля 20dp ровно ложатся в кадр 360dp. */
 private const val GRID_COLUMNS = 3
@@ -128,11 +131,12 @@ private data class SearchActions(
  */
 @Composable
 fun CatalogScreen(
-    onOpenItem: (Int) -> Unit,
     modifier: Modifier = Modifier,
     screenModel: SearchScreenModel = koinViewModel(),
+    navigator: Navigator = koinInject(),
 ) {
     val state by screenModel.collectAsState()
+    val onOpenItem: (Int) -> Unit = { itemId -> navigator.open(Destination.Details(itemId)) }
     var searchMode by remember { mutableStateOf(false) }
     var filtersOpen by remember { mutableStateOf(false) }
 

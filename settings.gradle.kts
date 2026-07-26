@@ -28,6 +28,7 @@ include(":core:designsystem")
 include(":core:tv-designsystem")
 include(":core:ui")
 include(":core:presentation")
+include(":core:navigation")
 
 include(":data:auth")
 include(":data:catalog")

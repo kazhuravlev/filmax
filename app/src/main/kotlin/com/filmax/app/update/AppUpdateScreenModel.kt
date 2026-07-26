@@ -7,6 +7,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 /** Боевой applicationId: только он обновляется release-APK из GitHub Releases. */
 private const val RELEASE_APPLICATION_ID = "com.filmax.app"
 
+/** Текущая сборка — та самая, которую обновляет релизный APK. */
+private val IS_RELEASE_BUILD = BuildConfig.APPLICATION_ID == RELEASE_APPLICATION_ID
+
 /** Шаг публикации прогресса: чаще обновлять state незачем — это прыжок на main на каждый чанк. */
 private const val PROGRESS_STEP = 0.01f
 
@@ -27,6 +30,7 @@ class AppUpdateScreenModel(
 
     override fun dispatch(event: AppUpdateEvent) {
         when (event) {
+            AppUpdateEvent.Check -> check()
             AppUpdateEvent.Download -> download()
             AppUpdateEvent.Install -> install()
             AppUpdateEvent.Dismiss -> dismiss()
@@ -34,11 +38,37 @@ class AppUpdateScreenModel(
     }
 
     override fun onFetchData() {
-        if (BuildConfig.APPLICATION_ID != RELEASE_APPLICATION_ID) return
+        if (!IS_RELEASE_BUILD) return
         screenModelScope(ioDispatcher) { _ ->
             // Ошибки проверки молчаливые: обновление — фон, а не повод для модалки при старте.
             val update = repository.latestUpdate() ?: return@screenModelScope
             updateState { it.copy(update = update) }
+        }
+    }
+
+    /**
+     * Ручная проверка. В отличие от стартовой она идёт в любой сборке и отчитывается о результате:
+     * пользователь нажал сам, и тишина в ответ читается как сломанная кнопка. Заодно снимает
+     * «Позже» — раз человек пришёл за обновлением, прятать найденное больше не нужно.
+     *
+     * В debug/demo проверка честно называет свежую версию, но ставить её не предлагает
+     * ([AppUpdateState.installable]): у этих сборок свой applicationId.
+     */
+    private fun check() {
+        screenModelScope(ioDispatcher) { snapshot ->
+            if (snapshot.checking) return@screenModelScope
+            updateState {
+                it.copy(checking = true, upToDate = false, dismissed = false, downloadError = false)
+            }
+            val update = repository.latestUpdate()
+            updateState {
+                it.copy(
+                    checking = false,
+                    update = update,
+                    upToDate = update == null,
+                    installable = IS_RELEASE_BUILD,
+                )
+            }
         }
     }
 
@@ -75,7 +105,7 @@ class AppUpdateScreenModel(
 
     private fun dismiss() {
         screenModelScope { _ ->
-            updateState { it.copy(dismissed = true) }
+            updateState { it.copy(dismissed = true, upToDate = false) }
         }
     }
 }

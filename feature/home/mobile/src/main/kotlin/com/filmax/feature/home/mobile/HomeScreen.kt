@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,6 +49,8 @@ import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchProgress
+import com.filmax.core.navigation.Destination
+import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxErrorModal
 import com.filmax.core.ui.components.FilmaxPosterCard
 import com.filmax.core.ui.components.FilmaxProgressCard
@@ -57,12 +60,14 @@ import com.filmax.feature.home.common.HomeEvent
 import com.filmax.feature.home.common.HomeScreenModel
 import com.filmax.feature.home.common.HomeState
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 /**
- * Колбэки навигации главной. Собраны в один тип: пять отдельных параметров плюс `modifier`
- * и `screenModel` выводят сигнатуру за порог detekt (LongParameterList = 6).
+ * Переходы главной одним типом: пять отдельных лямбд плюс `modifier` и `screenModel` вывели бы
+ * сигнатуру приватных composable за порог detekt (LongParameterList = 6). Строится из
+ * [Navigator] — граф про эти переходы больше ничего не знает.
  */
-data class HomeActions(
+private data class HomeActions(
     val onOpenItem: (Int) -> Unit,
     val onPlay: (itemId: Int, season: Int, videoId: Int) -> Unit,
     val onOpenCollection: (id: Int, title: String) -> Unit,
@@ -72,13 +77,14 @@ data class HomeActions(
 
 @Composable
 fun HomeScreen(
-    actions: HomeActions,
     modifier: Modifier = Modifier,
     screenModel: HomeScreenModel = koinViewModel(),
+    navigator: Navigator = koinInject(),
 ) {
     val state by screenModel.collectAsState()
     val appError by screenModel.collectErrorAsState()
     val offline by screenModel.collectOfflineBannerAsState()
+    val actions = remember(navigator) { navigator.homeActions() }
 
     Box(
         modifier = modifier
@@ -128,7 +134,12 @@ private fun HomeFeed(
     onEvent: (HomeEvent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    LazyColumn(modifier.fillMaxSize()) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        // Лента кончается тем же полем, что и сетки Каталога и «Моё»: без него ряд «Подборки»
+        // упирается прямо в таб-бар.
+        contentPadding = PaddingValues(bottom = FilmaxMetrics.ListBottomPadding),
+    ) {
         // Офлайн-деградация (issue #42): контент из кэша + ненавязчивый баннер вместо модалки.
         if (offline) {
             item(key = "offline") { OfflineBanner(onReload = { onEvent(HomeEvent.Load) }) }
@@ -146,6 +157,20 @@ private fun HomeFeed(
         homeRows(state = state, actions = actions, onEvent = onEvent)
     }
 }
+
+/**
+ * Куда ведёт главная. Ряд «Продолжить» и кнопка hero открывают плеер напрямую, минуя детали:
+ * недосмотренный эпизод — это сезон и номер видео из истории.
+ */
+private fun Navigator.homeActions() = HomeActions(
+    onOpenItem = { itemId -> open(Destination.Details(itemId)) },
+    onPlay = { itemId, season, videoId ->
+        open(Destination.Player(itemId = itemId, videoId = videoId, season = season))
+    },
+    onOpenCollection = { id, title -> open(Destination.CollectionDetail(id, title)) },
+    onOpenSearch = { open(Destination.Catalog) },
+    onOpenProfile = { open(Destination.Profile) },
+)
 
 // ── Ряды ──────────────────────────────────────────────────────────────────
 
@@ -234,7 +259,9 @@ private fun LazyListScope.collectionsRow(
     onOpenCollection: (id: Int, title: String) -> Unit,
     onLoadMore: () -> Unit,
 ) {
-    // Подборка без постера — пустая плашка: в монохроме карточку держит только картинка.
+    // Отсев пустых ссылок. Полностью «подборки без картинки» он не убирает: kino.pub отдаёт
+    // адрес постера всегда, даже когда файла нет (967 → /selection/medium/967.jpg = 404), и
+    // такая карточка остаётся градиентной заглушкой с подписью.
     val withPoster = collections.mapNotNull { collection ->
         collection.posterUrl()?.let { poster -> collection to poster }
     }

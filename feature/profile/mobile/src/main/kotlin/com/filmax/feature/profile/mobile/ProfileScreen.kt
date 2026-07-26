@@ -43,6 +43,8 @@ import com.filmax.core.designsystem.FilmaxOnSurfaceDim
 import com.filmax.core.designsystem.ShapeButton
 import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.domain.user.model.UserProfile
+import com.filmax.core.navigation.Destination
+import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxVersionLabel
 import com.filmax.feature.profile.common.ProfileEvent
 import com.filmax.feature.profile.common.ProfileScreenModel
@@ -51,6 +53,7 @@ import com.filmax.feature.profile.common.ProfileState
 import com.filmax.feature.profile.common.initialsOrFallback
 import com.filmax.feature.profile.common.label
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 /**
  * Профиль (экран 09 макета): шапка аккаунта и две группы строк — «Просмотр» и «Аккаунт».
@@ -61,18 +64,25 @@ import org.koin.androidx.compose.koinViewModel
  * ради которого шапка сворачивалась, а «просмотрено/в избранном» ни на что не влияли —
  * это украшение, которое оттягивало внимание от единственной задачи экрана.
  */
+/**
+ * [onCheckUpdates] — не навигация, а действие: обновления живут в `:app` (GitHub Releases),
+ * и фича до них не дотягивается. [showDesignSystem] включает строку каталога компонентов —
+ * граф отдаёт её только debug-сборке.
+ */
 @Composable
 fun ProfileScreen(
-    onLogout: () -> Unit,
-    onOpenDesignSystem: (() -> Unit)? = null,
+    onCheckUpdates: () -> Unit,
+    showDesignSystem: Boolean = false,
     modifier: Modifier = Modifier,
     screenModel: ProfileScreenModel = koinViewModel(),
+    navigator: Navigator = koinInject(),
 ) {
     val state by screenModel.collectAsState()
 
     screenModel.collectSideEffect { effect ->
         when (effect) {
-            ProfileSideEffect.LoggedOut -> onLogout()
+            // Вход становится единственным корнем: «Назад» не возвращает в аккаунт, из которого вышли.
+            ProfileSideEffect.LoggedOut -> navigator.root(Destination.Onboarding)
         }
     }
 
@@ -94,7 +104,12 @@ fun ProfileScreen(
         state = state,
         actions = ProfileActions(
             onOpenSheet = { sheet -> activeSheet = sheet },
-            onOpenDesignSystem = onOpenDesignSystem,
+            onCheckUpdates = onCheckUpdates,
+            onOpenDesignSystem = if (showDesignSystem) {
+                { navigator.open(Destination.DesignSystem) }
+            } else {
+                null
+            },
             onLogout = { screenModel.dispatch(ProfileEvent.Logout) },
         ),
         modifier = modifier,
@@ -115,6 +130,7 @@ fun ProfileScreen(
 /** Колбэки профиля одним объектом — иначе список параметров ProfileContent за порогом detekt. */
 private data class ProfileActions(
     val onOpenSheet: (ProfileSheet) -> Unit,
+    val onCheckUpdates: () -> Unit,
     val onOpenDesignSystem: (() -> Unit)?,
     val onLogout: () -> Unit,
 )
@@ -145,6 +161,14 @@ private fun ProfileContent(
         // и строка вела на нерабочий экран. Вернуть, когда бэкенд починят.
         SectionOverline("АККАУНТ")
         AccountRows(state = state, onLogout = actions.onLogout)
+
+        // Приложение ставится APK из GitHub Releases, магазина с автообновлением нет — значит
+        // проверка должна быть доступна руками, а не только один раз при старте.
+        SectionOverline("ПРИЛОЖЕНИЕ")
+        SettingRow(
+            spec = SettingRowSpec(label = "Проверить обновления"),
+            onClick = actions.onCheckUpdates,
+        )
 
         val onOpenDesignSystem = actions.onOpenDesignSystem
         if (onOpenDesignSystem != null) {

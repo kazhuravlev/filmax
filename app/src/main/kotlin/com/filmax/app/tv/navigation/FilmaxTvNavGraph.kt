@@ -58,6 +58,7 @@ private object TvSplashRoute
 
 @Composable
 fun FilmaxTvNavGraph(
+    onCheckUpdates: () -> Unit,
     // Переиспользуем общий RootScreenModel (тот же auth.isAuthenticated, что и в телефонном графе).
     rootScreenModel: RootScreenModel = koinViewModel(),
 ) {
@@ -118,7 +119,7 @@ fun FilmaxTvNavGraph(
                 popEnterTransition = { navFadeIn },
                 popExitTransition = { navFadeOut },
             ) {
-                tvDestinations(navController)
+                tvDestinations(navController, onCheckUpdates)
             }
         }
 
@@ -164,7 +165,10 @@ private fun InitialContentFocus(showTopBar: Boolean, content: FocusRequester, na
 }
 
 /** Регистрация всех экранов TV-графа: сплэш, онбординг, разделы и детали/плеер. */
-private fun NavGraphBuilder.tvDestinations(navController: NavHostController) {
+private fun NavGraphBuilder.tvDestinations(
+    navController: NavHostController,
+    onCheckUpdates: () -> Unit,
+) {
     composable<TvSplashRoute> { Box(Modifier.fillMaxSize()) }
 
     tvOnboardingScreen(
@@ -194,6 +198,7 @@ private fun NavGraphBuilder.tvDestinations(navController: NavHostController) {
         onLogout = {
             navController.navigate(TvOnboardingRoute) { popUpTo(TvHomeRoute) { inclusive = true } }
         },
+        onCheckUpdates = onCheckUpdates,
     )
     // Экран настроек устройства остаётся в графе, но из Профиля временно не открывается:
     // device/info и device/settings на бэкенде отвечают 500.

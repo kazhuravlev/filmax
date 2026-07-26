@@ -66,6 +66,7 @@ import com.filmax.core.designsystem.ShapeButton
 import com.filmax.core.designsystem.ShapeCard
 import com.filmax.core.designsystem.ShapeFull
 import com.filmax.core.designsystem.ShapePoster
+import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxEmptyState
 import com.filmax.core.ui.components.FilmaxPosterCard
 import com.filmax.core.ui.components.FilmaxProgressBar
@@ -73,6 +74,7 @@ import com.filmax.core.ui.components.FilmaxProgressCard
 import com.filmax.core.ui.components.FilmaxRatingPill
 import com.filmax.core.ui.components.posterMeta
 import com.filmax.core.ui.components.ratingLabel
+import org.koin.compose.koinInject
 import kotlin.math.roundToInt
 
 /**
@@ -86,13 +88,13 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DesignSystemScreen(
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    navigator: Navigator = koinInject(),
 ) {
     Scaffold(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { CatalogTopBar(onBack = onBack) },
+        topBar = { CatalogTopBar(onBack = navigator::back) },
     ) { padding ->
         Column(
             modifier = Modifier

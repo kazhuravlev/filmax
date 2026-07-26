@@ -29,22 +29,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.filmax.core.designsystem.FilmaxMetrics
 import com.filmax.core.domain.catalog.model.Item
+import com.filmax.core.navigation.Destination
+import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxErrorModal
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.feature.collections.common.CollectionDetailScreenModel
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 @Composable
 fun CollectionDetailScreen(
     title: String,
-    onBack: () -> Unit,
-    onOpenItem: (Int) -> Unit,
     modifier: Modifier = Modifier,
     screenModel: CollectionDetailScreenModel = koinViewModel(),
+    navigator: Navigator = koinInject(),
 ) {
     val state by screenModel.collectAsState()
     val appError by screenModel.collectErrorAsState()
+    val onBack: () -> Unit = navigator::back
+    val onOpenItem: (Int) -> Unit = { itemId -> navigator.open(Destination.Details(itemId)) }
 
     Box(
         modifier = modifier
@@ -106,7 +111,15 @@ private fun CollectionDetailHeader(title: String, onBack: () -> Unit) {
 private fun CollectionItemsGrid(items: List<Item>, onOpenItem: (Int) -> Unit) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
+        // Снизу — обычное поле ленты. 120dp здесь остались от плавающего таб-бара-«острова»:
+        // бар давно плоский и живёт в Scaffold, а на этом push-экране его нет вовсе — и под
+        // сеткой болталась пустая полоса в треть экрана.
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = 8.dp,
+            bottom = FilmaxMetrics.ListBottomPadding,
+        ),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize(),

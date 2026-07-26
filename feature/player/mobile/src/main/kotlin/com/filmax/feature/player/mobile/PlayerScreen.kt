@@ -65,6 +65,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
+import com.filmax.core.navigation.Destination
+import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxErrorModal
 import com.filmax.core.ui.components.KeepScreenOn
 import com.filmax.feature.player.common.PlaybackSpeeds
@@ -73,6 +75,7 @@ import com.filmax.feature.player.common.PlayerScreenModel
 import com.filmax.feature.player.common.formatPlayerTime
 import kotlinx.coroutines.delay
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 // PlayerScreen — единая композиция экрана плеера: ExoPlayer-поверхность, верифицированный
 // Slider скраббинга и эффекты авто-скрытия/SaveProgress (#22). Декомпозиция раздробила бы
@@ -80,21 +83,26 @@ import org.koin.androidx.compose.koinViewModel
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 @Composable
 fun PlayerScreen(
-    onBack: () -> Unit,
+    itemId: Int,
     modifier: Modifier = Modifier,
-    onPlayEpisode: ((season: Int, videoId: Int) -> Unit)? = null,
     screenModel: PlayerScreenModel = koinViewModel(),
+    navigator: Navigator = koinInject(),
 ) {
     val state by screenModel.collectAsState()
     val appError by screenModel.collectErrorAsState()
+    val onBack: () -> Unit = navigator::back
 
-    // Следующая серия — из state (играющий трек выбирает модель по маршруту).
-    // null — фильм/последняя серия/нет навигации.
+    // Следующая серия — из state (играющий трек выбирает модель по маршруту). null — фильм
+    // или последняя серия. Это НАВИГАЦИЯ на новый экран плеера, а не подмена MediaItem:
+    // прогресс модель пишет в трек, выбранный при старте, и подмена на месте писала бы позицию
+    // новой серии в запись предыдущей. Замена текущего экрана не копит стек при перещёлкивании.
     val nextTrack = state.nextTrack
-    val playNext: (() -> Unit)? = if (nextTrack != null && onPlayEpisode != null) {
-        { onPlayEpisode.invoke(nextTrack.seasonNumber, nextTrack.number) }
-    } else {
-        null
+    val playNext: (() -> Unit)? = nextTrack?.let {
+        {
+            navigator.replace(
+                Destination.Player(itemId = itemId, videoId = it.number, season = it.seasonNumber),
+            )
+        }
     }
     // Эффекты замыкают АКТУАЛЬНЫЙ колбэк: при старте плейлиста ещё нет и playNext == null.
     val currentPlayNext by rememberUpdatedState(playNext)

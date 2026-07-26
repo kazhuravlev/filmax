@@ -6,8 +6,8 @@ import com.filmax.feature.search.common.navigation.FilmographyRoute
 import com.filmax.feature.search.mobile.FilmographyScreen
 
 /** Регистрация экрана «Фильмография» в графе навигации. */
-fun NavGraphBuilder.filmographyScreen(onBack: () -> Unit, onOpenItem: (Int) -> Unit) {
+fun NavGraphBuilder.filmographyScreen() {
     composable<FilmographyRoute> {
-        FilmographyScreen(onBack = onBack, onOpenItem = onOpenItem)
+        FilmographyScreen()
     }
 }

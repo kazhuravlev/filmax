@@ -37,6 +37,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.filmax.core.designsystem.FilmaxMetrics
 import com.filmax.core.domain.catalog.model.Item
+import com.filmax.core.navigation.Destination
+import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxEmptyState
 import com.filmax.core.ui.components.FilmaxPosterCard
 import com.filmax.core.ui.components.posterMeta
@@ -45,6 +47,7 @@ import com.filmax.feature.search.common.FilmographyScreenModel
 import com.filmax.feature.search.common.FilmographyState
 import com.filmax.feature.search.common.itemTypeLabel
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 /** Та же сетка 3×98dp постера, что и в каталоге: единая раскладка на кадр 360dp. */
 private const val GRID_COLUMNS = 3
@@ -55,14 +58,17 @@ private const val GRID_COLUMNS = 3
  */
 @Composable
 fun FilmographyScreen(
-    onBack: () -> Unit,
-    onOpenItem: (Int) -> Unit,
     modifier: Modifier = Modifier,
     screenModel: FilmographyScreenModel = koinViewModel(),
+    navigator: Navigator = koinInject(),
 ) {
     val state by screenModel.collectAsState()
     Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        FilmographyContent(state = state, onBack = onBack, onOpenItem = onOpenItem)
+        FilmographyContent(
+            state = state,
+            onBack = navigator::back,
+            onOpenItem = { itemId -> navigator.open(Destination.Details(itemId)) },
+        )
     }
 }
 

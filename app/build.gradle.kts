@@ -181,6 +181,7 @@ dependencies {
     implementation(project(":core:tv-designsystem"))
     implementation(project(":core:ui"))
     implementation(project(":core:presentation"))
+    implementation(project(":core:navigation"))
 
     // Data
     implementation(project(":data:auth"))

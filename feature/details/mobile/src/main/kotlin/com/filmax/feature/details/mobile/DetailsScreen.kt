@@ -74,6 +74,8 @@ import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemRating
 import com.filmax.core.domain.catalog.model.MediaTrack
 import com.filmax.core.domain.person.CastMember
+import com.filmax.core.navigation.Destination
+import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxErrorModal
 import com.filmax.core.ui.components.FilmaxPosterCard
 import com.filmax.core.ui.components.FilmaxProgressBar
@@ -92,6 +94,7 @@ import com.filmax.feature.details.common.resolveCast
 import com.filmax.feature.details.common.typeLabel
 import com.filmax.feature.details.common.volumeLabel
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 /** Фильм играется целиком, без выбора дорожки: плеер ждёт videoId = -1. */
 private const val MOVIE_VIDEO_ID = -1
@@ -117,30 +120,12 @@ private const val EPISODES_TITLE = "Эпизоды"
 /**
  * Мобильные Детали поверх общего [DetailsScreenModel] (itemId берётся из маршрута через
  * SavedStateHandle).
- *
- * [onPlay] вторым аргументом принимает НОМЕР серии, а не её id: тем же числом kino.pub и
- * принимает, и отдаёт прогресс (`watching/marktime?video=`). Фильм играется целиком —
- * [MOVIE_VIDEO_ID].
  */
-/**
- * Навигация экрана деталей — группой (detekt LongParameterList): входной composable иначе набирает
- * больше шести параметров. Так же сгруппированы колбэки у других экранов-входов (напр. HomeActions).
- */
-data class DetailsNav(
-    val onBack: () -> Unit,
-    val onPlay: (itemId: Int, season: Int, videoId: Int) -> Unit,
-    val onOpenItem: (Int) -> Unit,
-    /** Тап по актёру/режиссёру -> его фильмография (isDirector различает запрос к API). */
-    val onOpenPerson: (name: String, isDirector: Boolean) -> Unit,
-    /** Играть трейлер: прямой HLS-url и заголовок. */
-    val onPlayTrailer: (url: String, title: String) -> Unit,
-)
-
 @Composable
 fun DetailsScreen(
-    nav: DetailsNav,
     modifier: Modifier = Modifier,
     screenModel: DetailsScreenModel = koinViewModel(),
+    navigator: Navigator = koinInject(),
 ) {
     val state by screenModel.collectAsState()
     val appError by screenModel.collectErrorAsState()
@@ -159,13 +144,23 @@ fun DetailsScreen(
                 extras = DetailsExtras(similar = state.similar, cast = state.cast),
                 isFav = state.isFav,
                 actions = DetailsActions(
-                    onBack = nav.onBack,
-                    onPlay = { season, videoId -> nav.onPlay(item.id, season, videoId) },
+                    onBack = navigator::back,
+                    // Второй аргумент — НОМЕР серии, а не её id: тем же числом kino.pub принимает
+                    // и отдаёт прогресс. Фильм играется целиком ([MOVIE_VIDEO_ID]).
+                    onPlay = { season, videoId ->
+                        navigator.open(
+                            Destination.Player(itemId = item.id, videoId = videoId, season = season),
+                        )
+                    },
                     onToggleFav = { screenModel.dispatch(DetailsEvent.ToggleFav) },
                     onShare = { shareItem(context, item) },
-                    onOpenItem = nav.onOpenItem,
-                    onOpenPerson = nav.onOpenPerson,
-                    onPlayTrailer = nav.onPlayTrailer,
+                    onOpenItem = { itemId -> navigator.open(Destination.Details(itemId)) },
+                    onOpenPerson = { name, isDirector ->
+                        navigator.open(Destination.Filmography(name = name, isDirector = isDirector))
+                    },
+                    onPlayTrailer = { url, title ->
+                        navigator.open(Destination.Trailer(url = url, title = title))
+                    },
                 ),
             )
         }

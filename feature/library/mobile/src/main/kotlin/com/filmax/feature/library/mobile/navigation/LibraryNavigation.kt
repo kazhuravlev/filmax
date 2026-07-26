@@ -8,18 +8,9 @@ import kotlinx.serialization.Serializable
 @Serializable
 object LibraryRoute
 
-/**
- * Раздел «Моё». Все карточки — включая «Продолжить» и «Историю» — ведут в карточку тайтла
- * через [onOpenItem]. [onOpenCatalog] — единственное действие пустых состояний раздела.
- */
-fun NavGraphBuilder.libraryScreen(
-    onOpenItem: (Int) -> Unit,
-    onOpenCatalog: () -> Unit,
-) {
+/** Раздел «Моё». */
+fun NavGraphBuilder.libraryScreen() {
     composable<LibraryRoute> {
-        LibraryScreen(
-            onOpenItem = onOpenItem,
-            onOpenCatalog = onOpenCatalog,
-        )
+        LibraryScreen()
     }
 }

@@ -12,8 +12,11 @@ import androidx.compose.animation.fadeOut
  * Дефолтные fadeIn()/fadeOut() едут на пружине и глазом почти не читаются — переключение
  * выглядело резким. 350 мс — достаточно, чтобы переход ощущался плавным, и мало, чтобы
  * навигация не казалась вязкой.
+ *
+ * Той же длительностью уезжает таб-бар (см. FilmaxNavGraph): он часть перехода, а не отдельное
+ * событие — иначе появляется раньше контента.
  */
-private const val NAV_FADE_MS = 350
+internal const val NAV_FADE_MS = 350
 
 val navFadeIn: EnterTransition = fadeIn(tween(NAV_FADE_MS))
 val navFadeOut: ExitTransition = fadeOut(tween(NAV_FADE_MS))

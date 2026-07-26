@@ -47,11 +47,13 @@ import com.filmax.core.domain.user.model.DeviceSettings
 import com.filmax.core.domain.user.model.serverLocationLabel
 import com.filmax.core.domain.user.model.streamingTypeLabel
 import com.filmax.core.domain.user.model.streamingTypeOptions
+import com.filmax.core.navigation.Navigator
 import com.filmax.feature.profile.common.DeviceSettingsEvent
 import com.filmax.feature.profile.common.DeviceSettingsScreenModel
 import com.filmax.feature.profile.common.DeviceSettingsSideEffect
 import com.filmax.feature.profile.common.DeviceSettingsState
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 /**
  * «Настройки устройства» — тумблеры возможностей (SSL/HEVC/HDR/4K/смешанный плейлист) и выбор
@@ -63,11 +65,12 @@ import org.koin.androidx.compose.koinViewModel
  */
 @Composable
 fun DeviceSettingsScreen(
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
     screenModel: DeviceSettingsScreenModel = koinViewModel(),
+    navigator: Navigator = koinInject(),
 ) {
     val state by screenModel.collectAsState()
+    val onBack: () -> Unit = navigator::back
 
     screenModel.collectSideEffect { effect ->
         when (effect) {

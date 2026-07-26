@@ -6,9 +6,9 @@ import androidx.navigation.toRoute
 import com.filmax.feature.player.common.navigation.TrailerRoute
 import com.filmax.feature.player.mobile.TrailerScreen
 
-fun NavGraphBuilder.trailerScreen(onBack: () -> Unit) {
+fun NavGraphBuilder.trailerScreen() {
     composable<TrailerRoute> { entry ->
         val route = entry.toRoute<TrailerRoute>()
-        TrailerScreen(url = route.url, title = route.title, onBack = onBack)
+        TrailerScreen(url = route.url, title = route.title)
     }
 }

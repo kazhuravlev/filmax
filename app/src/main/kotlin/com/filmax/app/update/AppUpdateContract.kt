@@ -17,6 +17,15 @@ data class AppUpdateState(
     val update: UpdateInfo? = null,
     /** Пользователь закрыл диалог «Позже» — до перезапуска приложения больше не предлагаем. */
     val dismissed: Boolean = false,
+    /** Идёт ручная проверка из Профиля — на экране диалог ожидания. */
+    val checking: Boolean = false,
+    /** Ручная проверка закончилась и обновлять нечего: молчать в ответ на тап нельзя. */
+    val upToDate: Boolean = false,
+    /**
+     * Можно ли поставить найденный APK поверх текущей сборки. false в debug/demo: у них свой
+     * applicationId, и релизный APK для них не обновление, а вторая установка рядом.
+     */
+    val installable: Boolean = true,
     val downloading: Boolean = false,
     /** Прогресс скачивания 0..1. */
     val progress: Float = 0f,
@@ -27,6 +36,9 @@ data class AppUpdateState(
 )
 
 sealed interface AppUpdateEvent {
+    /** Проверить обновления по требованию — строка «Проверить обновления» в Профиле. */
+    data object Check : AppUpdateEvent
+
     /** Скачать APK свежего релиза. */
     data object Download : AppUpdateEvent
 

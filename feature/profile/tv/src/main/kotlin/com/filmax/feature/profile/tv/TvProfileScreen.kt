@@ -80,6 +80,7 @@ private val RowGap = 10.dp
 @Composable
 fun TvProfileScreen(
     onLogout: () -> Unit,
+    onCheckUpdates: () -> Unit,
     modifier: Modifier = Modifier,
     screenModel: ProfileScreenModel = koinViewModel(),
 ) {
@@ -105,7 +106,7 @@ fun TvProfileScreen(
 
     ProfileContent(
         state = state,
-        actions = profileActions(screenModel, state),
+        actions = profileActions(screenModel, state, onCheckUpdates),
         modifier = modifier,
     )
 }
@@ -144,6 +145,15 @@ private fun ProfileContent(
             TvOverline("Аккаунт", color = TvOnSurfaceDim)
             Spacer(Modifier.height(12.dp))
             AccountRows(state = state, actions = actions)
+            Spacer(Modifier.height(26.dp))
+            // На телевизоре магазина нет вообще — приложение ставится APK, и ручная проверка
+            // здесь нужнее, чем на телефоне.
+            TvOverline("Приложение", color = TvOnSurfaceDim)
+            Spacer(Modifier.height(12.dp))
+            SettingRow(
+                spec = SettingRowSpec(label = "Проверить обновления"),
+                onClick = actions.onCheckUpdates,
+            )
             Spacer(Modifier.height(26.dp))
             FilmaxVersionLabel(color = TvOnSurfaceDim)
         }
@@ -192,13 +202,16 @@ private data class ProfileActions(
     val onCycleAudio: () -> Unit,
     val onCycleSubtitle: () -> Unit,
     val onLogout: () -> Unit,
+    val onCheckUpdates: () -> Unit,
 )
 
 /** Лямбды замыкают текущий [state], поэтому пересобираются вместе с ним — без remember. */
 private fun profileActions(
     screenModel: ProfileScreenModel,
     state: ProfileState,
+    onCheckUpdates: () -> Unit,
 ) = ProfileActions(
+    onCheckUpdates = onCheckUpdates,
     onCycleQuality = {
         screenModel.dispatch(
             ProfileEvent.SetQuality(next(PlaybackSettings.qualityOptions, state.playback.quality))

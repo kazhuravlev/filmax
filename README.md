@@ -125,6 +125,7 @@ core/
 ├─ domain/                   # модели, интерфейсы репозиториев, RequestResult, UseCase
 ├─ network/                  # сетевой клиент, токены, авторефреш OAuth
 ├─ presentation/             # BaseScreenModel (MVI: State/Event/SideEffect)
+├─ navigation/               # Destination + Navigator: фича называет адрес, граф его исполняет
 ├─ designsystem/             # цвета, типографика, формы, тема (телефон)
 ├─ tv-designsystem/          # FilmaxTvTheme, TvPosterCard, TvFocusCard, TvRail (фокус из коробки)
 └─ ui/                       # переиспользуемые Composable (PosterImage, голосовой ввод, …)
@@ -139,6 +140,39 @@ feature/
 > Для `details`/`player` маршрут (`DetailsRoute`/`PlayerRoute`) лежит в логическом модуле —
 > его читает `ScreenModel` через `SavedStateHandle.toRoute<…>()`, а навбилдеры в
 > `:mobile`/`:tv` ссылаются на него.
+
+### Навигация: экраны просят, граф исполняет
+
+Экран не получает колбэков навигации сверху и не знает ни NavController, ни маршрутов соседних
+фич. Он называет **адрес** — `Destination` из `:core:navigation` — и отдаёт его `Navigator`:
+
+```kotlin
+// внутри экрана
+navigator.open(Destination.Details(itemId))
+navigator.replace(Destination.Player(itemId, videoId, season))  // вместо текущего экрана
+navigator.root(Destination.Onboarding)                          // новый корень: вход/выход
+navigator.back()
+```
+
+Команды разбирает `:app` (`NavigationCommands` телефонного графа) — единственное место, где
+адрес превращается в маршрут и в `NavOptions`. Поэтому форма графа меняется в одном файле,
+а не в каждом экране.
+
+TV-граф пока раздаёт колбэки по-старому — его перевод отдельным проходом.
+
+### Таб-бар
+
+Нижняя навигация — только на четырёх корнях разделов, как и верхняя на ТВ. Карточка тайтла,
+подборка, фильмография, плеер и трейлер открываются на весь экран поверх неё.
+
+Появляется и уезжает бар той же анимацией, что и переход между экранами (`NAV_FADE_MS`), — он
+часть перехода, а не отдельное событие. Раньше он менялся в кадре вызова `navigate()`, пока
+экраны ещё кроссфейдились, и вместе с ним прыгал `innerPadding`: контент дёргался по вертикали
+на высоту бара посреди перехода.
+
+Переход по вкладке сохраняет и восстанавливает состояние раздела (`popUpTo(корень) {
+saveState = true }` + `restoreState`) — скролл ленты и выбранный сегмент переживают уход
+на соседнюю вкладку.
 
 **Поток данных (MVI, однонаправленный):** `Composable` (`collectAsState` / `collectSideEffect`,
 события через `dispatch(Event)`) → `ScreenModel` (`BaseScreenModel`, `State` + одноразовые

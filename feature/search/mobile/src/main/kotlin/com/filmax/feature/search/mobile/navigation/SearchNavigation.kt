@@ -9,8 +9,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 object SearchRoute
 
-fun NavGraphBuilder.searchScreen(onOpenItem: (Int) -> Unit) {
+fun NavGraphBuilder.searchScreen() {
     composable<SearchRoute> {
-        CatalogScreen(onOpenItem = onOpenItem)
+        CatalogScreen()
     }
 }

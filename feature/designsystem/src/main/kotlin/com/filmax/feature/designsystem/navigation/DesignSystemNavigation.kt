@@ -8,8 +8,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 object DesignSystemRoute
 
-fun NavGraphBuilder.designSystemScreen(onBack: () -> Unit) {
+fun NavGraphBuilder.designSystemScreen() {
     composable<DesignSystemRoute> {
-        DesignSystemScreen(onBack = onBack)
+        DesignSystemScreen()
     }
 }

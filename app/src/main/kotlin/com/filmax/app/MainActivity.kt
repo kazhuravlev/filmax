@@ -10,9 +10,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.filmax.app.navigation.FilmaxNavGraph
 import com.filmax.app.tv.navigation.FilmaxTvNavGraph
+import com.filmax.app.update.AppUpdateEvent
 import com.filmax.app.update.AppUpdatePrompt
+import com.filmax.app.update.AppUpdateScreenModel
 import com.filmax.core.designsystem.FilmaxTheme
 import com.filmax.core.tv.designsystem.FilmaxTvTheme
+import org.koin.androidx.compose.koinViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -30,15 +33,20 @@ class MainActivity : ComponentActivity() {
         // Один APK на оба форм-фактора: на Android TV (leanback) — TV-граф, иначе телефонный.
         val isTv = packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
         setContent {
+            // Модель обновлений одна на приложение и держится здесь явно: её диалог живёт
+            // поверх графа, а ручную проверку дёргает строка «Проверить обновления» в Профиле —
+            // внутри графа, и на телефоне, и на ТВ.
+            val updateScreenModel: AppUpdateScreenModel = koinViewModel()
+            val onCheckUpdates = { updateScreenModel.dispatch(AppUpdateEvent.Check) }
             if (isTv) {
                 FilmaxTvTheme {
-                    FilmaxTvNavGraph()
-                    AppUpdatePrompt()
+                    FilmaxTvNavGraph(onCheckUpdates = onCheckUpdates)
+                    AppUpdatePrompt(updateScreenModel)
                 }
             } else {
                 FilmaxTheme {
-                    FilmaxNavGraph()
-                    AppUpdatePrompt()
+                    FilmaxNavGraph(onCheckUpdates = onCheckUpdates)
+                    AppUpdatePrompt(updateScreenModel)
                 }
             }
         }
