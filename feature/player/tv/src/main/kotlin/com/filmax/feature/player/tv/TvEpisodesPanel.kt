@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,9 +46,6 @@ internal fun EpisodesPanel(
     modifier: Modifier = Modifier,
 ) {
     val season = panel.seasons.getOrNull(seasonCursor) ?: return
-    val listState = rememberLazyListState()
-    // Курсор всегда в кадре: список едет за клавишами, включая стартовую позицию «Сейчас».
-    LaunchedEffect(seasonCursor, episodeCursor) { listState.animateScrollToItem(episodeCursor) }
 
     Column(
         modifier
@@ -66,17 +64,28 @@ internal fun EpisodesPanel(
             color = TvOnSurfaceDim,
             modifier = Modifier.padding(top = 3.dp, start = 8.dp),
         )
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.padding(top = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            itemsIndexed(season.second, key = { _, episode -> episode.id }) { index, episode ->
-                EpisodePanelRow(
-                    episode = episode,
-                    highlighted = index == episodeCursor,
-                    isCurrent = episode.id == panel.currentTrackId,
-                )
+        // Список пересоздаётся на каждый сезон, а не переиспользует один LazyListState.
+        // Соседний сезон — это другой набор данных: другие ключи и другая длина (у сериала на
+        // 28 сезонов бывает и 18 серий, и 4). Общий стейт тащил в него позицию прошлого сезона,
+        // удержанные фокусом элементы и незавершённую анимацию скролла — на реальном ТВ-боксе
+        // Compose падал при размещении: «Place was called on a node which was placed already».
+        // Тот же расчёт на экране деталей решён сбросом скролла при смене сезона.
+        key(seasonCursor) {
+            val listState = rememberLazyListState()
+            // Курсор всегда в кадре: список едет за клавишами, включая стартовую позицию «Сейчас».
+            LaunchedEffect(episodeCursor) { listState.animateScrollToItem(episodeCursor) }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.padding(top = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                itemsIndexed(season.second, key = { _, episode -> episode.id }) { index, episode ->
+                    EpisodePanelRow(
+                        episode = episode,
+                        highlighted = index == episodeCursor,
+                        isCurrent = episode.id == panel.currentTrackId,
+                    )
+                }
             }
         }
     }

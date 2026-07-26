@@ -43,6 +43,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,6 +79,7 @@ import com.filmax.core.tv.designsystem.TvOverline
 import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvProgressCard
 import com.filmax.core.tv.designsystem.TvRail
+import com.filmax.core.tv.designsystem.TvReturnFocus
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
@@ -85,6 +87,7 @@ import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberDimAlpha
+import com.filmax.core.tv.designsystem.rememberTvReturnFocus
 import com.filmax.core.ui.components.HeroBackdrop
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.feature.details.common.DetailsEvent
@@ -220,6 +223,8 @@ private fun DetailsContent(
     val people = remember(cast, item.cast) { resolveCast(cast, item.cast) }
 
     val listState = rememberLazyListState()
+    // Возврат из плеера ставит фокус на серию, с которой ушли (см. EpisodesRow).
+    val returnFocus = rememberTvReturnFocus()
     // false = стейт hero (открытие экрана), true = фокус ушёл в контент. Пока полотно в стейте
     // hero, фокус-прокрутка (bringIntoView) выключена ПОЛНОСТЬЮ: именно она давала подскролл к
     // середине при открытии — стартовый requestFocus на «Смотреть» уезжал раньше раскладки.
@@ -267,6 +272,7 @@ private fun DetailsContent(
                 data = DetailsSectionsData(item, similar, people, series, episodes, selectedSeason),
                 actions = actions,
                 onSelectSeason = { selectedSeason = it },
+                returnFocus = returnFocus,
             )
         }
     }
@@ -334,6 +340,7 @@ private fun LazyListScope.detailsSections(
     data: DetailsSectionsData,
     actions: DetailsActions,
     onSelectSeason: (Int) -> Unit,
+    returnFocus: TvReturnFocus,
 ) {
     item(key = "about") { DetailsAbout(data.item) }
     if (data.people.isNotEmpty()) {
@@ -351,6 +358,7 @@ private fun LazyListScope.detailsSections(
                 selectedSeason = data.selectedSeason,
                 onSelectSeason = onSelectSeason,
                 onPlayEpisode = actions.onPlay,
+                returnFocus = returnFocus,
             )
         )
     }
@@ -649,6 +657,7 @@ private data class EpisodesSection(
     val selectedSeason: Int,
     val onSelectSeason: (Int) -> Unit,
     val onPlayEpisode: (season: Int, videoId: Int) -> Unit,
+    val returnFocus: TvReturnFocus,
 )
 
 /**
@@ -686,6 +695,7 @@ private fun LazyListScope.episodesSection(section: EpisodesSection) {
             resumeId = section.resumeId,
             selectedSeason = section.selectedSeason,
             onPlay = section.onPlayEpisode,
+            returnFocus = section.returnFocus,
         )
     }
 }
@@ -705,10 +715,13 @@ private fun SectionTitle(title: String, modifier: Modifier = Modifier) {
  * Ряд серий. Свой LazyRow, а не [TvRail]: заголовок «Эпизоды» стоит над чипами сезонов, а
  * TvRail жёстко ставит заголовок над своим рядом. Отступы и focusRestorer — как у TvRail.
  *
- * Выбор другого сезона пересоздаёт карточки (новые key), но LazyRow хранит прежний скролл,
- * а focusRestorer — уже не существующего ребёнка: вход в ряд отдавался D-pad-поиску и сажал
- * фокус на серию под чипом сезона, а не на первую. Поэтому смена сезона возвращает скролл
- * к началу, а fallback-фокус закреплён за первой серией.
+ * Ряд ПЕРЕСОЗДАЁТСЯ на каждый сезон (`key`), а не переиспользует один LazyListState. Соседний
+ * сезон — это другой набор данных: другие ключи и другая длина. Общий стейт тащил в него скролл
+ * прошлого сезона и — главное — удержанный (pinned) фокусом элемент: при следующем размещении
+ * ряд ставил его вторым проходом и Compose падал с «Place was called on a node which was placed
+ * already». Ловилось так: посмотреть серию → вернуться на карточку → полистать сезоны и серии
+ * (Crashlytics 1.7.1, реальный ТВ-бокс). Свежий стейт не тащит ни скролла, ни пинов, и сброс
+ * скролла к началу больше не нужен отдельным эффектом.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -717,29 +730,43 @@ private fun EpisodesRow(
     resumeId: Int?,
     selectedSeason: Int,
     onPlay: (season: Int, videoId: Int) -> Unit,
+    returnFocus: TvReturnFocus,
 ) {
-    val firstItemFocus = remember { FocusRequester() }
-    val listState = rememberLazyListState()
-    LaunchedEffect(selectedSeason) { listState.scrollToItem(0) }
-    LazyRow(
-        state = listState,
-        modifier = Modifier.focusRestorer(firstItemFocus),
-        contentPadding = PaddingValues(
-            start = TvMetrics.SafeHorizontal,
-            end = TvMetrics.SafeHorizontal,
-            top = TvMetrics.FocusInset,
-            bottom = TvMetrics.FocusInset,
-        ),
-        horizontalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
-    ) {
-        itemsIndexed(episodes, key = { _, episode -> episode.id }) { index, episode ->
-            EpisodeCard(
-                episode = episode,
-                isResume = episode.id == resumeId,
-                focusRequester = if (index == 0) firstItemFocus else null,
-                // Плееру нужны номер серии (API `video`) и сезон, а не id трека.
-                onClick = { onPlay(episode.seasonNumber, episode.number) },
-            )
+    key(selectedSeason) {
+        // Реквестер живёт внутри key вместе с рядом: focusRestorer дёргает его при каждом входе
+        // фокуса и падает, если тот остался без узла от прошлого сезона.
+        val firstItemFocus = remember { FocusRequester() }
+        LazyRow(
+            state = rememberLazyListState(),
+            modifier = Modifier.focusRestorer(firstItemFocus),
+            contentPadding = PaddingValues(
+                start = TvMetrics.SafeHorizontal,
+                end = TvMetrics.SafeHorizontal,
+                top = TvMetrics.FocusInset,
+                bottom = TvMetrics.FocusInset,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
+        ) {
+            itemsIndexed(episodes, key = { _, episode -> episode.id }) { index, episode ->
+                val returnKey = "episode:${episode.id}"
+                EpisodeCard(
+                    episode = episode,
+                    isResume = episode.id == resumeId,
+                    focusRequester = returnFocus.target(
+                        key = returnKey,
+                        railFallback = firstItemFocus,
+                        isFirstInRail = index == 0,
+                    ),
+                    // Плееру нужны номер серии (API `video`) и сезон, а не id трека.
+                    onClick = {
+                        // Возврат из плеера ставит фокус обратно на эту серию: без пометки он
+                        // доставался фоллбеку и садился на чип «Режиссёр» — ряд серий при этом
+                        // выглядел мёртвым, хотя на клавиши не отвечал не он, а фокус был не в нём.
+                        returnFocus.onOpen(returnKey)
+                        onPlay(episode.seasonNumber, episode.number)
+                    },
+                )
+            }
         }
     }
 }
