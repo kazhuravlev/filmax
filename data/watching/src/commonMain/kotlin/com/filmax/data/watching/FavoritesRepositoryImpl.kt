@@ -132,15 +132,26 @@ internal class FavoritesRepositoryImpl(
         if (migrated) settings.putBoolean(MIGRATED_KEY, true)
     }
 
+    /**
+     * Единственная точка записи списка — и единственное место, где он дедуплицируется.
+     *
+     * Страницы `bookmarks/{id}` у kino.pub пересекаются (тайтл приходит и на первой, и на
+     * второй), а список уходит в LazyGrid с `key = id` — дубликат роняет экран «Моё» на
+     * `IllegalArgumentException: Key … was already used`. Так же лечится содержимое обычных
+     * папок в LibraryScreenModel и выдача каталога/поиска.
+     */
     private fun updateState(list: List<FavoriteItem>) {
-        settings.putString(CACHE_KEY, json.encodeToString(list.map { it.toStored() }))
-        state.value = list
+        val unique = list.distinctBy { it.id }
+        settings.putString(CACHE_KEY, json.encodeToString(unique.map { it.toStored() }))
+        state.value = unique
     }
 
+    /** Дедуп и на чтении: в кэше уже мог осесть список с дублями, записанный до этой правки. */
     private fun loadCache(): List<FavoriteItem> =
         settings.getStringOrNull(CACHE_KEY)
             ?.let { runCatching { json.decodeFromString<List<Stored>>(it) }.getOrNull() }
             ?.map { it.toModel() }
+            ?.distinctBy { it.id }
             ?: emptyList()
 
     @Serializable
