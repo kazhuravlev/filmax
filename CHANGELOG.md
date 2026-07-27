@@ -10,6 +10,19 @@
 
 ## [Unreleased]
 
+## [1.8.1] — 2026-07-27
+
+### Исправлено
+- TV: краш «Place was called on a node which was placed already» при возврате на карточку
+  сериала. Ряд серий (и панель серий в плеере) держали один `LazyListState` на все сезоны, а
+  соседний сезон — это другой набор данных: другие ключи и другая длина. Общий стейт тащил в
+  него скролл прошлого сезона и удержанный фокусом элемент, который при следующем размещении
+  ставился вторым проходом. Ряды пересоздаются на каждый сезон. Ловилось так: посмотреть
+  серию → вернуться на карточку → полистать сезоны и серии.
+- TV: после возврата из плеера фокус садился на чип «Режиссёр» вместо ряда серий — ряд
+  выглядел мёртвым, хотя на клавиши не отвечал не он. Карточка серии помечается перед уходом
+  в плеер, и возврат ставит фокус ровно на неё.
+
 ## [1.8.0] — 2026-07-27
 
 ### Добавлено
@@ -162,7 +175,8 @@
   R8 + `shrinkResources`, `versionCode` из числа коммитов и `versionName` из git-тега.
 - CI по тегу `v*`: сборка подписанного APK → GitHub Release (+ Telegram).
 
-[Unreleased]: https://github.com/malyi-m-dev/filmax/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/malyi-m-dev/filmax/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/malyi-m-dev/filmax/releases/tag/v1.8.1
 [1.8.0]: https://github.com/malyi-m-dev/filmax/releases/tag/v1.8.0
 [1.7.1]: https://github.com/malyi-m-dev/filmax/releases/tag/v1.7.1
 [1.7.0]: https://github.com/malyi-m-dev/filmax/releases/tag/v1.7.0
