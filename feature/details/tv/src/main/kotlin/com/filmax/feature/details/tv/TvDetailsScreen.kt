@@ -210,9 +210,21 @@ private fun DetailsContent(
     var selectedSeason by remember(item.id) { mutableIntStateOf(series?.resumeSeasonIndex ?: 0) }
     val episodes = series?.seasons?.getOrNull(selectedSeason)?.second.orEmpty()
 
+    // Возврат из плеера ставит фокус на серию, с которой ушли (см. EpisodesRow).
+    val returnFocus = rememberTvReturnFocus()
+
     val playFocus = remember { FocusRequester() }
-    // Стартовый фокус — на «Смотреть»: экран открывается в стейте hero.
-    LaunchedEffect(item.id) { runCatching { playFocus.requestFocus() } }
+    // Стартовый фокус — на «Смотреть»: экран ОТКРЫВАЕТСЯ в стейте hero. Возврат из плеера — это
+    // тоже новый заход в композицию, но фокусом там распоряжается механизм возврата, и без этой
+    // проверки два реквеста стартовали в одном кадре: побеждал то один, то другой (отсюда
+    // «иногда»). Выигрыш hero не нейтрален — его onFocusChanged уводит полотно в стейт hero
+    // (rememberHeroFocusScroller), ряд серий уезжает из вьюпорта, помеченная карточка не
+    // успевает привязать реквестер, попытки возврата прогорают. Фокус остаётся на кнопке
+    // наверху, и секция серий перестаёт отвечать на пульт.
+    LaunchedEffect(item.id) {
+        if (returnFocus.pending()) return@LaunchedEffect
+        runCatching { playFocus.requestFocus() }
+    }
 
     // Кнопка играет недосмотренную серию, иначе первую серию ВЫБРАННОГО сезона (у фильма дорожка
     // не выбирается вовсе).
@@ -223,8 +235,6 @@ private fun DetailsContent(
     val people = remember(cast, item.cast) { resolveCast(cast, item.cast) }
 
     val listState = rememberLazyListState()
-    // Возврат из плеера ставит фокус на серию, с которой ушли (см. EpisodesRow).
-    val returnFocus = rememberTvReturnFocus()
     // false = стейт hero (открытие экрана), true = фокус ушёл в контент. Пока полотно в стейте
     // hero, фокус-прокрутка (bringIntoView) выключена ПОЛНОСТЬЮ: именно она давала подскролл к
     // середине при открытии — стартовый requestFocus на «Смотреть» уезжал раньше раскладки.

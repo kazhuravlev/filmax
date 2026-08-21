@@ -72,7 +72,8 @@ class TvReturnFocus internal constructor(
         boundRequester = ownRequester
     }
 
-    internal fun pending(): Boolean = savedKey.value != null
+    /** Есть ли отложенный возврат: экран не открыт заново, а вернулся с пуш-экрана. */
+    fun pending(): Boolean = savedKey.value != null
 }
 
 /** Ряд, которому принадлежит ключ карточки («continue:42» → «continue»). */
