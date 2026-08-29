@@ -12,13 +12,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
@@ -55,30 +51,19 @@ fun TvChip(
 /**
  * Ряд карточек с заголовком.
  *
- * `focusRestorer` обязателен: без него «вниз» в ряд ведёт на пространственно-ближайшую
- * карточку, а после горизонтального скролла фокус мажет мимо первой.
- *
- * [content] получает [FocusRequester], который ОБЯЗАН быть привязан к первой карточке ряда:
- * это fallback для focusRestorer. Без него первый вход в ряд отдаёт фокус D-pad-поиску, и тот
- * сажает его на пространственно-ближайшую карточку (2–3-ю — под вкладкой таб-бара или кнопкой
- * hero), а не на первую. Повторные входы по-прежнему восстанавливают последнюю сфокусированную.
- *
- * «Обязан» — буквально: focusRestorer дёргает fallback при каждом входе фокуса в ряд и падает,
- * если тот ни к чему не привязан. Поэтому ряд с возвратом фокуса отдаёт его в
- * `TvReturnFocus.target(key, railFallback = …)`, а не через `?:` — иначе помеченная ПЕРВАЯ
- * карточка забирала слот себе и оставляла fallback без узла.
+ * Ряд — focus group с памятью ([tvItemFocus]): фокус возвращается на ту карточку, с которой
+ * ушёл, а не на пространственно-ближайшую, куда его сажает D-pad-поиск в прокрученном ряду.
+ * Первый вход (запоминать нечего) отдаёт фокус первой карточке.
  *
  * Отступы ряда живут в `contentPadding`, а не на родителе: карточка при фокусе растёт
  * (scale 1.08), и её рамка обязана поместиться внутрь viewport.
  */
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun TvRail(
     title: String,
     modifier: Modifier = Modifier,
-    content: LazyListScope.(firstItemFocus: FocusRequester) -> Unit,
+    content: LazyListScope.() -> Unit,
 ) {
-    val firstItemFocus = remember { FocusRequester() }
     Column(modifier) {
         Text(
             title,
@@ -87,7 +72,7 @@ fun TvRail(
             modifier = Modifier.padding(start = TvMetrics.SafeHorizontal, bottom = 12.dp),
         )
         LazyRow(
-            modifier = Modifier.focusRestorer(firstItemFocus),
+            modifier = Modifier.tvFocusGroup(),
             contentPadding = PaddingValues(
                 start = TvMetrics.SafeHorizontal,
                 end = TvMetrics.SafeHorizontal,
@@ -95,7 +80,7 @@ fun TvRail(
                 bottom = TvMetrics.FocusInset,
             ),
             horizontalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
-            content = { content(firstItemFocus) },
+            content = content,
         )
     }
 }

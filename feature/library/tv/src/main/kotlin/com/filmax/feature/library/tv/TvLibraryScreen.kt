@@ -2,7 +2,6 @@ package com.filmax.feature.library.tv
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,7 +44,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,14 +70,14 @@ import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvOutlineVariant
 import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvProgressCard
-import com.filmax.core.tv.designsystem.TvReturnFocus
+import com.filmax.core.tv.designsystem.TvScreenFocus
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
-import com.filmax.core.tv.designsystem.rememberTvReturnFocus
+import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.feature.library.common.LibraryEvent
 import com.filmax.feature.library.common.LibraryScreenModel
@@ -292,9 +290,8 @@ private fun MineGrid(
 ) {
     val gridState = rememberLazyGridState()
     ScrollToTopOnNavFocus(gridState)
-    val returnFocus = rememberTvReturnFocus()
+    val focus = rememberTvScreenFocus()
     val openFolder = state.openFolder
-    val gridFocus = remember { FocusRequester() }
 
     // Догрузка следующей страницы папки: страниц у kino.pub может быть много, а счётчик на
     // плитке обещает всё содержимое — значит, до конца должно доскроллиться.
@@ -309,33 +306,23 @@ private fun MineGrid(
         if (loadMore && openFolder != null) actions.onLoadMoreFolderItems()
     }
 
-    // Плитка папки, на которой был фокус, уходит из композиции при открытии/закрытии папки:
-    // без явного запроса фокус повисает и пульт перестаёт отвечать. Карточки сетка композит
-    // в фазе измерения, поэтому просим фокус несколько кадров подряд.
-    LaunchedEffect(openFolder?.folder?.id, openFolder?.loading) {
-        if (segment != MineSegment.BOOKMARKS || openFolder?.loading == true) return@LaunchedEffect
-        repeat(FOCUS_ATTEMPTS) {
-            withFrameNanos { }
-            runCatching { gridFocus.requestFocus() }
-        }
-    }
+    // Сегмент и открытая папка меняют содержимое сетки целиком: плитка, на которой стоял
+    // фокус, уходит из композиции, и без сброса фокус повис бы — пульт перестал бы отвечать.
+    LaunchedEffect(segment, openFolder?.folder?.id) { focus.focusOn() }
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(columnsFor(segment, openFolder != null)),
         state = gridState,
-        modifier = Modifier
-            .fillMaxSize()
-            .focusRequester(gridFocus)
-            .focusGroup(),
+        modifier = Modifier.fillMaxSize().then(focus.containerModifier),
         horizontalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
         verticalArrangement = Arrangement.spacedBy(TvMetrics.RowGap),
         contentPadding = GridPadding,
     ) {
         when (segment) {
-            MineSegment.CONTINUE -> continueSegment(state.history, actions.onOpenItem, returnFocus)
-            MineSegment.WATCHLIST -> watchlistSegment(state, actions.onOpenItem, returnFocus)
-            MineSegment.BOOKMARKS -> bookmarksSegment(state, ui, actions, returnFocus)
-            MineSegment.HISTORY -> historySegment(state, actions.onOpenItem, returnFocus)
+            MineSegment.CONTINUE -> continueSegment(state.history, actions.onOpenItem, focus)
+            MineSegment.WATCHLIST -> watchlistSegment(state, actions.onOpenItem, focus)
+            MineSegment.BOOKMARKS -> bookmarksSegment(state, ui, actions, focus)
+            MineSegment.HISTORY -> historySegment(state, actions.onOpenItem, focus)
         }
     }
 }
@@ -344,7 +331,7 @@ private fun MineGrid(
 private fun LazyGridScope.continueSegment(
     history: List<WatchHistory>,
     onOpenItem: (Int) -> Unit,
-    returnFocus: TvReturnFocus,
+    focus: TvScreenFocus,
 ) {
     val started = history.filter { entry ->
         val fraction = entry.progress?.fraction ?: 0f
@@ -362,7 +349,7 @@ private fun LazyGridScope.continueSegment(
         ProgressCard(
             entry = entry,
             returnKey = "continue:${entry.itemId}",
-            returnFocus = returnFocus,
+            focus = focus,
             onOpenItem = onOpenItem,
         )
     }
@@ -375,7 +362,7 @@ private fun LazyGridScope.continueSegment(
 private fun LazyGridScope.watchlistSegment(
     state: LibraryState,
     onOpenItem: (Int) -> Unit,
-    returnFocus: TvReturnFocus,
+    focus: TvScreenFocus,
 ) {
     if (state.favorites.isEmpty()) {
         emptyItem(
@@ -390,11 +377,8 @@ private fun LazyGridScope.watchlistSegment(
             title = item.title,
             meta = posterMeta(type = null, year = item.year),
             posterUrl = item.posterSmall,
-            onClick = {
-                returnFocus.onOpen("watchlist:${item.id}")
-                onOpenItem(item.id)
-            },
-            focusRequester = returnFocus.target("watchlist:${item.id}"),
+            onClick = { onOpenItem(item.id) },
+            modifier = focus.item("watchlist:${item.id}"),
             posterContent = { url, posterModifier ->
                 TvPoster(url, item.title, posterModifier, TvMetrics.PosterShape)
             },
@@ -407,13 +391,13 @@ private fun LazyGridScope.bookmarksSegment(
     state: LibraryState,
     ui: TvBookmarkUi,
     actions: TvLibraryActions,
-    returnFocus: TvReturnFocus,
+    focus: TvScreenFocus,
 ) {
     val openFolder = state.openFolder
     if (openFolder == null) {
         folderTiles(state.lists, actions.onOpenFolder, onNewFolder = { ui.creating = true })
     } else {
-        folderItems(openFolder, ui, actions.onOpenItem, returnFocus)
+        folderItems(openFolder, ui, actions.onOpenItem, focus)
     }
 }
 
@@ -437,7 +421,7 @@ private fun LazyGridScope.folderItems(
     openFolder: OpenBookmarkFolder,
     ui: TvBookmarkUi,
     onOpenItem: (Int) -> Unit,
-    returnFocus: TvReturnFocus,
+    focus: TvScreenFocus,
 ) {
     when {
         openFolder.loading ->
@@ -456,7 +440,7 @@ private fun LazyGridScope.folderItems(
             hint = "Тайтлы, добавленные в эту папку, появятся здесь",
         )
 
-        else -> folderPosters(openFolder = openFolder, ui = ui, onOpenItem = onOpenItem, returnFocus = returnFocus)
+        else -> folderPosters(openFolder = openFolder, ui = ui, onOpenItem = onOpenItem, focus = focus)
     }
 }
 
@@ -464,7 +448,7 @@ private fun LazyGridScope.folderPosters(
     openFolder: OpenBookmarkFolder,
     ui: TvBookmarkUi,
     onOpenItem: (Int) -> Unit,
-    returnFocus: TvReturnFocus,
+    focus: TvScreenFocus,
 ) {
     items(openFolder.items, key = { it.id }) { item ->
         TvPosterCard(
@@ -476,12 +460,11 @@ private fun LazyGridScope.folderPosters(
                 if (ui.removeMode) {
                     ui.itemToRemove = item
                 } else {
-                    returnFocus.onOpen("folder:${item.id}")
                     onOpenItem(item.id)
                 }
             },
+            modifier = focus.item("folder:${item.id}"),
             rating = ratingLabel(item.rating.external),
-            focusRequester = returnFocus.target("folder:${item.id}"),
             posterContent = { url, posterModifier ->
                 FolderPoster(url, item.title, posterModifier, removeMode = ui.removeMode)
             },
@@ -496,7 +479,7 @@ private fun LazyGridScope.folderPosters(
 private fun LazyGridScope.historySegment(
     state: LibraryState,
     onOpenItem: (Int) -> Unit,
-    returnFocus: TvReturnFocus,
+    focus: TvScreenFocus,
 ) {
     if (state.historyHidden) {
         emptyItem(
@@ -518,7 +501,7 @@ private fun LazyGridScope.historySegment(
         ProgressCard(
             entry = entry,
             returnKey = "history:${entry.itemId}",
-            returnFocus = returnFocus,
+            focus = focus,
             onOpenItem = onOpenItem,
         )
     }
@@ -554,7 +537,7 @@ private fun MineEmpty(icon: ImageVector, title: String, hint: String) {
 private fun ProgressCard(
     entry: WatchHistory,
     returnKey: String,
-    returnFocus: TvReturnFocus,
+    focus: TvScreenFocus,
     onOpenItem: (Int) -> Unit,
 ) {
     TvProgressCard(
@@ -565,11 +548,8 @@ private fun ProgressCard(
         progress = entry.progress?.fraction ?: 0f,
         // Карточка ведёт в карточку тайтла, а не сразу в плеер: оттуда «Продолжить · SxEy»
         // играет ту же серию, но остаётся выбор эпизода, сезонов и описание.
-        onClick = {
-            returnFocus.onOpen(returnKey)
-            onOpenItem(entry.itemId)
-        },
-        focusRequester = returnFocus.target(returnKey),
+        onClick = { onOpenItem(entry.itemId) },
+        modifier = focus.item(returnKey),
         posterContent = { url, posterModifier ->
             TvPoster(url, entry.title, posterModifier, TvMetrics.CardShape)
         },
@@ -931,6 +911,3 @@ private const val SECONDS_IN_MINUTE = 60
 
 /** За сколько карточек до конца сетки просить следующую страницу папки (примерно ряд). */
 private const val LOAD_MORE_TAIL = 4
-
-/** Сколько кадров подряд пробовать вернуть фокус в сетку после смены её содержимого. */
-private const val FOCUS_ATTEMPTS = 3

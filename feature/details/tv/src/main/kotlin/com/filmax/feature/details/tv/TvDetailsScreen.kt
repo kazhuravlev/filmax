@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -40,7 +41,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -51,13 +51,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
@@ -79,7 +75,7 @@ import com.filmax.core.tv.designsystem.TvOverline
 import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvProgressCard
 import com.filmax.core.tv.designsystem.TvRail
-import com.filmax.core.tv.designsystem.TvReturnFocus
+import com.filmax.core.tv.designsystem.TvScreenFocus
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
@@ -87,7 +83,8 @@ import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberDimAlpha
-import com.filmax.core.tv.designsystem.rememberTvReturnFocus
+import com.filmax.core.tv.designsystem.rememberTvScreenFocus
+import com.filmax.core.tv.designsystem.tvFocusGroup
 import com.filmax.core.ui.components.HeroBackdrop
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.feature.details.common.DetailsEvent
@@ -122,6 +119,9 @@ private val TvActorCardWidth = 120.dp
 private val TvActorAvatarSize = 104.dp
 
 private const val EPISODES_TITLE = "Эпизоды"
+
+/** Ключ фокуса кнопки «Смотреть»: стартовая цель экрана. */
+private const val HERO_PLAY_KEY = "hero:play"
 
 /** Фильм играется целиком, без выбора дорожки: плеер ждёт videoId = -1. */
 private const val MOVIE_VIDEO_ID = -1
@@ -210,21 +210,10 @@ private fun DetailsContent(
     var selectedSeason by remember(item.id) { mutableIntStateOf(series?.resumeSeasonIndex ?: 0) }
     val episodes = series?.seasons?.getOrNull(selectedSeason)?.second.orEmpty()
 
-    // Возврат из плеера ставит фокус на серию, с которой ушли (см. EpisodesRow).
-    val returnFocus = rememberTvReturnFocus()
-
-    val playFocus = remember { FocusRequester() }
-    // Стартовый фокус — на «Смотреть»: экран ОТКРЫВАЕТСЯ в стейте hero. Возврат из плеера — это
-    // тоже новый заход в композицию, но фокусом там распоряжается механизм возврата, и без этой
-    // проверки два реквеста стартовали в одном кадре: побеждал то один, то другой (отсюда
-    // «иногда»). Выигрыш hero не нейтрален — его onFocusChanged уводит полотно в стейт hero
-    // (rememberHeroFocusScroller), ряд серий уезжает из вьюпорта, помеченная карточка не
-    // успевает привязать реквестер, попытки возврата прогорают. Фокус остаётся на кнопке
-    // наверху, и секция серий перестаёт отвечать на пульт.
-    LaunchedEffect(item.id) {
-        if (returnFocus.pending()) return@LaunchedEffect
-        runCatching { playFocus.requestFocus() }
-    }
+    // Первый заход открывает экран на «Смотреть», возврат из плеера — на серии, с которой ушли.
+    // И то, и другое — одна цель фокуса, поэтому и механизм один: два конкурирующих реквеста в
+    // одном кадре давали то кнопку, то серию, и ряд серий выглядел мёртвым (отсюда «иногда»).
+    val focus = rememberTvScreenFocus(startAt = HERO_PLAY_KEY)
 
     // Кнопка играет недосмотренную серию, иначе первую серию ВЫБРАННОГО сезона (у фильма дорожка
     // не выбирается вовсе).
@@ -252,7 +241,7 @@ private fun DetailsContent(
     ) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().then(focus.containerModifier),
             contentPadding = PaddingValues(top = TvMetrics.SafeVertical, bottom = ContentBottomPadding),
         ) {
             item(key = "hero") {
@@ -261,7 +250,7 @@ private fun DetailsContent(
                     series = series,
                     isFav = isFav,
                     playback = HeroPlayback(
-                        playFocus = playFocus,
+                        playModifier = focus.item(HERO_PLAY_KEY),
                         // Фильм играется целиком (videoId = -1), сериал — конкретной серией. Сериал
                         // без серий играть нечем — кнопка молчит. В плеер уходят НОМЕР серии и
                         // СЕЗОН: номер уникален только внутри сезона.
@@ -282,7 +271,7 @@ private fun DetailsContent(
                 data = DetailsSectionsData(item, similar, people, series, episodes, selectedSeason),
                 actions = actions,
                 onSelectSeason = { selectedSeason = it },
-                returnFocus = returnFocus,
+                focus = focus,
             )
         }
     }
@@ -350,7 +339,7 @@ private fun LazyListScope.detailsSections(
     data: DetailsSectionsData,
     actions: DetailsActions,
     onSelectSeason: (Int) -> Unit,
-    returnFocus: TvReturnFocus,
+    focus: TvScreenFocus,
 ) {
     item(key = "about") { DetailsAbout(data.item) }
     if (data.people.isNotEmpty()) {
@@ -368,7 +357,7 @@ private fun LazyListScope.detailsSections(
                 selectedSeason = data.selectedSeason,
                 onSelectSeason = onSelectSeason,
                 onPlayEpisode = actions.onPlay,
-                returnFocus = returnFocus,
+                focus = focus,
             )
         )
     }
@@ -381,7 +370,7 @@ private fun LazyListScope.detailsSections(
 
 /** Фокус и действия кнопок hero — группой (detekt LongParameterList). */
 private data class HeroPlayback(
-    val playFocus: FocusRequester,
+    val playModifier: Modifier,
     val onPlay: () -> Unit,
     val onToggleFav: () -> Unit,
     /** Фокус зашёл на кнопки hero или ушёл с них — экран переключает стейт полотна. */
@@ -484,7 +473,7 @@ private fun HeroButtons(
             text = playLabel(resume),
             onClick = playback.onPlay,
             leadingIcon = Icons.Filled.PlayArrow,
-            focusRequester = playback.playFocus,
+            modifier = playback.playModifier,
         )
         TvButton(
             text = if (isFav) "В списке" else "Буду смотреть",
@@ -574,13 +563,12 @@ private fun DetailsAbout(item: Item) {
  */
 private fun LazyListScope.castRail(people: List<CastMember>, onOpenPerson: (String, Boolean) -> Unit) {
     item(key = "cast") {
-        TvRail(title = "Актёры", modifier = Modifier.padding(top = 24.dp)) { firstItemFocus ->
+        TvRail(title = "Актёры", modifier = Modifier.padding(top = 24.dp)) {
             // Без key: имена в составе могут повторяться, позиционного ключа достаточно.
-            itemsIndexed(people) { index, member ->
+            items(people) { member ->
                 TvActorCard(
                     member = member,
                     onClick = { onOpenPerson(member.name, false) },
-                    focusRequester = firstItemFocus.takeIf { index == 0 },
                 )
             }
         }
@@ -608,7 +596,7 @@ private fun LazyListScope.directorSection(director: String, onOpenPerson: (Strin
 
 /** Карточка актёра: круглый аватар (фото TMDB или инициалы) + имя. Фокус/скейл — как у медиа-карточек. */
 @Composable
-private fun TvActorCard(member: CastMember, onClick: () -> Unit, focusRequester: FocusRequester? = null) {
+private fun TvActorCard(member: CastMember, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val dim = rememberDimAlpha(focused)
     Column(
@@ -621,7 +609,6 @@ private fun TvActorCard(member: CastMember, onClick: () -> Unit, focusRequester:
         TvFocusCard(
             onClick = onClick,
             shape = CircleShape,
-            focusRequester = focusRequester,
             modifier = Modifier.size(TvActorAvatarSize),
         ) {
             Box(
@@ -667,7 +654,7 @@ private data class EpisodesSection(
     val selectedSeason: Int,
     val onSelectSeason: (Int) -> Unit,
     val onPlayEpisode: (season: Int, videoId: Int) -> Unit,
-    val returnFocus: TvReturnFocus,
+    val focus: TvScreenFocus,
 )
 
 /**
@@ -680,14 +667,13 @@ private data class EpisodesSection(
 private fun LazyListScope.episodesSection(section: EpisodesSection) {
     if (section.seasons.size > 1) {
         item(key = "seasons") {
-            TvRail(title = EPISODES_TITLE, modifier = Modifier.padding(top = 24.dp)) { firstItemFocus ->
+            TvRail(title = EPISODES_TITLE, modifier = Modifier.padding(top = 24.dp)) {
                 itemsIndexed(section.seasons, key = { _, season -> season.first }) { index, season ->
                     val number = season.first
                     TvChip(
                         label = if (number > 0) "Сезон $number" else "Серии",
                         selected = index == section.selectedSeason,
                         onClick = { section.onSelectSeason(index) },
-                        modifier = if (index == 0) Modifier.focusRequester(firstItemFocus) else Modifier,
                     )
                 }
             }
@@ -705,7 +691,7 @@ private fun LazyListScope.episodesSection(section: EpisodesSection) {
             resumeId = section.resumeId,
             selectedSeason = section.selectedSeason,
             onPlay = section.onPlayEpisode,
-            returnFocus = section.returnFocus,
+            focus = section.focus,
         )
     }
 }
@@ -723,7 +709,7 @@ private fun SectionTitle(title: String, modifier: Modifier = Modifier) {
 
 /**
  * Ряд серий. Свой LazyRow, а не [TvRail]: заголовок «Эпизоды» стоит над чипами сезонов, а
- * TvRail жёстко ставит заголовок над своим рядом. Отступы и focusRestorer — как у TvRail.
+ * TvRail жёстко ставит заголовок над своим рядом. Отступы и группа фокуса — как у TvRail.
  *
  * Ряд ПЕРЕСОЗДАЁТСЯ на каждый сезон (`key`), а не переиспользует один LazyListState. Соседний
  * сезон — это другой набор данных: другие ключи и другая длина. Общий стейт тащил в него скролл
@@ -733,22 +719,18 @@ private fun SectionTitle(title: String, modifier: Modifier = Modifier) {
  * (Crashlytics 1.7.1, реальный ТВ-бокс). Свежий стейт не тащит ни скролла, ни пинов, и сброс
  * скролла к началу больше не нужен отдельным эффектом.
  */
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun EpisodesRow(
     episodes: List<MediaTrack>,
     resumeId: Int?,
     selectedSeason: Int,
     onPlay: (season: Int, videoId: Int) -> Unit,
-    returnFocus: TvReturnFocus,
+    focus: TvScreenFocus,
 ) {
     key(selectedSeason) {
-        // Реквестер живёт внутри key вместе с рядом: focusRestorer дёргает его при каждом входе
-        // фокуса и падает, если тот остался без узла от прошлого сезона.
-        val firstItemFocus = remember { FocusRequester() }
         LazyRow(
             state = rememberLazyListState(),
-            modifier = Modifier.focusRestorer(firstItemFocus),
+            modifier = Modifier.tvFocusGroup(),
             contentPadding = PaddingValues(
                 start = TvMetrics.SafeHorizontal,
                 end = TvMetrics.SafeHorizontal,
@@ -757,24 +739,14 @@ private fun EpisodesRow(
             ),
             horizontalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
         ) {
-            itemsIndexed(episodes, key = { _, episode -> episode.id }) { index, episode ->
-                val returnKey = "episode:${episode.id}"
+            items(episodes, key = { episode -> episode.id }) { episode ->
                 EpisodeCard(
                     episode = episode,
                     isResume = episode.id == resumeId,
-                    focusRequester = returnFocus.target(
-                        key = returnKey,
-                        railFallback = firstItemFocus,
-                        isFirstInRail = index == 0,
-                    ),
+                    // Возврат из плеера ставит фокус обратно на эту серию.
+                    modifier = focus.item("episode:${episode.id}"),
                     // Плееру нужны номер серии (API `video`) и сезон, а не id трека.
-                    onClick = {
-                        // Возврат из плеера ставит фокус обратно на эту серию: без пометки он
-                        // доставался фоллбеку и садился на чип «Режиссёр» — ряд серий при этом
-                        // выглядел мёртвым, хотя на клавиши не отвечал не он, а фокус был не в нём.
-                        returnFocus.onOpen(returnKey)
-                        onPlay(episode.seasonNumber, episode.number)
-                    },
+                    onClick = { onPlay(episode.seasonNumber, episode.number) },
                 )
             }
         }
@@ -785,7 +757,7 @@ private fun EpisodesRow(
 private fun EpisodeCard(
     episode: MediaTrack,
     isResume: Boolean,
-    focusRequester: FocusRequester?,
+    modifier: Modifier,
     onClick: () -> Unit,
 ) {
     val progress = if (episode.durationSeconds > 0) {
@@ -799,10 +771,10 @@ private fun EpisodeCard(
         posterUrl = episode.thumbnail,
         progress = progress,
         onClick = onClick,
+        modifier = modifier,
         size = TvCardSize.Episode,
-        focusRequester = focusRequester,
-    ) { url, modifier ->
-        EpisodeThumb(url = url, episode = episode, isResume = isResume, modifier = modifier)
+    ) { url, posterModifier ->
+        EpisodeThumb(url = url, episode = episode, isResume = isResume, modifier = posterModifier)
     }
 }
 
@@ -849,15 +821,14 @@ private fun EpisodeThumb(url: String, episode: MediaTrack, isResume: Boolean, mo
 
 private fun LazyListScope.similarRail(similar: List<Item>, onOpenItem: (Int) -> Unit) {
     item(key = "similar") {
-        TvRail(title = "Похожее", modifier = Modifier.padding(top = 26.dp)) { firstItemFocus ->
-            itemsIndexed(similar, key = { _, simItem -> simItem.id }) { index, simItem ->
+        TvRail(title = "Похожее", modifier = Modifier.padding(top = 26.dp)) {
+            items(similar, key = { simItem -> simItem.id }) { simItem ->
                 TvPosterCard(
                     title = simItem.title,
                     meta = posterMeta(typeLabel(simItem.type), simItem.year),
                     posterUrl = simItem.posters.medium.ifEmpty { simItem.posters.big },
                     onClick = { onOpenItem(simItem.id) },
                     rating = ratingLabel(simItem.rating.kinopoisk),
-                    focusRequester = firstItemFocus.takeIf { index == 0 },
                 ) { url, modifier ->
                     PosterImage(
                         url = url,

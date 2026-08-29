@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -28,7 +29,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontWeight
@@ -49,12 +49,12 @@ import com.filmax.core.tv.designsystem.TvOverline
 import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvProgressCard
 import com.filmax.core.tv.designsystem.TvRail
-import com.filmax.core.tv.designsystem.TvReturnFocus
+import com.filmax.core.tv.designsystem.TvScreenFocus
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
-import com.filmax.core.tv.designsystem.rememberTvReturnFocus
+import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.core.ui.components.appErrorText
 import com.filmax.core.ui.components.continueMeta
@@ -141,11 +141,11 @@ private fun TvHomeContent(
 ) {
     val listState = rememberLazyListState()
     ScrollToTopOnNavFocus(listState)
-    val returnFocus = rememberTvReturnFocus()
+    val focus = rememberTvScreenFocus()
 
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().then(focus.containerModifier),
         contentPadding = PaddingValues(
             top = TvMetrics.ContentTop,
             bottom = TvMetrics.SafeVertical + TvMetrics.FocusInset,
@@ -163,22 +163,22 @@ private fun TvHomeContent(
                     // Фильм — единственный трек, эпизод выбирать не из чего: PlayerRoute.videoId = -1.
                     onPlay = { actions.onPlay(hero.id, NO_SEASON, NO_VIDEO_ID) },
                     onDetails = { actions.onOpenItem(hero.id) },
-                    returnFocus = returnFocus,
+                    focus = focus,
                 )
             }
         }
-        tvRails(state = state, actions = actions, returnFocus = returnFocus)
+        tvRails(state = state, actions = actions, focus = focus)
     }
 }
 
 /** Лента — это [HomeState.rows]: экран идёт по ним и рисует, состав и порядок задаёт модель. */
-private fun LazyListScope.tvRails(state: HomeState, actions: TvHomeActions, returnFocus: TvReturnFocus) {
+private fun LazyListScope.tvRails(state: HomeState, actions: TvHomeActions, focus: TvScreenFocus) {
     state.rows.forEach { row ->
         if (row.isEmpty) return@forEach
         when (row) {
-            is HomeRow.Continue -> tvContinueRail(row, actions, returnFocus)
-            is HomeRow.Titles -> tvPosterRail(row, actions, returnFocus)
-            is HomeRow.Collections -> tvCollectionsRail(row, actions, returnFocus)
+            is HomeRow.Continue -> tvContinueRail(row, actions, focus)
+            is HomeRow.Titles -> tvPosterRail(row, actions, focus)
+            is HomeRow.Collections -> tvCollectionsRail(row, actions, focus)
         }
     }
 }
@@ -196,46 +196,33 @@ private val HomeRowId.title: String
         HomeRowId.COLLECTIONS -> "Подборки"
     }
 
-private fun LazyListScope.tvContinueRail(
-    row: HomeRow.Continue,
-    actions: TvHomeActions,
-    returnFocus: TvReturnFocus,
-) {
+private fun LazyListScope.tvContinueRail(row: HomeRow.Continue, actions: TvHomeActions, focus: TvScreenFocus) {
     val onPlay = actions.onPlay
     item(key = row.id.name) {
-        TvRail(title = row.id.title) { firstItemFocus ->
-            itemsIndexed(row.entries, key = { _, entry -> entry.itemId }) { index, entry ->
+        TvRail(title = row.id.title) {
+            items(row.entries, key = { entry -> entry.itemId }) { entry ->
                 // Ряд продолжения ведёт сразу в плеер — на недосмотренный эпизод (videoId+сезон
                 // из истории), позицию внутри трека восстановит PlayerScreenModel.
                 TvContinueCard(
                     history = entry,
+                    modifier = focus.item(returnKey(row.id, entry.itemId)),
                     onClick = {
-                        returnFocus.onOpen("continue:${entry.itemId}")
                         onPlay(
                             entry.itemId,
                             entry.progress?.season ?: NO_SEASON,
                             entry.progress?.videoId ?: NO_VIDEO_ID,
                         )
                     },
-                    focusRequester = returnFocus.target(
-                        key = "continue:${entry.itemId}",
-                        railFallback = firstItemFocus,
-                        isFirstInRail = index == 0,
-                    ),
                 )
             }
         }
     }
 }
 
-private fun LazyListScope.tvPosterRail(
-    row: HomeRow.Titles,
-    actions: TvHomeActions,
-    returnFocus: TvReturnFocus,
-) {
+private fun LazyListScope.tvPosterRail(row: HomeRow.Titles, actions: TvHomeActions, focus: TvScreenFocus) {
     val railItems = row.paging.items
     item(key = row.id.name) {
-        TvRail(title = row.id.title) { firstItemFocus ->
+        TvRail(title = row.id.title) {
             itemsIndexed(railItems, key = { _, catalogItem -> catalogItem.id }) { index, catalogItem ->
                 // Хвостовая карточка скомпонована — зритель долистал ряд почти до конца:
                 // просим следующую страницу. Ленивый ряд композит только видимое (+префетч),
@@ -244,62 +231,36 @@ private fun LazyListScope.tvPosterRail(
                 if (index == railItems.lastIndex) {
                     LaunchedEffect(railItems.size) { actions.onLoadMoreRow(row.id) }
                 }
-                val returnKey = returnKey(row.id, catalogItem.id)
                 TvHomePosterCard(
                     item = catalogItem,
-                    onClick = {
-                        returnFocus.onOpen(returnKey)
-                        actions.onOpenItem(catalogItem.id)
-                    },
-                    focusRequester = returnFocus.target(
-                        key = returnKey,
-                        railFallback = firstItemFocus,
-                        isFirstInRail = index == 0,
-                    ),
+                    onClick = { actions.onOpenItem(catalogItem.id) },
+                    modifier = focus.item(returnKey(row.id, catalogItem.id)),
                 )
             }
         }
     }
 }
 
-private fun LazyListScope.tvCollectionsRail(
-    row: HomeRow.Collections,
-    actions: TvHomeActions,
-    returnFocus: TvReturnFocus,
-) {
+private fun LazyListScope.tvCollectionsRail(row: HomeRow.Collections, actions: TvHomeActions, focus: TvScreenFocus) {
     // Подборка без постера — пустая плашка: в монохроме карточку держит только картинка.
     val withPoster = row.paging.items.filter { it.posterUrl() != null }
     if (withPoster.isEmpty()) return
     item(key = row.id.name) {
-        TvRail(title = row.id.title) { firstItemFocus ->
+        TvRail(title = row.id.title) {
             itemsIndexed(withPoster, key = { _, collection -> collection.id }) { index, collection ->
                 // Хвостовая карточка скомпонована — просим следующую страницу (как у постер-рядов).
                 if (index == withPoster.lastIndex) {
                     LaunchedEffect(withPoster.size) { actions.onLoadMoreRow(row.id) }
                 }
-                val returnKey = returnKey(row.id, collection.id)
                 TvCollectionCard(
                     collection = collection,
-                    onClick = {
-                        returnFocus.onOpen(returnKey)
-                        actions.onOpenCollection(collection.id, collection.title)
-                    },
-                    focusRequester = returnFocus.target(
-                        key = returnKey,
-                        railFallback = firstItemFocus,
-                        isFirstInRail = index == 0,
-                    ),
+                    onClick = { actions.onOpenCollection(collection.id, collection.title) },
+                    modifier = focus.item(returnKey(row.id, collection.id)),
                 )
             }
         }
     }
 }
-
-/**
- * Ключ возврата фокуса: «ряд:id». Ряд в префиксе обязателен — по нему [TvReturnFocus] понимает,
- * какому ряду отдать фоллбек focusRestorer, а один тайтл может встречаться в нескольких рядах.
- */
-private fun returnKey(row: HomeRowId, itemId: Int): String = "$row:$itemId"
 
 // ── Hero ──────────────────────────────────────────────────────────────────
 
@@ -341,7 +302,7 @@ private fun TvHero(
     item: Item,
     onPlay: () -> Unit,
     onDetails: () -> Unit,
-    returnFocus: TvReturnFocus,
+    focus: TvScreenFocus,
 ) {
     Box(
         modifier = Modifier
@@ -358,7 +319,7 @@ private fun TvHero(
         Box(Modifier.fillMaxSize().background(HeroScrimHorizontal))
         Box(Modifier.fillMaxSize().background(HeroScrimVertical))
 
-        TvHeroOverlay(item = item, onPlay = onPlay, onDetails = onDetails, returnFocus = returnFocus)
+        TvHeroOverlay(item = item, onPlay = onPlay, onDetails = onDetails, focus = focus)
     }
 }
 
@@ -367,7 +328,7 @@ private fun BoxScope.TvHeroOverlay(
     item: Item,
     onPlay: () -> Unit,
     onDetails: () -> Unit,
-    returnFocus: TvReturnFocus,
+    focus: TvScreenFocus,
 ) {
     Column(
         modifier = Modifier
@@ -389,26 +350,13 @@ private fun BoxScope.TvHeroOverlay(
         Spacer(Modifier.height(20.dp))
         // «Буду смотреть» из макета не выводим: события watchlist в HomeEvent нет, а кнопка,
         // которая ничего не делает, хуже отсутствующей.
-        // Кнопки hero помечаются так же, как карточки рядов: без этого возврат с деталей или из
-        // плеера не находил, куда ставить фокус, и он доставался фоллбеку графа — таб-бару.
-        // А заход фокуса в таб-бар это сигнал «контент — в начало», и лента ещё и отскакивала вверх.
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TvButton(
-                "Смотреть",
-                onClick = {
-                    returnFocus.onOpen(HERO_PLAY_KEY)
-                    onPlay()
-                },
-                focusRequester = returnFocus.target(HERO_PLAY_KEY),
-            )
+            TvButton("Смотреть", onClick = onPlay, modifier = focus.item(HERO_PLAY_KEY))
             TvButton(
                 "Подробнее",
-                onClick = {
-                    returnFocus.onOpen(HERO_DETAILS_KEY)
-                    onDetails()
-                },
+                onClick = onDetails,
+                modifier = focus.item(HERO_DETAILS_KEY),
                 primary = false,
-                focusRequester = returnFocus.target(HERO_DETAILS_KEY),
             )
         }
     }
@@ -446,14 +394,14 @@ private fun TvHeroMeta(item: Item) {
 // ── Карточки рядов ────────────────────────────────────────────────────────
 
 @Composable
-private fun TvHomePosterCard(item: Item, onClick: () -> Unit, focusRequester: FocusRequester?) {
+private fun TvHomePosterCard(item: Item, onClick: () -> Unit, modifier: Modifier) {
     TvPosterCard(
+        modifier = modifier,
         title = item.title,
         meta = posterMeta(type = item.type.label(), year = item.year),
         posterUrl = item.posters.medium.ifEmpty { item.posters.big },
         rating = ratingLabel(item.rating.kinopoisk),
         onClick = onClick,
-        focusRequester = focusRequester,
         posterContent = { url, posterModifier ->
             PosterImage(
                 url = url,
@@ -467,13 +415,13 @@ private fun TvHomePosterCard(item: Item, onClick: () -> Unit, focusRequester: Fo
 }
 
 @Composable
-private fun TvCollectionCard(collection: Collection, onClick: () -> Unit, focusRequester: FocusRequester?) {
+private fun TvCollectionCard(collection: Collection, onClick: () -> Unit, modifier: Modifier) {
     TvPosterCard(
+        modifier = modifier,
         title = collection.title,
         meta = null,
         posterUrl = collection.posterUrl().orEmpty(),
         onClick = onClick,
-        focusRequester = focusRequester,
         posterContent = { url, posterModifier ->
             PosterImage(
                 url = url,
@@ -487,15 +435,15 @@ private fun TvCollectionCard(collection: Collection, onClick: () -> Unit, focusR
 }
 
 @Composable
-private fun TvContinueCard(history: WatchHistory, onClick: () -> Unit, focusRequester: FocusRequester?) {
+private fun TvContinueCard(history: WatchHistory, onClick: () -> Unit, modifier: Modifier) {
     TvProgressCard(
+        modifier = modifier,
         title = history.title,
         meta = continueMeta(history.progress),
         // Карточка 16:9 — берём кадр, а не вертикальный постер: тот обрезался бы по центру.
         posterUrl = history.wideOrPoster,
         progress = history.progress?.fraction ?: 0f,
         onClick = onClick,
-        focusRequester = focusRequester,
         posterContent = { url, posterModifier ->
             PosterImage(
                 url = url,
@@ -523,9 +471,12 @@ private fun TvOfflineBanner(onReload: () -> Unit) {
 // ── Форматирование ────────────────────────────────────────────────────────
 
 /**
- * Ключи возврата фокуса на кнопки hero. В одном пространстве с ключами карточек
- * («continue:42», «trending:17») — hero единственный на экране, поэтому без id.
+ * Ключ возврата фокуса: «ряд:id». Ряд в префиксе обязателен — один тайтл встречается сразу
+ * в нескольких рядах, а ключ должен быть уникален в пределах экрана.
  */
+private fun returnKey(row: HomeRowId, itemId: Int): String = "$row:$itemId"
+
+/** Ключи кнопок hero: hero на экране один, поэтому без id. */
 private const val HERO_PLAY_KEY = "hero:play"
 private const val HERO_DETAILS_KEY = "hero:details"
 

@@ -7,19 +7,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.platform.LocalView
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
@@ -31,6 +29,7 @@ import com.filmax.app.navigation.AuthStateNavigation
 import com.filmax.app.navigation.RootScreenModel
 import com.filmax.app.navigation.navFadeIn
 import com.filmax.app.navigation.navFadeOut
+import com.filmax.core.tv.designsystem.LocalTvNavBarFocused
 import com.filmax.core.tv.designsystem.LocalTvScrollToTop
 import com.filmax.feature.collections.common.navigation.CollectionDetailRoute
 import com.filmax.feature.collections.tv.navigation.tvCollectionDetailScreen
@@ -79,9 +78,14 @@ fun FilmaxTvNavGraph(
 
     // Явная связь фокуса между оверлейной шапкой и контентом: они — соседи в Box, и
     // D-pad-поиск между ними сам по себе не проходит, поэтому шапка по «вниз» уводит в
-    // [contentFocus], а контент получает стартовый фокус, чтобы экран сразу скроллился.
+    // [contentFocus], а контент по «вверх» — в шапку.
     val navBarFocus = remember { FocusRequester() }
     val contentFocus = remember { FocusRequester() }
+
+    // Фокус в шапке — единственная причина, по которой экран НЕ забирает стартовый фокус себе
+    // (см. tvScreenFocus): пользователь выбирает вкладки подряд, и подхват фокуса контентом
+    // стоил бы ему лишнего «вверх» на каждый переход.
+    val navBarFocused = remember { mutableStateOf(false) }
 
     // Сигнал «контент — в начало»: растёт при каждом заходе фокуса в шапку, экраны слушают его
     // через LocalTvScrollToTop и скроллят свой контейнер вверх, чтобы он не «застревал» внизу.
@@ -105,7 +109,10 @@ fun FilmaxTvNavGraph(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        CompositionLocalProvider(LocalTvScrollToTop provides scrollToTopSignal) {
+        CompositionLocalProvider(
+            LocalTvScrollToTop provides scrollToTopSignal,
+            LocalTvNavBarFocused provides navBarFocused,
+        ) {
             NavHost(
                 navController = navController,
                 startDestination = TvSplashRoute,
@@ -132,35 +139,12 @@ fun FilmaxTvNavGraph(
                 // Любой заход фокуса в шапку (с контента или стартовый) — повод увести контент вверх.
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .onFocusChanged { if (it.hasFocus) scrollToTopSignal++ },
+                    .onFocusChanged {
+                        navBarFocused.value = it.hasFocus
+                        if (it.hasFocus) scrollToTopSignal++
+                    },
             )
         }
-    }
-
-    InitialContentFocus(showTopBar = showTopBar, content = contentFocus, navBar = navBarFocus)
-}
-
-/**
- * Стартовый фокус — на контенте, а не на шапке: иначе каждый вход в раздел стоит пользователю
- * лишнего «вниз». Контент композится не мгновенно, поэтому сначала пара кадров ожидания.
- *
- * Реквест — только когда фокуса нет нигде (первый вход после сплэша). При возврате из
- * карточки/плеера Compose сам возвращает фокус в контент, и принудительный requestFocus
- * лишь портил картину: фокус улетал на первый focusable экрана (hero), bring-into-view
- * подтягивал к нему прокрутку, и восстановленный скролл терялся.
- * Фоллбек на таб-бар остаётся (гарантия «фокус есть всегда» из гайдлайна Google).
- */
-@Composable
-private fun InitialContentFocus(showTopBar: Boolean, content: FocusRequester, navBar: FocusRequester) {
-    val view = LocalView.current
-    LaunchedEffect(showTopBar) {
-        if (!showTopBar) return@LaunchedEffect
-        // 10 кадров: позже ретраев rememberTvReturnFocus (8), чтобы точечное восстановление
-        // фокуса на карточку успело раньше этого фоллбека.
-        repeat(10) { withFrameNanos { } }
-        if (view.findFocus() != null) return@LaunchedEffect
-        runCatching { content.requestFocus() }
-            .onFailure { runCatching { navBar.requestFocus() } }
     }
 }
 

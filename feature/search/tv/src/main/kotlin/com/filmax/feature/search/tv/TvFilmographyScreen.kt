@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.SearchOff
@@ -20,12 +20,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.catalog.model.Item
@@ -38,6 +35,7 @@ import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
+import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.feature.search.common.FilmographyScreenModel
 import com.filmax.feature.search.common.FilmographyState
@@ -113,14 +111,11 @@ private fun FilmographyBody(state: FilmographyState, onOpenItem: (Int) -> Unit) 
 
 @Composable
 private fun FilmographyGrid(items: List<Item>, onOpenItem: (Int) -> Unit) {
-    val firstCardFocus = remember { FocusRequester() }
-    // Стартовый фокус на первой карточке: без него первое нажатие пульта уходит в никуда.
-    // runCatching — на первом кадре узел ещё может быть не привязан к FocusRequester.
-    LaunchedEffect(Unit) { runCatching { firstCardFocus.requestFocus() } }
+    val focus = rememberTvScreenFocus()
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(GRID_COLUMNS),
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().then(focus.containerModifier),
         // Запас сверху/снизу под рамку фокуса крайних карточек — иначе клип сетки её срезает.
         contentPadding = PaddingValues(
             start = TvMetrics.SafeHorizontal,
@@ -131,10 +126,10 @@ private fun FilmographyGrid(items: List<Item>, onOpenItem: (Int) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
         verticalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
     ) {
-        itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+        items(items, key = { item -> item.id }) { item ->
             FilmographyPoster(
                 item = item,
-                focusRequester = if (index == 0) firstCardFocus else null,
+                modifier = focus.item("filmography:${item.id}"),
                 onClick = { onOpenItem(item.id) },
             )
         }
@@ -144,7 +139,7 @@ private fun FilmographyGrid(items: List<Item>, onOpenItem: (Int) -> Unit) {
 @Composable
 private fun FilmographyPoster(
     item: Item,
-    focusRequester: FocusRequester?,
+    modifier: Modifier,
     onClick: () -> Unit,
 ) {
     TvPosterCard(
@@ -152,8 +147,8 @@ private fun FilmographyPoster(
         meta = posterMeta(itemTypeLabel(item.type), item.year),
         posterUrl = item.posters.medium.ifEmpty { item.posters.big },
         onClick = onClick,
+        modifier = modifier,
         rating = ratingLabel(item.rating.external),
-        focusRequester = focusRequester,
     ) { url, posterModifier ->
         PosterImage(
             url = url,

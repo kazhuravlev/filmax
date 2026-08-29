@@ -9,17 +9,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,6 +27,7 @@ import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
+import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.feature.collections.common.CollectionDetailScreenModel
 import org.koin.androidx.compose.koinViewModel
@@ -46,10 +44,7 @@ fun TvCollectionDetailScreen(
     screenModel: CollectionDetailScreenModel = koinViewModel(),
 ) {
     val state by screenModel.collectAsState()
-    val firstCardFocus = remember { FocusRequester() }
-    // Стартовый фокус на первой карточке: без него первое нажатие пульта уходит в никуда.
-    // runCatching — на первом кадре узел ещё может быть не привязан к FocusRequester.
-    LaunchedEffect(state.items.firstOrNull()?.id) { runCatching { firstCardFocus.requestFocus() } }
+    val focus = rememberTvScreenFocus()
 
     Column(
         modifier = modifier
@@ -82,6 +77,7 @@ fun TvCollectionDetailScreen(
             // растягивало ячейки и рвало ритм сетки.
             else -> LazyVerticalGrid(
                 columns = GridCells.FixedSize(TvMetrics.PosterWidth),
+                modifier = focus.containerModifier,
                 horizontalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
                 verticalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
                 // Запас сверху/снизу под рамку фокуса крайних карточек — иначе клип сетки её срезает.
@@ -92,10 +88,10 @@ fun TvCollectionDetailScreen(
                     bottom = TvMetrics.SafeVertical + TvMetrics.FocusInset,
                 ),
             ) {
-                itemsIndexed(state.items, key = { _, item -> item.id }) { index, item ->
+                items(state.items, key = { item -> item.id }) { item ->
                     CollectionPoster(
                         item = item,
-                        focusRequester = firstCardFocus.takeIf { index == 0 },
+                        modifier = focus.item("collection:${item.id}"),
                         onClick = { onOpenItem(item.id) },
                     )
                 }
@@ -106,14 +102,14 @@ fun TvCollectionDetailScreen(
 
 /** Карточка тайтла — общая для всего ТВ-приложения (ряды Главной, каталог, фильмография). */
 @Composable
-private fun CollectionPoster(item: Item, focusRequester: FocusRequester?, onClick: () -> Unit) {
+private fun CollectionPoster(item: Item, modifier: Modifier, onClick: () -> Unit) {
     TvPosterCard(
         title = item.title,
         meta = posterMeta(item.type.label(), item.year),
         posterUrl = item.posters.medium.ifEmpty { item.posters.big },
         onClick = onClick,
         rating = ratingLabel(item.rating.external),
-        focusRequester = focusRequester,
+        modifier = modifier,
     ) { url, posterModifier ->
         PosterImage(
             url = url,

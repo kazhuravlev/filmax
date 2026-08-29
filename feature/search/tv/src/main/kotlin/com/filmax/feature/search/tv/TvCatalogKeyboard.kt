@@ -38,7 +38,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.catalog.model.Item
@@ -126,17 +128,23 @@ internal data class TvKeyboardActions(
 @Composable
 internal fun TvKeyboardOverlay(state: SearchState, actions: TvKeyboardActions) {
     var layout by remember { mutableStateOf(KeyLayout.RU) }
+    // Стартовый фокус на первой букве: просим его, когда клавиша размещена. До раскладки
+    // FocusRequester ещё не привязан к узлу, а лэйаут сам сообщает, когда она готова.
     val firstKey = remember { FocusRequester() }
+    var focusRequested by remember { mutableStateOf(false) }
+    val firstKeyModifier = Modifier
+        .focusRequester(firstKey)
+        .onPlaced {
+            if (!focusRequested) {
+                focusRequested = true
+                firstKey.requestFocus()
+            }
+        }
     // Голос слушаем внутри приложения (SpeechRecognizer), без стороннего экрана распознавания.
     val voice = rememberInAppVoiceSearch { spoken -> actions.onSubmit(spoken) }
     VoiceListeningDialog(voice)
 
     BackHandler(onBack = actions.onClose)
-    LaunchedEffect(Unit) {
-        // Ждём кадр: до раскладки клавиш FocusRequester ещё не привязан к узлу.
-        withFrameNanos { }
-        runCatching { firstKey.requestFocus() }
-    }
 
     fun onKey(key: KeyCap) {
         when (key.action) {
@@ -170,7 +178,7 @@ internal fun TvKeyboardOverlay(state: SearchState, actions: TvKeyboardActions) {
                 color = TvOnSurfaceDim,
                 modifier = Modifier.padding(top = 12.dp, bottom = 8.dp),
             )
-            KeyboardKeys(layout = layout, firstKey = firstKey, onKey = ::onKey)
+            KeyboardKeys(layout = layout, firstKeyModifier = firstKeyModifier, onKey = ::onKey)
         }
         KeyboardResults(
             state = state,
@@ -243,14 +251,14 @@ private fun KeyboardInput(query: String) {
 }
 
 @Composable
-private fun KeyboardKeys(layout: KeyLayout, firstKey: FocusRequester, onKey: (KeyCap) -> Unit) {
+private fun KeyboardKeys(layout: KeyLayout, firstKeyModifier: Modifier, onKey: (KeyCap) -> Unit) {
     val rows = remember(layout) { keyRows(layout) }
     Column(verticalArrangement = Arrangement.spacedBy(KEY_GAP_DP.dp)) {
         rows.forEachIndexed { rowIndex, row ->
             KeyboardRow(
                 row = row,
                 // Фокус при открытии — на первой букве, а не на служебном ряду сверху.
-                firstKey = firstKey.takeIf { rowIndex == FIRST_LETTER_ROW },
+                firstKeyModifier = firstKeyModifier.takeIf { rowIndex == FIRST_LETTER_ROW },
                 onKey = onKey,
             )
         }
@@ -258,26 +266,25 @@ private fun KeyboardKeys(layout: KeyLayout, firstKey: FocusRequester, onKey: (Ke
 }
 
 @Composable
-private fun KeyboardRow(row: List<KeyCap>, firstKey: FocusRequester?, onKey: (KeyCap) -> Unit) {
+private fun KeyboardRow(row: List<KeyCap>, firstKeyModifier: Modifier?, onKey: (KeyCap) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(KEY_GAP_DP.dp)) {
         row.forEachIndexed { index, key ->
             KeyboardKey(
                 key = key,
                 onClick = { onKey(key) },
-                focusRequester = firstKey.takeIf { index == 0 },
+                modifier = firstKeyModifier.takeIf { index == 0 } ?: Modifier,
             )
         }
     }
 }
 
 @Composable
-private fun RowScope.KeyboardKey(key: KeyCap, onClick: () -> Unit, focusRequester: FocusRequester?) {
+private fun RowScope.KeyboardKey(key: KeyCap, onClick: () -> Unit, modifier: Modifier) {
     val shape = MaterialTheme.shapes.small
     TvFocusCard(
         onClick = onClick,
         shape = shape,
-        focusRequester = focusRequester,
-        modifier = Modifier.weight(key.weight).height(KEY_HEIGHT_DP.dp),
+        modifier = modifier.weight(key.weight).height(KEY_HEIGHT_DP.dp),
     ) {
         Box(
             Modifier

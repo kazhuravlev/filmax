@@ -47,6 +47,7 @@ import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
+import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.FilmaxVersionLabel
 import com.filmax.feature.profile.common.ProfileEvent
 import com.filmax.feature.profile.common.ProfileScreenModel
@@ -121,10 +122,12 @@ private fun ProfileContent(
 ) {
     val scrollState = rememberScrollState()
     ScrollToTopOnNavFocus(scrollState)
+    val focus = rememberTvScreenFocus()
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(TvSurface)
+            .then(focus.containerModifier)
             .verticalScroll(scrollState)
             .padding(
                 start = TvMetrics.SafeHorizontal,

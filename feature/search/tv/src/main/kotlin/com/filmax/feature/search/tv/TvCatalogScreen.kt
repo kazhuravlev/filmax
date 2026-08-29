@@ -31,7 +31,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -56,13 +55,13 @@ import com.filmax.core.tv.designsystem.TvOnSurface
 import com.filmax.core.tv.designsystem.TvOnSurfaceDim
 import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvPosterCard
-import com.filmax.core.tv.designsystem.TvReturnFocus
+import com.filmax.core.tv.designsystem.TvScreenFocus
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
-import com.filmax.core.tv.designsystem.rememberTvReturnFocus
+import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.feature.search.common.SearchEvent
 import com.filmax.feature.search.common.SearchScreenModel
@@ -79,6 +78,9 @@ private const val GRID_COLUMNS = 4
 /** За сколько хвостовых рядов сетки до конца просить следующую страницу витрины. */
 private const val LOAD_MORE_TAIL = 3
 
+/** Ключ фокуса строки поиска: сюда фокус возвращается после закрытия клавиатуры. */
+private const val SEARCH_KEY = "search"
+
 /**
  * TV-Каталог (экран «Каталог» макета) — витрина, а не строка поиска: сетка постеров живёт по
  * фильтрам тип/жанр/сортировка и наполнена ещё до того, как зритель набрал первую букву. Текст
@@ -94,23 +96,12 @@ fun TvCatalogScreen(
 ) {
     val state by screenModel.collectAsState()
     var keyboardOpen by remember { mutableStateOf(false) }
-    var restoreFocus by remember { mutableStateOf(false) }
-    val searchBarFocus = remember { FocusRequester() }
+    val focus = rememberTvScreenFocus()
     val listState = rememberLazyListState()
 
     // Витрину и жанры тянем только здесь: телефонный поиск с тем же ScreenModel показывает
     // подсказки, и выдача каталога ему не нужна.
     LaunchedEffect(Unit) { screenModel.dispatch(SearchEvent.LoadCatalog) }
-
-    // Клавиатура снимает каталог из композиции целиком — это ловушка фокуса (иначе D-pad
-    // уходил бы сквозь оверлей на карточки под ним). После закрытия фокус возвращаем на строку
-    // поиска: кадр ожидания нужен, чтобы ленивая сетка успела разложить её обратно.
-    LaunchedEffect(restoreFocus) {
-        if (!restoreFocus) return@LaunchedEffect
-        withFrameNanos { }
-        runCatching { searchBarFocus.requestFocus() }
-        restoreFocus = false
-    }
 
     Box(modifier.fillMaxSize().background(TvSurface)) {
         if (keyboardOpen) {
@@ -121,8 +112,11 @@ fun TvCatalogScreen(
                     onSubmit = { screenModel.dispatch(SearchEvent.SubmitQuery(it)) },
                     onOpenItem = onOpenItem,
                     onClose = {
+                        // Клавиатура снимает каталог из композиции целиком (иначе D-pad уходил бы
+                        // сквозь оверлей на карточки под ним). Фокус возвращаем на строку поиска
+                        // — она заберёт его, когда ленивый список снова её разложит.
                         keyboardOpen = false
-                        restoreFocus = true
+                        focus.focusOn(SEARCH_KEY)
                     },
                 ),
             )
@@ -130,7 +124,7 @@ fun TvCatalogScreen(
             CatalogContent(
                 state = state,
                 listState = listState,
-                searchBarFocus = searchBarFocus,
+                focus = focus,
                 actions = CatalogActions(
                     onOpenItem = onOpenItem,
                     onOpenKeyboard = { keyboardOpen = true },
@@ -159,12 +153,11 @@ private data class CatalogActions(
 private fun CatalogContent(
     state: SearchState,
     listState: LazyListState,
-    searchBarFocus: FocusRequester,
+    focus: TvScreenFocus,
     actions: CatalogActions,
     onLoadMore: () -> Unit,
 ) {
     ScrollToTopOnNavFocus(listState)
-    val returnFocus = rememberTvReturnFocus()
     val gridItems = state.visibleItems
     // Постеры бьём на ряды по GRID_COLUMNS и кладём в ОБЩИЙ LazyColumn вместе с шапкой — так
     // скроллится ВЕСЬ экран (шапка уезжает вверх), а не только сетка под фиксированной шапкой,
@@ -186,7 +179,7 @@ private fun CatalogContent(
 
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().then(focus.containerModifier),
         contentPadding = PaddingValues(
             top = TvMetrics.ContentTop,
             bottom = TvMetrics.SafeVertical + TvMetrics.FocusInset,
@@ -196,7 +189,7 @@ private fun CatalogContent(
         item(key = "header") {
             CatalogHeader(
                 state = state,
-                searchBarFocus = searchBarFocus,
+                searchModifier = focus.item(SEARCH_KEY),
                 actions = actions,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -205,7 +198,7 @@ private fun CatalogContent(
             item(key = "empty") { CatalogEmpty() }
         }
         itemsIndexed(rows, key = { index, _ -> "row-$index" }) { _, row ->
-            CatalogPosterRow(row = row, onOpenItem = actions.onOpenItem, returnFocus = returnFocus)
+            CatalogPosterRow(row = row, onOpenItem = actions.onOpenItem, focus = focus)
         }
         if (state.catalogLoadingMore) {
             item(key = "loading_more") { CatalogLoadingMore() }
@@ -226,7 +219,7 @@ private fun CatalogLoadingMore() {
  * safe area. Хвостовые пустые ячейки не добираем — последний ряд просто короче.
  */
 @Composable
-private fun CatalogPosterRow(row: List<Item>, onOpenItem: (Int) -> Unit, returnFocus: TvReturnFocus) {
+private fun CatalogPosterRow(row: List<Item>, onOpenItem: (Int) -> Unit, focus: TvScreenFocus) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = TvMetrics.SafeHorizontal),
         horizontalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
@@ -234,11 +227,8 @@ private fun CatalogPosterRow(row: List<Item>, onOpenItem: (Int) -> Unit, returnF
         row.forEach { item ->
             CatalogPoster(
                 item = item,
-                focusRequester = returnFocus.target("grid:${item.id}"),
-                onClick = {
-                    returnFocus.onOpen("grid:${item.id}")
-                    onOpenItem(item.id)
-                },
+                modifier = focus.item("grid:${item.id}"),
+                onClick = { onOpenItem(item.id) },
             )
         }
     }
@@ -247,14 +237,14 @@ private fun CatalogPosterRow(row: List<Item>, onOpenItem: (Int) -> Unit, returnF
 @Composable
 private fun CatalogHeader(
     state: SearchState,
-    searchBarFocus: FocusRequester,
+    searchModifier: Modifier,
     actions: CatalogActions,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier) {
         CatalogSearchBar(
             query = state.query,
-            focusRequester = searchBarFocus,
+            modifier = searchModifier,
             onClick = actions.onOpenKeyboard,
         )
         Spacer(Modifier.height(16.dp))
@@ -290,15 +280,14 @@ private fun CatalogHeader(
 @Composable
 private fun CatalogSearchBar(
     query: String,
-    focusRequester: FocusRequester,
+    modifier: Modifier,
     onClick: () -> Unit,
 ) {
     TvFocusCard(
         onClick = onClick,
         shape = TvMetrics.PanelShape,
-        focusRequester = focusRequester,
         // Строка поиска — не чип-ряд: остаётся в safe-области собственным отступом.
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = TvMetrics.SafeHorizontal)
             .height(56.dp),
@@ -453,14 +442,14 @@ private fun CatalogEmpty() {
 }
 
 @Composable
-private fun CatalogPoster(item: Item, focusRequester: FocusRequester?, onClick: () -> Unit) {
+private fun CatalogPoster(item: Item, modifier: Modifier, onClick: () -> Unit) {
     TvPosterCard(
         title = item.title,
         meta = posterMeta(itemTypeLabel(item.type), item.year),
         posterUrl = item.posters.medium.ifEmpty { item.posters.big },
         onClick = onClick,
+        modifier = modifier,
         rating = formatRating(item.rating.external),
-        focusRequester = focusRequester,
     ) { url, posterModifier ->
         PosterImage(
             url = url,
