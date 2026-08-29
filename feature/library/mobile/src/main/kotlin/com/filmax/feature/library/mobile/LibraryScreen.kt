@@ -68,12 +68,12 @@ import com.filmax.core.designsystem.ShapeFull
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.model.WatchHistory
-import com.filmax.core.domain.watching.model.WatchProgress
 import com.filmax.core.navigation.Destination
 import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxEmptyState
 import com.filmax.core.ui.components.FilmaxPosterCard
 import com.filmax.core.ui.components.FilmaxProgressCard
+import com.filmax.core.ui.components.continueMeta
 import com.filmax.core.ui.components.posterMeta
 import com.filmax.core.ui.components.ratingLabel
 import com.filmax.feature.library.common.LibraryEvent
@@ -459,7 +459,7 @@ private fun LazyGridScope.historySegment(state: LibraryState, actions: MineActio
 private fun ProgressCard(entry: WatchHistory, onOpenItem: (Int) -> Unit) {
     FilmaxProgressCard(
         title = entry.title,
-        meta = progressMeta(entry.progress),
+        meta = continueMeta(entry.progress),
         // Карточка 16:9 — берём кадр серии, а не вертикальный постер: тот обрезался бы по центру.
         posterUrl = entry.wideOrPoster,
         progress = entry.progress?.fraction ?: 0f,
@@ -825,39 +825,6 @@ private fun columnsFor(segment: MineSegment, folderOpen: Boolean): Int = when (s
     MineSegment.BOOKMARKS -> if (folderOpen) POSTER_COLUMNS else FOLDER_COLUMNS
 }
 
-/**
- * Подпись карточки: «S2 · осталось 18 мин». Номер эпизода макета («E5») не выводим: в
- * [WatchProgress] его нет — `videoId` это идентификатор трека, а не порядковый номер серии.
- */
-private fun progressMeta(progress: WatchProgress?): String? {
-    if (progress == null) return null
-    val parts = buildList {
-        progress.season?.takeIf { it > 0 }?.let { season -> add("S$season") }
-        remainingLabel(progress)?.let { remaining -> add("осталось $remaining") }
-    }
-    return parts.joinToString(" · ").ifBlank { null }
-}
-
-/** Остаток трека словами; null — прогресса нет или уже досмотрено. */
-private fun remainingLabel(progress: WatchProgress): String? =
-    remainingMinutes(progress)?.let { minutes ->
-        val hours = minutes / MINUTES_IN_HOUR
-        val rest = minutes % MINUTES_IN_HOUR
-        when {
-            hours > 0 && rest > 0 -> "$hours ч $rest мин"
-            hours > 0 -> "$hours ч"
-            else -> "$rest мин"
-        }
-    }
-
-/** Сколько минут осталось; null — прогресса нет или трек уже досмотрен. */
-private fun remainingMinutes(progress: WatchProgress): Int? {
-    val watched = progress.timeSeconds
-    val total = progress.durationSeconds?.takeIf { it > 0 }
-    if (watched == null || total == null) return null
-    return ((total - watched) / SECONDS_IN_MINUTE).takeIf { it > 0 }
-}
-
 private val GridPadding = PaddingValues(
     start = FilmaxMetrics.ScreenPadding,
     end = FilmaxMetrics.ScreenPadding,
@@ -871,14 +838,9 @@ private const val POSTER_COLUMNS = 3
 private const val WIDE_COLUMNS = 2
 private const val FOLDER_COLUMNS = 2
 
-/** `PlayerRoute.videoId` для фильма/неизвестного эпизода — плеер возьмёт первый трек. */
-
 /** Доля просмотра, при которой тайтл считается начатым, но не досмотренным. */
 private const val CONTINUE_MIN_FRACTION = 0.01f
 private const val CONTINUE_MAX_FRACTION = 0.95f
-
-private const val MINUTES_IN_HOUR = 60
-private const val SECONDS_IN_MINUTE = 60
 
 /** За сколько карточек до конца сетки просить следующую страницу папки (примерно ряд). */
 private const val LOAD_MORE_TAIL = 4

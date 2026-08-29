@@ -38,7 +38,6 @@ import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.watching.model.WatchHistory
-import com.filmax.core.domain.watching.model.WatchProgress
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvAccent
 import com.filmax.core.tv.designsystem.TvButton
@@ -58,7 +57,12 @@ import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvReturnFocus
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.core.ui.components.appErrorText
+import com.filmax.core.ui.components.continueMeta
+import com.filmax.core.ui.components.durationLabel
+import com.filmax.core.ui.components.posterUrl
 import com.filmax.feature.home.common.HomeEvent
+import com.filmax.feature.home.common.HomeRow
+import com.filmax.feature.home.common.HomeRowId
 import com.filmax.feature.home.common.HomeScreenModel
 import com.filmax.feature.home.common.HomeState
 import org.koin.androidx.compose.koinViewModel
@@ -113,9 +117,7 @@ fun TvHomeScreen(
                     onPlay = onPlay,
                     onOpenCollection = onOpenCollection,
                     onReload = { screenModel.dispatch(HomeEvent.Load) },
-                    onLoadMoreTrending = { screenModel.dispatch(HomeEvent.LoadMoreTrending) },
-                    onLoadMoreForYou = { screenModel.dispatch(HomeEvent.LoadMoreForYou) },
-                    onLoadMoreCollections = { screenModel.dispatch(HomeEvent.LoadMoreCollections) },
+                    onLoadMoreRow = { id -> screenModel.dispatch(HomeEvent.LoadMoreRow(id)) },
                 ),
             )
         }
@@ -128,9 +130,7 @@ private data class TvHomeActions(
     val onPlay: (itemId: Int, season: Int, videoId: Int) -> Unit,
     val onOpenCollection: (id: Int, title: String) -> Unit,
     val onReload: () -> Unit,
-    val onLoadMoreTrending: () -> Unit,
-    val onLoadMoreForYou: () -> Unit,
-    val onLoadMoreCollections: () -> Unit,
+    val onLoadMoreRow: (HomeRowId) -> Unit,
 )
 
 @Composable
@@ -171,54 +171,40 @@ private fun TvHomeContent(
     }
 }
 
+/** Лента — это [HomeState.rows]: экран идёт по ним и рисует, состав и порядок задаёт модель. */
 private fun LazyListScope.tvRails(state: HomeState, actions: TvHomeActions, returnFocus: TvReturnFocus) {
-    tvContinueRail(history = state.continueWatching, onPlay = actions.onPlay, returnFocus = returnFocus)
-    tvPosterRail(
-        rail = TvRailSpec(
-            key = "trending",
-            title = "В тренде",
-            railItems = state.trendingRow.items,
-            onLoadMore = actions.onLoadMoreTrending,
-        ),
-        onOpenItem = actions.onOpenItem,
-        returnFocus = returnFocus,
-    )
-    // Заголовок честный: `forYou` — это топ сериалов по рейтингу, персонализации в фиде нет.
-    tvPosterRail(
-        rail = TvRailSpec(
-            key = "forYou",
-            title = "Сериалы с высоким рейтингом",
-            railItems = state.forYouRow.items,
-            onLoadMore = actions.onLoadMoreForYou,
-        ),
-        onOpenItem = actions.onOpenItem,
-        returnFocus = returnFocus,
-    )
-    tvCollectionsRail(
-        collections = state.collectionsRow.items,
-        onOpenCollection = actions.onOpenCollection,
-        returnFocus = returnFocus,
-        onLoadMore = actions.onLoadMoreCollections,
-    )
+    state.rows.forEach { row ->
+        if (row.isEmpty) return@forEach
+        when (row) {
+            is HomeRow.Continue -> tvContinueRail(row, actions, returnFocus)
+            is HomeRow.Titles -> tvPosterRail(row, actions, returnFocus)
+            is HomeRow.Collections -> tvCollectionsRail(row, actions, returnFocus)
+        }
+    }
 }
 
-/** Описание постер-ряда одним объектом (detekt LongParameterList). */
-private data class TvRailSpec(
-    val key: String,
-    val title: String,
-    val railItems: List<Item>,
-    val onLoadMore: (() -> Unit)? = null,
-)
+/**
+ * Заголовки рядов живут в экране, а не в модели: на десяти футах «Продолжить просмотр»
+ * читается лучше, чем телефонное «Продолжить».
+ */
+private val HomeRowId.title: String
+    get() = when (this) {
+        HomeRowId.CONTINUE -> "Продолжить просмотр"
+        HomeRowId.TRENDING -> "В тренде"
+        // Заголовок честный: forYou — это топ сериалов по рейтингу, персонализации в фиде нет.
+        HomeRowId.FOR_YOU -> "Сериалы с высоким рейтингом"
+        HomeRowId.COLLECTIONS -> "Подборки"
+    }
 
 private fun LazyListScope.tvContinueRail(
-    history: List<WatchHistory>,
-    onPlay: (itemId: Int, season: Int, videoId: Int) -> Unit,
+    row: HomeRow.Continue,
+    actions: TvHomeActions,
     returnFocus: TvReturnFocus,
 ) {
-    if (history.isEmpty()) return
-    item(key = "continue") {
-        TvRail(title = "Продолжить просмотр") { firstItemFocus ->
-            itemsIndexed(history, key = { _, entry -> entry.itemId }) { index, entry ->
+    val onPlay = actions.onPlay
+    item(key = row.id.name) {
+        TvRail(title = row.id.title) { firstItemFocus ->
+            itemsIndexed(row.entries, key = { _, entry -> entry.itemId }) { index, entry ->
                 // Ряд продолжения ведёт сразу в плеер — на недосмотренный эпизод (videoId+сезон
                 // из истории), позицию внутри трека восстановит PlayerScreenModel.
                 TvContinueCard(
@@ -243,31 +229,30 @@ private fun LazyListScope.tvContinueRail(
 }
 
 private fun LazyListScope.tvPosterRail(
-    rail: TvRailSpec,
-    onOpenItem: (Int) -> Unit,
+    row: HomeRow.Titles,
+    actions: TvHomeActions,
     returnFocus: TvReturnFocus,
 ) {
-    val railItems = rail.railItems
-    if (railItems.isEmpty()) return
-    item(key = rail.key) {
-        TvRail(title = rail.title) { firstItemFocus ->
+    val railItems = row.paging.items
+    item(key = row.id.name) {
+        TvRail(title = row.id.title) { firstItemFocus ->
             itemsIndexed(railItems, key = { _, catalogItem -> catalogItem.id }) { index, catalogItem ->
                 // Хвостовая карточка скомпонована — зритель долистал ряд почти до конца:
                 // просим следующую страницу. Ленивый ряд композит только видимое (+префетч),
                 // поэтому это дешёвый триггер без слежения за скроллом; повторные вызовы
                 // гасит идемпотентность модели.
-                val onLoadMore = rail.onLoadMore
-                if (onLoadMore != null && index == railItems.lastIndex) {
-                    LaunchedEffect(railItems.size) { onLoadMore() }
+                if (index == railItems.lastIndex) {
+                    LaunchedEffect(railItems.size) { actions.onLoadMoreRow(row.id) }
                 }
+                val returnKey = returnKey(row.id, catalogItem.id)
                 TvHomePosterCard(
                     item = catalogItem,
                     onClick = {
-                        returnFocus.onOpen("${rail.key}:${catalogItem.id}")
-                        onOpenItem(catalogItem.id)
+                        returnFocus.onOpen(returnKey)
+                        actions.onOpenItem(catalogItem.id)
                     },
                     focusRequester = returnFocus.target(
-                        key = "${rail.key}:${catalogItem.id}",
+                        key = returnKey,
                         railFallback = firstItemFocus,
                         isFirstInRail = index == 0,
                     ),
@@ -278,29 +263,29 @@ private fun LazyListScope.tvPosterRail(
 }
 
 private fun LazyListScope.tvCollectionsRail(
-    collections: List<Collection>,
-    onOpenCollection: (id: Int, title: String) -> Unit,
+    row: HomeRow.Collections,
+    actions: TvHomeActions,
     returnFocus: TvReturnFocus,
-    onLoadMore: () -> Unit,
 ) {
     // Подборка без постера — пустая плашка: в монохроме карточку держит только картинка.
-    val withPoster = collections.filter { it.posterUrl() != null }
+    val withPoster = row.paging.items.filter { it.posterUrl() != null }
     if (withPoster.isEmpty()) return
-    item(key = "collections") {
-        TvRail(title = "Подборки") { firstItemFocus ->
+    item(key = row.id.name) {
+        TvRail(title = row.id.title) { firstItemFocus ->
             itemsIndexed(withPoster, key = { _, collection -> collection.id }) { index, collection ->
                 // Хвостовая карточка скомпонована — просим следующую страницу (как у постер-рядов).
                 if (index == withPoster.lastIndex) {
-                    LaunchedEffect(withPoster.size) { onLoadMore() }
+                    LaunchedEffect(withPoster.size) { actions.onLoadMoreRow(row.id) }
                 }
+                val returnKey = returnKey(row.id, collection.id)
                 TvCollectionCard(
                     collection = collection,
                     onClick = {
-                        returnFocus.onOpen("collections:${collection.id}")
-                        onOpenCollection(collection.id, collection.title)
+                        returnFocus.onOpen(returnKey)
+                        actions.onOpenCollection(collection.id, collection.title)
                     },
                     focusRequester = returnFocus.target(
-                        key = "collections:${collection.id}",
+                        key = returnKey,
                         railFallback = firstItemFocus,
                         isFirstInRail = index == 0,
                     ),
@@ -309,6 +294,12 @@ private fun LazyListScope.tvCollectionsRail(
         }
     }
 }
+
+/**
+ * Ключ возврата фокуса: «ряд:id». Ряд в префиксе обязателен — по нему [TvReturnFocus] понимает,
+ * какому ряду отдать фоллбек focusRestorer, а один тайтл может встречаться в нескольких рядах.
+ */
+private fun returnKey(row: HomeRowId, itemId: Int): String = "$row:$itemId"
 
 // ── Hero ──────────────────────────────────────────────────────────────────
 
@@ -431,7 +422,7 @@ private fun TvHeroMeta(item: Item) {
                 .takeIf { it.isNotBlank() }
                 ?.let { add(it) }
             if (item.year > 0) add(item.year.toString())
-            item.duration.averageMinutes?.toInt()?.takeIf { it > 0 }?.let { add(formatDuration(it)) }
+            item.duration.averageMinutes?.toInt()?.takeIf { it > 0 }?.let { add(durationLabel(it)) }
         }
     }
     Row(
@@ -547,41 +538,6 @@ private const val NO_SEASON = -1
 /** Больше трёх жанров мета-строка hero не вмещает по ширине [HeroContentWidth]. */
 private const val MAX_HERO_GENRES = 3
 
-private const val MINUTES_IN_HOUR = 60
-private const val SECONDS_IN_MINUTE = 60
-
-/**
- * Подпись карточки «продолжить»: «S2 · осталось 18 мин». Номер эпизода макета («E5») не
- * выводим: в [WatchProgress] его нет — `videoId` это идентификатор трека, а не порядковый
- * номер серии (`PlayerScreenModel` матчит им `MediaTrack.id`).
- */
-private fun continueMeta(progress: WatchProgress?): String? {
-    if (progress == null) return null
-    val parts = buildList {
-        progress.season?.takeIf { it > 0 }?.let { add("S$it") }
-        remainingMinutes(progress)?.let { add("осталось ${formatDuration(it)}") }
-    }
-    return parts.joinToString(" · ").ifBlank { null }
-}
-
-/** Сколько минут осталось до конца трека; null — прогресса нет или уже досмотрено. */
-private fun remainingMinutes(progress: WatchProgress): Int? {
-    val watched = progress.timeSeconds
-    val total = progress.durationSeconds?.takeIf { it > 0 }
-    if (watched == null || total == null) return null
-    return ((total - watched) / SECONDS_IN_MINUTE).takeIf { it > 0 }
-}
-
-private fun formatDuration(totalMinutes: Int): String {
-    val hours = totalMinutes / MINUTES_IN_HOUR
-    val minutes = totalMinutes % MINUTES_IN_HOUR
-    return when {
-        hours > 0 && minutes > 0 -> "$hours ч $minutes мин"
-        hours > 0 -> "$hours ч"
-        else -> "$minutes мин"
-    }
-}
-
 /** Русское название типа для меты карточки — [ItemType] хранит только API-значения. */
 private fun ItemType.label(): String = when (this) {
     ItemType.MOVIE -> "Фильм"
@@ -590,7 +546,3 @@ private fun ItemType.label(): String = when (this) {
     ItemType.DOCUMENTARY -> "Документальный"
     ItemType.TV -> "ТВ"
 }
-
-/** Постер подборки; null — картинки нет, такую подборку не показываем. */
-private fun Collection.posterUrl(): String? =
-    posters?.let { it.medium.ifEmpty { it.big } }?.takeIf { it.isNotBlank() }

@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import com.filmax.core.designsystem.FilmaxMetrics
 import com.filmax.core.designsystem.ShapeCard
 import com.filmax.core.designsystem.ShapePoster
+import com.filmax.core.domain.catalog.model.Collection
+import com.filmax.core.domain.watching.model.WatchProgress
 import java.util.Locale
 
 /**
@@ -209,3 +211,48 @@ fun posterMeta(type: String?, year: Int): String? {
     }
     return parts.joinToString(" · ").ifBlank { null }
 }
+
+/**
+ * Подпись карточки «продолжить»: «S2 · осталось 18 мин». Одна на телефон и ТВ — раньше жила
+ * тремя одинаковыми копиями (обе Главных и «Моё»).
+ *
+ * Номер эпизода макета («E5») не выводим: в [WatchProgress] его нет — `videoId` это
+ * идентификатор трека, а не порядковый номер серии (`PlayerScreenModel` матчит им `MediaTrack.id`).
+ */
+fun continueMeta(progress: WatchProgress?): String? {
+    if (progress == null) return null
+    val parts = buildList {
+        progress.season?.takeIf { it > 0 }?.let { add("S$it") }
+        remainingMinutes(progress)?.let { add("осталось ${durationLabel(it)}") }
+    }
+    return parts.joinToString(" · ").ifBlank { null }
+}
+
+/** Сколько минут осталось до конца трека; null — прогресса нет или уже досмотрено. */
+private fun remainingMinutes(progress: WatchProgress): Int? {
+    val watched = progress.timeSeconds
+    val total = progress.durationSeconds?.takeIf { it > 0 }
+    if (watched == null || total == null) return null
+    return ((total - watched) / SECONDS_IN_MINUTE).takeIf { it > 0 }
+}
+
+/** «1 ч 20 мин» / «45 мин» — часы показываем, только когда они есть. */
+fun durationLabel(totalMinutes: Int): String {
+    val hours = totalMinutes / MINUTES_IN_HOUR
+    val minutes = totalMinutes % MINUTES_IN_HOUR
+    return when {
+        hours > 0 && minutes > 0 -> "$hours ч $minutes мин"
+        hours > 0 -> "$hours ч"
+        else -> "$minutes мин"
+    }
+}
+
+/**
+ * Постер подборки: сначала средний, затем большой. null — картинки нет вовсе, такую подборку
+ * ряды не показывают (в монохроме карточку держит только изображение).
+ */
+fun Collection.posterUrl(): String? =
+    posters?.let { it.medium.ifEmpty { it.big } }?.takeIf { it.isNotBlank() }
+
+private const val MINUTES_IN_HOUR = 60
+private const val SECONDS_IN_MINUTE = 60

@@ -45,18 +45,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filmax.core.designsystem.FilmaxMetrics
 import com.filmax.core.designsystem.ShapeButton
-import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.Item
-import com.filmax.core.domain.watching.model.WatchHistory
-import com.filmax.core.domain.watching.model.WatchProgress
 import com.filmax.core.navigation.Destination
 import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxErrorModal
 import com.filmax.core.ui.components.FilmaxPosterCard
 import com.filmax.core.ui.components.FilmaxProgressCard
 import com.filmax.core.ui.components.PosterImage
+import com.filmax.core.ui.components.continueMeta
+import com.filmax.core.ui.components.posterUrl
 import com.filmax.core.ui.components.ratingLabel
 import com.filmax.feature.home.common.HomeEvent
+import com.filmax.feature.home.common.HomeRow
+import com.filmax.feature.home.common.HomeRowId
 import com.filmax.feature.home.common.HomeScreenModel
 import com.filmax.feature.home.common.HomeState
 import org.koin.androidx.compose.koinViewModel
@@ -174,38 +175,38 @@ private fun Navigator.homeActions() = HomeActions(
 
 // ── Ряды ──────────────────────────────────────────────────────────────────
 
+/** Лента — это [HomeState.rows]: экран идёт по ним и рисует, состав и порядок задаёт модель. */
 private fun LazyListScope.homeRows(state: HomeState, actions: HomeActions, onEvent: (HomeEvent) -> Unit) {
-    continueRow(history = state.continueWatching, onPlay = actions.onPlay)
-    posterRow(
-        key = "trending",
-        title = "В тренде",
-        rowItems = state.trendingRow.items,
-        onOpenItem = actions.onOpenItem,
-        onLoadMore = { onEvent(HomeEvent.LoadMoreTrending) },
-    )
-    // Заголовок честный: `forYou` — это топ сериалов по рейтингу, персонализации в фиде нет.
-    posterRow(
-        key = "forYou",
-        title = "Сериалы с высоким рейтингом",
-        rowItems = state.forYouRow.items,
-        onOpenItem = actions.onOpenItem,
-        onLoadMore = { onEvent(HomeEvent.LoadMoreForYou) },
-    )
-    collectionsRow(
-        collections = state.collectionsRow.items,
-        onOpenCollection = actions.onOpenCollection,
-        onLoadMore = { onEvent(HomeEvent.LoadMoreCollections) },
-    )
+    state.rows.forEach { row ->
+        if (row.isEmpty) return@forEach
+        when (row) {
+            is HomeRow.Continue -> continueRow(row, onPlay = actions.onPlay)
+            is HomeRow.Titles -> posterRow(row, actions.onOpenItem, onEvent)
+            is HomeRow.Collections -> collectionsRow(row, actions.onOpenCollection, onEvent)
+        }
+    }
 }
 
+/**
+ * Заголовки рядов живут в экране, а не в модели: у ТВ для того же ряда своя формулировка
+ * («Продолжить просмотр» на десяти футах читается лучше, чем «Продолжить»).
+ */
+private val HomeRowId.title: String
+    get() = when (this) {
+        HomeRowId.CONTINUE -> "Продолжить"
+        HomeRowId.TRENDING -> "В тренде"
+        // Заголовок честный: forYou — это топ сериалов по рейтингу, персонализации в фиде нет.
+        HomeRowId.FOR_YOU -> "Сериалы с высоким рейтингом"
+        HomeRowId.COLLECTIONS -> "Подборки"
+    }
+
 private fun LazyListScope.continueRow(
-    history: List<WatchHistory>,
+    row: HomeRow.Continue,
     onPlay: (itemId: Int, season: Int, videoId: Int) -> Unit,
 ) {
-    if (history.isEmpty()) return
-    item(key = "continue") {
-        HomeRow(title = "Продолжить") {
-            items(history, key = { it.itemId }) { entry ->
+    item(key = row.id.name) {
+        TitledRow(title = row.id.title) {
+            items(row.entries, key = { it.itemId }) { entry ->
                 // Ряд продолжения ведёт сразу в плеер, минуя детали: недосмотренный эпизод —
                 // videoId+сезон из истории, позицию внутри трека восстановит PlayerScreenModel.
                 FilmaxProgressCard(
@@ -227,21 +228,19 @@ private fun LazyListScope.continueRow(
 }
 
 private fun LazyListScope.posterRow(
-    key: String,
-    title: String,
-    rowItems: List<Item>,
+    row: HomeRow.Titles,
     onOpenItem: (Int) -> Unit,
-    onLoadMore: (() -> Unit)? = null,
+    onEvent: (HomeEvent) -> Unit,
 ) {
-    if (rowItems.isEmpty()) return
-    item(key = key) {
-        HomeRow(title = title) {
+    val rowItems = row.paging.items
+    item(key = row.id.name) {
+        TitledRow(title = row.id.title) {
             itemsIndexed(rowItems, key = { _, rowItem -> rowItem.id }) { index, rowItem ->
                 // Хвостовая карточка скомпонована — ряд долистан почти до конца: просим
                 // следующую страницу. Ленивый ряд композит только видимое (+префетч), так что
                 // триггер дешёвый; повторные вызовы гасит идемпотентность модели.
-                if (onLoadMore != null && index == rowItems.lastIndex) {
-                    LaunchedEffect(rowItems.size) { onLoadMore() }
+                if (index == rowItems.lastIndex) {
+                    LaunchedEffect(rowItems.size) { onEvent(HomeEvent.LoadMoreRow(row.id)) }
                 }
                 FilmaxPosterCard(
                     title = rowItem.title,
@@ -255,23 +254,23 @@ private fun LazyListScope.posterRow(
 }
 
 private fun LazyListScope.collectionsRow(
-    collections: List<Collection>,
+    row: HomeRow.Collections,
     onOpenCollection: (id: Int, title: String) -> Unit,
-    onLoadMore: () -> Unit,
+    onEvent: (HomeEvent) -> Unit,
 ) {
     // Отсев пустых ссылок. Полностью «подборки без картинки» он не убирает: kino.pub отдаёт
     // адрес постера всегда, даже когда файла нет (967 → /selection/medium/967.jpg = 404), и
     // такая карточка остаётся градиентной заглушкой с подписью.
-    val withPoster = collections.mapNotNull { collection ->
+    val withPoster = row.paging.items.mapNotNull { collection ->
         collection.posterUrl()?.let { poster -> collection to poster }
     }
     if (withPoster.isEmpty()) return
-    item(key = "collections") {
-        HomeRow(title = "Подборки") {
+    item(key = row.id.name) {
+        TitledRow(title = row.id.title) {
             itemsIndexed(withPoster, key = { _, entry -> entry.first.id }) { index, (collection, poster) ->
                 // Хвостовая карточка скомпонована — просим следующую страницу (как у постер-рядов).
                 if (index == withPoster.lastIndex) {
-                    LaunchedEffect(withPoster.size) { onLoadMore() }
+                    LaunchedEffect(withPoster.size) { onEvent(HomeEvent.LoadMoreRow(row.id)) }
                 }
                 FilmaxPosterCard(
                     title = collection.title,
@@ -285,7 +284,7 @@ private fun LazyListScope.collectionsRow(
 
 /** Заголовок ряда без стрелки: ряд листается пальцем, а вести ей было некуда. */
 @Composable
-private fun HomeRow(title: String, content: LazyListScope.() -> Unit) {
+private fun TitledRow(title: String, content: LazyListScope.() -> Unit) {
     Column(Modifier.padding(top = FilmaxMetrics.RowGap)) {
         Text(
             title,
@@ -562,42 +561,3 @@ private const val NO_SEASON = -1
 
 /** Больше двух жанров мета-строка hero не вмещает: на 360dp рядом ещё оценка и год. */
 private const val MAX_HERO_GENRES = 2
-
-private const val MINUTES_IN_HOUR = 60
-private const val SECONDS_IN_MINUTE = 60
-
-/**
- * Подпись карточки «продолжить»: «S2 · осталось 18 мин». Номер эпизода макета («E5») не
- * выводим: в [WatchProgress] его нет — `videoId` это идентификатор трека, а не порядковый
- * номер серии (`PlayerScreenModel` матчит им `MediaTrack.id`).
- */
-private fun continueMeta(progress: WatchProgress?): String? {
-    if (progress == null) return null
-    val parts = buildList {
-        progress.season?.takeIf { it > 0 }?.let { add("S$it") }
-        remainingMinutes(progress)?.let { add("осталось ${formatDuration(it)}") }
-    }
-    return parts.joinToString(" · ").ifBlank { null }
-}
-
-/** Сколько минут осталось до конца трека; null — прогресса нет или уже досмотрено. */
-private fun remainingMinutes(progress: WatchProgress): Int? {
-    val watched = progress.timeSeconds
-    val total = progress.durationSeconds?.takeIf { it > 0 }
-    if (watched == null || total == null) return null
-    return ((total - watched) / SECONDS_IN_MINUTE).takeIf { it > 0 }
-}
-
-private fun formatDuration(totalMinutes: Int): String {
-    val hours = totalMinutes / MINUTES_IN_HOUR
-    val minutes = totalMinutes % MINUTES_IN_HOUR
-    return when {
-        hours > 0 && minutes > 0 -> "$hours ч $minutes мин"
-        hours > 0 -> "$hours ч"
-        else -> "$minutes мин"
-    }
-}
-
-/** Постер подборки; null — картинки нет, такую подборку не показываем. */
-private fun Collection.posterUrl(): String? =
-    posters?.let { it.medium.ifEmpty { it.big } }?.takeIf { it.isNotBlank() }

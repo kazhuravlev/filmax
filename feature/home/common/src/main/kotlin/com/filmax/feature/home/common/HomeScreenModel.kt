@@ -2,6 +2,7 @@ package com.filmax.feature.home.common
 
 import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.catalog.CatalogSort
+import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.common.RequestResult
@@ -21,59 +22,28 @@ class HomeScreenModel(
         fetchUserInitials()
     }
 
-    /** Инициалы для аватара в шапке — best-effort, ошибки не мешают ленте. */
-    private fun fetchUserInitials() {
-        screenModelScope {
-            (user.getProfile() as? RequestResult.Success)?.let { result ->
-                updateState { it.copy(initials = result.data.initials()) }
-            }
-        }
-    }
-
     override fun dispatch(event: HomeEvent) {
         when (event) {
             HomeEvent.Load -> onFetchData()
-            HomeEvent.LoadMoreAll -> loadMoreAll()
-            HomeEvent.LoadMoreTrending -> loadMoreRow(
-                type = ItemType.MOVIE,
-                sort = CatalogSort.VIEWS,
-                read = { it.trendingRow },
-                write = { current, row -> current.copy(trendingRow = row) },
-            )
-
-            HomeEvent.LoadMoreForYou -> loadMoreRow(
-                type = ItemType.SERIES,
-                sort = CatalogSort.RATING,
-                read = { it.forYouRow },
-                write = { current, row -> current.copy(forYouRow = row) },
-            )
-
-            HomeEvent.LoadMoreCollections -> loadMoreCollections()
+            is HomeEvent.LoadMoreRow -> loadMoreRow(event.id)
         }
     }
 
     override fun onFetchData() {
-        screenModelScope { snapshot ->
-            updateState {
-                it.copy(
-                    loading = true,
-                    error = null,
-                    // Сбрасываем секцию «Все» — заново начнём с первой страницы.
-                    all = emptyList(),
-                    allPage = 0,
-                    allLoadingMore = false,
-                    allEndReached = false,
-                )
-            }
+        screenModelScope {
+            updateState { it.copy(loading = true, error = null) }
             val feed = getHomeFeed()
             updateState { s ->
                 s.copy(
                     loading = false,
                     hero = feed.hero,
-                    continueWatching = feed.continueWatching,
-                    collectionsRow = RowPaging(items = feed.collections),
-                    trendingRow = RowPaging(items = feed.trending),
-                    forYouRow = RowPaging(items = feed.forYou),
+                    // Состав и порядок ленты — здесь и только здесь.
+                    rows = listOf(
+                        HomeRow.Continue(feed.continueWatching),
+                        HomeRow.Titles(HomeRowId.TRENDING, RowPaging(feed.trending)),
+                        HomeRow.Titles(HomeRowId.FOR_YOU, RowPaging(feed.forYou)),
+                        HomeRow.Collections(RowPaging(feed.collections)),
+                    ),
                     error = feed.error,
                 )
             }
@@ -86,119 +56,107 @@ class HomeScreenModel(
                 else -> dismissOfflineBanner()
             }
         }
-        // Первая страница секции «Все» грузится параллельно ленте.
-        loadMoreAll()
     }
 
-    /**
-     * Догружает следующую страницу секции «Все» (все фильмы, newest first). Идемпотентна:
-     * пока идёт загрузка или достигнут конец — повторный вызов игнорируется, поэтому её
-     * безопасно дёргать из UI при подходе скролла/фокуса к концу списка.
-     */
-    private fun loadMoreAll() {
-        if (state.allLoadingMore || state.allEndReached) return
-        val nextPage = state.allPage + 1
-        screenModelScope { snapshot ->
-            updateState { it.copy(allLoadingMore = true) }
-            when (val result = catalog.getItems(ItemType.MOVIE, CatalogSort.UPDATED, nextPage)) {
-                is RequestResult.Success -> updateState { s ->
-                    // Дедуп по id — на случай пересечения страниц при обновлении каталога.
-                    val seen = s.all.mapTo(HashSet()) { it.id }
-                    val merged = s.all + result.data.items.filter { it.id !in seen }
-                    s.copy(
-                        all = merged,
-                        allPage = nextPage,
-                        allLoadingMore = false,
-                        allEndReached = !result.data.pagination.hasNextPage || result.data.items.isEmpty(),
-                    )
+    /** Инициалы для аватара в шапке — best-effort, ошибки не мешают ленте. */
+    private fun fetchUserInitials() {
+        screenModelScope {
+            (user.getProfile() as? RequestResult.Success)?.let { result ->
+                updateState { it.copy(initials = result.data.initials()) }
+            }
+        }
+    }
+
+    private fun loadMoreRow(id: HomeRowId) {
+        when (val row = state.rows.firstOrNull { it.id == id }) {
+            // История приходит из фида целиком — листать нечего.
+            is HomeRow.Continue, null -> Unit
+            is HomeRow.Titles -> loadMoreTitles(row)
+            is HomeRow.Collections -> loadMoreCollections(row)
+        }
+    }
+
+    private fun loadMoreTitles(row: HomeRow.Titles) {
+        val source = TITLE_SOURCES[row.id] ?: return
+        if (!row.paging.canLoadMore) return
+        val nextPage = row.paging.page + 1
+        screenModelScope { _ ->
+            updateTitles(row.id) { it.copy(loadingMore = true) }
+            when (val result = catalog.getItems(source.type, source.sort, nextPage)) {
+                is RequestResult.Success -> updateTitles(row.id) {
+                    it.append(result.data.items, Item::id, result.data.pagination.hasNextPage)
                 }
 
-                is RequestResult.Error -> updateState { it.copy(allLoadingMore = false) }
+                is RequestResult.Error -> updateTitles(row.id) { it.copy(loadingMore = false) }
             }
         }
     }
 
     /**
-     * Догрузка горизонтального ряда главной. Идемпотентна (guard на загрузку/конец), с потолком
-     * [HOME_ROW_MAX]: бесконечный ряд на пульте — сотни нажатий вправо, а каждая сотня карточек —
-     * лишняя память под постеры; дальше пусть зовёт Каталог. Стартовая горстка приходит из фида
-     * (page = 0), первая догрузка тянет страницу 1 целиком — пересечение срезает дедуп по id.
+     * Догрузка «Подборок» отдельно от [loadMoreTitles]: другой источник, и репозиторий отдаёт
+     * список без пагинации — конец определяется пустой страницей.
      */
-    private fun loadMoreRow(
-        type: ItemType,
-        sort: CatalogSort,
-        read: (HomeState) -> RowPaging<Item>,
-        write: (HomeState, RowPaging<Item>) -> HomeState,
-    ) {
-        val row = read(state)
-        val busy = row.loadingMore || row.endReached
-        val capped = row.items.isEmpty() || row.items.size >= HOME_ROW_MAX
-        if (busy || capped) return
-        val nextPage = row.page + 1
+    private fun loadMoreCollections(row: HomeRow.Collections) {
+        if (!row.paging.canLoadMore) return
+        val nextPage = row.paging.page + 1
         screenModelScope { _ ->
-            updateState { write(it, read(it).copy(loadingMore = true)) }
-            when (val result = catalog.getItems(type, sort, nextPage)) {
-                is RequestResult.Success -> updateState { s ->
-                    val current = read(s)
-                    val seen = current.items.mapTo(HashSet()) { it.id }
-                    val merged = (current.items + result.data.items.filter { it.id !in seen })
-                        .take(HOME_ROW_MAX)
-                    val exhausted = result.data.items.isEmpty() ||
-                        !result.data.pagination.hasNextPage ||
-                        merged.size >= HOME_ROW_MAX
-                    write(
-                        s,
-                        current.copy(
-                            items = merged,
-                            page = nextPage,
-                            loadingMore = false,
-                            endReached = exhausted,
-                        ),
-                    )
-                }
-
-                is RequestResult.Error -> updateState { write(it, read(it).copy(loadingMore = false)) }
-            }
-        }
-    }
-
-    /**
-     * Догрузка «Подборок». Отдельно от [loadMoreRow]: другой источник, и репозиторий отдаёт
-     * список без пагинации — конец определяется пустой страницей (или потолком [HOME_ROW_MAX]).
-     */
-    private fun loadMoreCollections() {
-        val row = state.collectionsRow
-        val busy = row.loadingMore || row.endReached
-        val capped = row.items.isEmpty() || row.items.size >= HOME_ROW_MAX
-        if (busy || capped) return
-        val nextPage = row.page + 1
-        screenModelScope { _ ->
-            updateState { it.copy(collectionsRow = it.collectionsRow.copy(loadingMore = true)) }
+            updateCollections { it.copy(loadingMore = true) }
             when (val result = catalog.getCollections(nextPage)) {
-                is RequestResult.Success -> updateState { s ->
-                    val current = s.collectionsRow
-                    val seen = current.items.mapTo(HashSet()) { it.id }
-                    val merged = (current.items + result.data.filter { it.id !in seen })
-                        .take(HOME_ROW_MAX)
-                    s.copy(
-                        collectionsRow = current.copy(
-                            items = merged,
-                            page = nextPage,
-                            loadingMore = false,
-                            endReached = result.data.isEmpty() || merged.size >= HOME_ROW_MAX,
-                        ),
-                    )
+                is RequestResult.Success -> updateCollections {
+                    it.append(result.data, Collection::id, hasNextPage = result.data.isNotEmpty())
                 }
 
-                is RequestResult.Error -> updateState {
-                    it.copy(collectionsRow = it.collectionsRow.copy(loadingMore = false))
-                }
+                is RequestResult.Error -> updateCollections { it.copy(loadingMore = false) }
             }
         }
     }
 
-    private companion object {
-        /** Потолок карточек в одном ряду главной — дальше зовёт Каталог. */
-        const val HOME_ROW_MAX = 100
+    private suspend fun updateTitles(id: HomeRowId, transform: (RowPaging<Item>) -> RowPaging<Item>) {
+        updateRows { row ->
+            if (row is HomeRow.Titles && row.id == id) row.copy(paging = transform(row.paging)) else row
+        }
     }
+
+    private suspend fun updateCollections(transform: (RowPaging<Collection>) -> RowPaging<Collection>) {
+        updateRows { row ->
+            if (row is HomeRow.Collections) row.copy(paging = transform(row.paging)) else row
+        }
+    }
+
+    private suspend fun updateRows(transform: (HomeRow) -> HomeRow) {
+        updateState { it.copy(rows = it.rows.map(transform)) }
+    }
+}
+
+/** Чем наполняется ряд тайтлов при догрузке: фид даёт стартовую горстку, дальше — каталог. */
+private data class TitleSource(val type: ItemType, val sort: CatalogSort)
+
+private val TITLE_SOURCES = mapOf(
+    HomeRowId.TRENDING to TitleSource(ItemType.MOVIE, CatalogSort.VIEWS),
+    HomeRowId.FOR_YOU to TitleSource(ItemType.SERIES, CatalogSort.RATING),
+)
+
+/**
+ * Потолок карточек в одном ряду: бесконечный ряд на пульте — сотни нажатий вправо, а каждая
+ * сотня карточек ещё и держит в памяти постеры. Дальше пусть зовёт Каталог.
+ */
+private const val HOME_ROW_MAX = 100
+
+/** Ряд можно листать дальше: не занят, не кончился, не упёрся в потолок и вообще не пуст. */
+private val RowPaging<*>.canLoadMore: Boolean
+    get() = !loadingMore && !endReached && items.isNotEmpty() && items.size < HOME_ROW_MAX
+
+/**
+ * Приклеивает страницу к ряду: дедуп по id (страницы kino.pub пересекаются) и потолок ряда.
+ * Пустая страница, отсутствие следующей или упёршийся потолок означают конец.
+ */
+private fun <T> RowPaging<T>.append(page: List<T>, key: (T) -> Int, hasNextPage: Boolean): RowPaging<T> {
+    val seen = items.mapTo(HashSet(), key)
+    val merged = (items + page.filterNot { key(it) in seen }).take(HOME_ROW_MAX)
+    return copy(
+        items = merged,
+        page = this.page + 1,
+        loadingMore = false,
+        endReached = page.isEmpty() || !hasNextPage || merged.size >= HOME_ROW_MAX,
+    )
 }
