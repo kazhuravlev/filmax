@@ -1,11 +1,6 @@
 package com.filmax.feature.player.tv
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -36,7 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -49,10 +43,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import com.filmax.core.tv.designsystem.TvAccent
-import com.filmax.core.tv.designsystem.TvChip
 import com.filmax.core.tv.designsystem.TvFocus
+import com.filmax.core.tv.designsystem.TvFocusCard
 import com.filmax.core.tv.designsystem.TvFocusHalo
 import com.filmax.core.tv.designsystem.TvMetrics
 import com.filmax.core.tv.designsystem.TvOnAccent
@@ -62,6 +55,7 @@ import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvOverline
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
+import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.feature.player.common.formatPlayerTime
 import kotlin.math.roundToInt
@@ -232,14 +226,9 @@ private fun PlayerTopBar(title: String, subtitle: String, modifier: Modifier = M
     }
 }
 
-/** Нижний блок: скраббер, подсказки транспорта и ряд настроек. */
+/** Нижний блок: скраббер, Play слева и двухрядная сетка управляющих кнопок справа. */
 @Composable
 private fun PlayerTransport(ui: TvPlayerUiState, menu: PlayerActions, modifier: Modifier = Modifier) {
-    val hint = when {
-        SettingsAction.Episodes in menu.items -> "↓ настройки и серии · ↕ показать прогресс"
-        menu.items.isNotEmpty() -> "↓ настройки · ↕ показать прогресс"
-        else -> "↕ показать прогресс"
-    }
     Column(
         modifier
             .fillMaxWidth()
@@ -247,38 +236,25 @@ private fun PlayerTransport(ui: TvPlayerUiState, menu: PlayerActions, modifier: 
             .padding(bottom = 34.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Основные контролы (скраббер + пауза/перемотка) прижаты к низу. Ряд настроек — ПОД ними,
-        // за AnimatedVisibility: в транспорте его нет вовсе (место не держит), а по «вниз» он
-        // раскрывается снизу и толкает основные контролы вверх. Так «вниз» открывает настройки, а
-        // не приходится жать «вниз», потом несколько раз «вверх».
         Scrubber(
             positionMs = if (ui.isScrubbing) ui.scrubTargetMs else ui.positionMs,
             durationMs = ui.durationMs,
             active = ui.mode == PlayerMode.Progress,
             modifier = Modifier.fillMaxWidth(),
         )
-        TransportHints(
-            isPlaying = ui.isPlaying,
-            // Виртуальный фокус транспорта: кнопка Play/Pause активна до перехода на прогресс-бар.
-            focused = ui.mode == PlayerMode.Transport,
-            modifier = Modifier.padding(top = 16.dp),
-        )
-        Text(
-            hint,
-            style = MaterialTheme.typography.labelSmall,
-            color = TvOnSurfaceDim,
-            modifier = Modifier.padding(top = 12.dp),
-        )
-        AnimatedVisibility(
-            visible = ui.mode == PlayerMode.Settings,
-            enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(28.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            SettingsBar(
-                ui = ui,
-                menu = menu,
-                modifier = Modifier.padding(top = 16.dp),
+            TransportHints(
+                isPlaying = ui.isPlaying,
+                // Виртуальный фокус транспорта: кнопка Play/Pause активна до перехода на прогресс-бар.
+                focused = ui.mode == PlayerMode.Transport,
             )
+            SettingsGrid(ui = ui, menu = menu)
         }
     }
 }
@@ -395,45 +371,99 @@ private fun TransportHints(isPlaying: Boolean, focused: Boolean, modifier: Modif
 }
 
 /**
- * Ряд настроек. Всплывает по «вниз» через AnimatedVisibility над основными контролами; в транспорте
- * его нет вовсе, поэтому место под себя он не держит и низ панели не прыгает.
+ * Управляющая сетка справа от Play. Порядок хранится в [PlayerActions.items]: по две плитки в
+ * столбце, поэтому первыми всегда остаются аудио и субтитры, а действия эпизодов не уходят за экран.
  *
- * Чипы намеренно не фокусируемые: в плеере фокус никуда не ходит, курсор ведёт обработчик клавиш.
- * Курсор рисуют белая заливка (`selected`) И увеличение — на ярком кадре одной заливки мало, чтобы
- * сразу читалось, что выбрано. `onClick` остаётся настоящим: у TV-Surface он обслуживает
- * accessibility-действие «активировать».
+ * Плитки намеренно не фокусируемые: в плеере курсор ведёт обработчик клавиш. Текущий выбор виден
+ * прямо на плитке; длинная подпись не раздвигает сетку, а обрезается с многоточием.
  */
 @Composable
-private fun SettingsBar(ui: TvPlayerUiState, menu: PlayerActions, modifier: Modifier = Modifier) {
-    // fillMaxWidth + центрирующая раскладка: иначе ряд центрируется лишь по обёртке AnimatedVisibility
-    // и съезжает вбок. Так баблы всегда по центру снизу, сколько бы их ни было.
+private fun SettingsGrid(ui: TvPlayerUiState, menu: PlayerActions, modifier: Modifier = Modifier) {
     Row(
-        modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
+        modifier,
+        horizontalArrangement = Arrangement.spacedBy(SettingsGridGap),
+        verticalAlignment = Alignment.Top,
     ) {
-        menu.items.forEachIndexed { index, action ->
-            val isCursor = index == ui.settingsCursor
-            TvChip(
-                label = action.label,
-                selected = isCursor,
-                onClick = if (menu.isEnabled(action)) {
-                    {
-                        ui.settingsCursor = index
-                        ui.activate(action, menu)
-                    }
-                } else {
-                    {}
-                },
-                modifier = Modifier
-                    .alpha(if (menu.isEnabled(action)) 1f else 0.45f)
-                    .focusProperties { canFocus = false }
-                    // Чип-курсор поверх соседей: увеличенный масштабом чип иначе уходил ПОД
-                    // следующий по порядку отрисовки.
-                    .zIndex(if (isCursor) 1f else 0f)
-                    .scale(if (isCursor) CURSOR_CHIP_SCALE else 1f),
+        menu.items.chunked(SettingsGridRows).forEach { column ->
+            Column(verticalArrangement = Arrangement.spacedBy(SettingsGridGap)) {
+                column.forEach { action ->
+                    val index = menu.items.indexOf(action)
+                    SettingsButton(
+                        action = action,
+                        value = action.buttonValue(menu),
+                        selected = ui.mode == PlayerMode.Settings && index == ui.settingsCursor,
+                        enabled = menu.isEnabled(action),
+                        onClick = {
+                            ui.settingsCursor = index
+                            ui.activate(action, menu)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsButton(
+    action: SettingsAction,
+    value: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    TvFocusCard(
+        onClick = if (enabled) onClick else {},
+        shape = TvMetrics.ChipShape,
+        modifier = Modifier
+            .width(SettingsButtonWidth)
+            .height(SettingsButtonHeight)
+            .alpha(if (enabled) 1f else 0.45f)
+            .focusProperties { canFocus = false },
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .clip(TvMetrics.ChipShape)
+                .background(if (selected) TvAccent else TvSurfaceContainerHigh)
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                action.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (selected) TvOnAccent else TvOnSurfaceDim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                value,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = if (selected) TvOnAccent else TvOnSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+private fun SettingsAction.buttonValue(menu: PlayerActions): String = when (this) {
+    SettingsAction.Audio, SettingsAction.Subtitle -> menu.selected(this).languageCode()
+    SettingsAction.Quality, SettingsAction.Speed -> menu.selected(this).ifBlank { "—" }
+    SettingsAction.Episodes -> "Выбрать"
+    SettingsAction.NextEpisode -> "Далее"
+}
+
+/** Короткий код языка оставляет в плитке место для значения, а неизвестные длинные подписи ellipsize'ятся. */
+private fun String.languageCode(): String {
+    val language = substringAfter(". ", this).substringBefore(" · ").trim()
+    return when (language.lowercase()) {
+        "русский", "russian", "ru", "rus" -> "RUS"
+        "english", "en", "eng" -> "ENG"
+        "українська", "ukrainian", "uk", "ukr" -> "UKR"
+        "оригинал", "original" -> "ORIG"
+        else -> language.ifBlank { "—" }
     }
 }
 
@@ -498,9 +528,6 @@ private fun SettingsRow(label: String, highlighted: Boolean, current: Boolean) {
 /** Прозрачность плавающих панелей: кадр просвечивает, текст остаётся читаемым. */
 private const val PANEL_ALPHA = 0.85f
 
-/** Увеличение чипа-курсора в ряду настроек — белой заливки на ярком кадре мало для читаемости выбора. */
-private const val CURSOR_CHIP_SCALE = 1.3f
-
 private val PopoverWidth = 260.dp
 private val AutoNextCardMaxWidth = 460.dp
 private val SubscriptionCardMaxWidth = 480.dp
@@ -519,3 +546,7 @@ private val ScrubFocusRingExtra = 6.dp
 private val PauseButtonSize = 50.dp
 private val PauseFocusOuter = 62.dp
 private val PauseFocusInner = 56.dp
+private const val SettingsGridRows = 2
+private val SettingsGridGap = 8.dp
+private val SettingsButtonWidth = 136.dp
+private val SettingsButtonHeight = 58.dp

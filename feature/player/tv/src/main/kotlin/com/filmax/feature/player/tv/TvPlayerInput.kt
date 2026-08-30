@@ -11,12 +11,12 @@ import androidx.compose.ui.input.key.Key
 import androidx.media3.common.Player
 import com.filmax.core.domain.catalog.model.MediaTrack
 
-/** Что сейчас ведёт D-pad: Play/Pause, прогресс-бар или ряд настроек под скраббером. */
+/** Что сейчас ведёт D-pad: Play/Pause, прогресс-бар или сетка настроек справа от него. */
 internal enum class PlayerMode { Transport, Progress, Settings }
 
 /**
- * Пункт ряда настроек. Первые четыре открывают поповер выбора, [Episodes] — боковую панель
- * сезонов и серий, [NextEpisode] — действие сразу.
+ * Пункт сетки настроек. Первые четыре открывают поповер выбора, [Episodes] — панель сезонов
+ * и серий, [NextEpisode] — действие сразу.
  */
 internal enum class SettingsAction(val label: String) {
     Quality("Качество"),
@@ -40,7 +40,7 @@ internal class EpisodesPanelData(
 )
 
 /**
- * Ряд настроек в терминах текущего кадра композиции: что показываем и что делать по OK.
+ * Сетка настроек в терминах текущего кадра композиции: что показываем и что делать по OK.
  * Передаётся обработчику клавиш параметром — [TvPlayerUiState] про PlayerState ничего не знает.
  * [episodes] == null — фильм или навигации по сериям нет: пункта «Серии» в ряду не будет.
  */
@@ -149,8 +149,8 @@ internal class TvPlayerUiState(val player: Player) {
 
     /**
      * Раскладка D-pad — дословно по гайдлайну Google: Center — пауза/воспроизведение, Left/Right —
-     * перемотка доступна только после перехода на прогресс-бар клавишей Up, Down открывает
-     * настройки. Неизвестные клавиши не трогаем — иначе съедим громкость и системные.
+     * перемотка доступна только после перехода на прогресс-бар клавишей Up; Right и Down ведут
+     * в сетку справа от Play. Неизвестные клавиши не трогаем — иначе съедим громкость и системные.
      */
     fun onKey(key: Key, menu: PlayerActions): Boolean = when {
         // OK при видимой плашке автоперехода (и только в транспорте) — следующая серия сразу.
@@ -224,13 +224,15 @@ internal class TvPlayerUiState(val player: Player) {
 
     private fun onSettingsKey(key: Key, menu: PlayerActions): Boolean {
         when (key) {
-            Key.DirectionLeft -> settingsCursor = (settingsCursor - 1).coerceAtLeast(0)
-            Key.DirectionRight -> settingsCursor = (settingsCursor + 1).coerceAtMost(menu.items.lastIndex)
-            Key.DirectionUp -> mode = PlayerMode.Transport
+            Key.DirectionLeft -> moveInSettingsGrid(menu, -SETTINGS_GRID_ROWS, returnToTransport = true)
+            Key.DirectionRight -> moveInSettingsGrid(menu, SETTINGS_GRID_ROWS)
+            Key.DirectionUp -> if (settingsCursor % SETTINGS_GRID_ROWS == 0) {
+                mode = PlayerMode.Transport
+            } else {
+                moveInSettingsGrid(menu, -1)
+            }
             Key.DirectionCenter, Key.Enter -> menu.items.getOrNull(settingsCursor)?.let { activate(it, menu) }
-            // Ниже чипов ничего нет, но клавишу гасим: непрочитанная стрелка запустит поиск фокуса,
-            // а любой ушедший фокус — это ровно тот баг, из-за которого панель зависала открытой.
-            Key.DirectionDown -> Unit
+            Key.DirectionDown -> if (settingsCursor % SETTINGS_GRID_ROWS == 0) moveInSettingsGrid(menu, +1)
             else -> return false
         }
         touch()
@@ -240,14 +242,10 @@ internal class TvPlayerUiState(val player: Player) {
     private fun onTransportKey(key: Key, menu: PlayerActions): Boolean {
         when (key) {
             Key.DirectionLeft, Key.MediaRewind -> if (mode == PlayerMode.Progress) scrub(-1) else touch()
-            Key.DirectionRight, Key.MediaFastForward -> if (mode == PlayerMode.Progress) scrub(1) else touch()
+            Key.DirectionRight -> if (mode == PlayerMode.Progress) scrub(1) else openSettings(menu)
+            Key.MediaFastForward -> if (mode == PlayerMode.Progress) scrub(1) else touch()
             Key.DirectionCenter, Key.Enter, Key.MediaPlayPause -> togglePlay()
-            Key.DirectionDown -> {
-                if (menu.items.isNotEmpty()) mode = PlayerMode.Settings
-                settingsCursor = 0
-                seekLabel = null
-                touch()
-            }
+            Key.DirectionDown -> openSettings(menu)
             Key.DirectionUp -> {
                 mode = PlayerMode.Progress
                 seekLabel = null
@@ -256,6 +254,19 @@ internal class TvPlayerUiState(val player: Player) {
             else -> return false
         }
         return true
+    }
+
+    private fun openSettings(menu: PlayerActions) {
+        if (menu.items.isEmpty()) return
+        mode = PlayerMode.Settings
+        settingsCursor = menu.firstEnabledSettingsIndex()
+        seekLabel = null
+        touch()
+    }
+
+    private fun moveInSettingsGrid(menu: PlayerActions, delta: Int, returnToTransport: Boolean = false) {
+        val next = menu.moveSettingsCursor(settingsCursor, delta)
+        if (next == settingsCursor && returnToTransport) mode = PlayerMode.Transport else settingsCursor = next
     }
 
     fun activate(action: SettingsAction, menu: PlayerActions) {
@@ -274,6 +285,18 @@ internal class TvPlayerUiState(val player: Player) {
             }
         }
         touch()
+    }
+
+    private fun PlayerActions.firstEnabledSettingsIndex(): Int =
+        items.indexOfFirst { isEnabled(it) }.coerceAtLeast(0)
+
+    private fun PlayerActions.moveSettingsCursor(current: Int, delta: Int): Int {
+        var index = current + delta
+        while (index in items.indices) {
+            if (isEnabled(items[index])) return index
+            index += delta
+        }
+        return current
     }
 
     /**
@@ -381,3 +404,6 @@ internal const val AUTO_NEXT_WINDOW_MS = 20_000L
 
 /** Отсчёт до автостарта следующей серии с момента появления плашки. */
 internal const val AUTO_NEXT_COUNTDOWN_SEC = 5
+
+/** В каждом столбце сетки ровно две плитки. */
+private const val SETTINGS_GRID_ROWS = 2
