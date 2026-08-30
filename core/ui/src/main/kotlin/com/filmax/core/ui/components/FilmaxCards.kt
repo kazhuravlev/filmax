@@ -213,16 +213,18 @@ fun posterMeta(type: String?, year: Int): String? {
 }
 
 /**
- * Подпись карточки «продолжить»: «S2 · осталось 18 мин». Одна на телефон и ТВ — раньше жила
+ * Подпись карточки «продолжить»: «S2 E20 · осталось 18 мин». Одна на телефон и ТВ — раньше жила
  * тремя одинаковыми копиями (обе Главных и «Моё»).
  *
- * Номер эпизода макета («E5») не выводим: в [WatchProgress] его нет — `videoId` это
- * идентификатор трека, а не порядковый номер серии (`PlayerScreenModel` матчит им `MediaTrack.id`).
+ * Для фильмов сезон и номер эпизода не выводятся. У сериалов `videoId` — номер серии.
  */
 fun continueMeta(progress: WatchProgress?): String? {
     if (progress == null) return null
     val parts = buildList {
-        progress.season?.takeIf { it > 0 }?.let { add("S$it") }
+        progress.season?.takeIf { it > 0 }?.let { season ->
+            val episode = progress.videoId?.takeIf { it > 0 }?.let { " E$it" }.orEmpty()
+            add("S$season$episode")
+        }
         remainingMinutes(progress)?.let { add("осталось ${durationLabel(it)}") }
     }
     return parts.joinToString(" · ").ifBlank { null }
