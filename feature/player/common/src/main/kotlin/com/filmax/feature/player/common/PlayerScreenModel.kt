@@ -336,7 +336,7 @@ class PlayerScreenModel(
     private fun applyAudioPreference() {
         val builder = player.trackSelectionParameters.buildUpon()
         langCode(audioPreference)?.let { builder.setPreferredAudioLanguage(it) }
-            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
         player.trackSelectionParameters = builder.build()
     }
 
