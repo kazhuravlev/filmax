@@ -206,7 +206,7 @@ internal fun SubscriptionCard(modifier: Modifier = Modifier) {
     }
 }
 
-/** Шапка: название с подстрокой слева, цена выхода справа — «Назад» выходит из плеера сразу. */
+/** Шапка: название и подзаголовок. */
 @Composable
 private fun PlayerTopBar(title: String, subtitle: String, modifier: Modifier = Modifier) {
     Row(
@@ -227,20 +227,6 @@ private fun PlayerTopBar(title: String, subtitle: String, modifier: Modifier = M
                     modifier = Modifier.padding(top = 3.dp),
                 )
             }
-        }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Box(
-                Modifier
-                    .size(24.dp)
-                    .border(1.dp, TvSurfaceContainerHighest, MaterialTheme.shapes.extraSmall),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("‹", style = MaterialTheme.typography.bodySmall, color = TvOnSurfaceVariant)
-            }
-            Text("Назад — выход", style = MaterialTheme.typography.bodySmall, color = TvOnSurfaceVariant)
         }
     }
 }
