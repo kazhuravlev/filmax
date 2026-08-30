@@ -405,20 +405,7 @@ private fun TransportHints(isPlaying: Boolean, focused: Boolean, modifier: Modif
 /** Базовый шаг перемотки в кольце: с разгона реальный шаг показывает подпись по центру кадра. */
 @Composable
 private fun SeekHint(label: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
-    ) {
-        Box(
-            Modifier
-                .size(34.dp)
-                .border(1.dp, TvSurfaceContainerHighest, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("${SEEK_STEPS_SEC.first()}", style = MaterialTheme.typography.labelLarge, color = TvOnSurface)
-        }
-        Text(label, style = MaterialTheme.typography.bodySmall, color = TvOnSurfaceVariant)
-    }
+    Text(label, style = MaterialTheme.typography.bodySmall, color = TvOnSurfaceVariant)
 }
 
 /**
