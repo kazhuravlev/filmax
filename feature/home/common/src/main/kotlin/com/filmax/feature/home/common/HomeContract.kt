@@ -2,7 +2,7 @@ package com.filmax.feature.home.common
 
 import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.Item
-import com.filmax.core.domain.watching.model.WatchHistory
+import com.filmax.core.domain.watching.model.Continuation
 
 /**
  * Ряды ленты. Идентификатор — единственное, чем экран адресует ряд: по нему просят догрузку
@@ -35,7 +35,7 @@ sealed interface HomeRow {
     val isEmpty: Boolean
 
     /** «Продолжить» — история просмотра целиком, страниц у неё нет. */
-    data class Continue(val entries: List<WatchHistory>) : HomeRow {
+    data class Continue(val entries: List<Continuation>) : HomeRow {
         override val id: HomeRowId get() = HomeRowId.CONTINUE
         override val isEmpty: Boolean get() = entries.isEmpty()
     }

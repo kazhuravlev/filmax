@@ -11,6 +11,7 @@ import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.favorites.model.toFavoriteItem
 import com.filmax.core.domain.person.CastRepository
 import com.filmax.core.domain.watching.WatchingRepository
+import com.filmax.core.domain.watching.model.calculateContinuation
 import com.filmax.core.presentation.BaseScreenModel
 import com.filmax.feature.details.common.navigation.DetailsRoute
 
@@ -42,12 +43,14 @@ class DetailsScreenModel(
         screenModelScope { _ ->
             val itemResult = catalog.getItemDetails(route.itemId)
             val similar = catalog.getSimilarItems(route.itemId).getOrNull().orEmpty()
+            val history = watching.getHistory().getOrNull()?.firstOrNull { it.itemId == route.itemId }
             when (itemResult) {
                 is RequestResult.Success -> {
                     updateState {
                         it.copy(
                             loading = false,
                             item = itemResult.data,
+                            continuation = calculateContinuation(itemResult.data, history),
                             similar = similar,
                         )
                     }

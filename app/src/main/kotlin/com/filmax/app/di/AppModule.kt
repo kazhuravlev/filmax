@@ -3,6 +3,7 @@ package com.filmax.app.di
 import com.filmax.app.navigation.RootScreenModel
 import com.filmax.app.update.AppUpdateScreenModel
 import com.filmax.app.update.GitHubUpdateRepository
+import com.filmax.core.domain.watching.model.ContinuationResolver
 import kotlinx.coroutines.Dispatchers
 import org.koin.android.ext.koin.androidContext
 import org.koin.androidx.viewmodel.dsl.viewModel
@@ -14,6 +15,7 @@ import org.koin.dsl.module
 // но правило исключений не делает, поэтому Suppress именно здесь.
 @Suppress("InjectDispatcher")
 val appModule = module {
+    factory { ContinuationResolver(catalog = get()) }
     viewModelOf(::RootScreenModel)
     single { GitHubUpdateRepository(androidContext(), Dispatchers.IO) }
     viewModel { AppUpdateScreenModel(get(), Dispatchers.IO) }

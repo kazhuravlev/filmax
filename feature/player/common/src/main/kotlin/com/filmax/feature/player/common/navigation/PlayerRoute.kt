@@ -12,4 +12,10 @@ import kotlinx.serialization.Serializable
  * «S3E2» находил бы вторую серию первого сезона. `-1` — не сериал/сезон неизвестен.
  */
 @Serializable
-data class PlayerRoute(val itemId: Int, val videoId: Int = -1, val season: Int = -1)
+data class PlayerRoute(
+    val itemId: Int,
+    val videoId: Int = -1,
+    val season: Int = -1,
+    /** Ненулевая позиция означает пользовательский сценарий «Продолжить просмотр». */
+    val resumePositionSeconds: Int = 0,
+)

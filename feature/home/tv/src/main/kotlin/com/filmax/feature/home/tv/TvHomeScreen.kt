@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
-import com.filmax.core.domain.watching.model.WatchHistory
+import com.filmax.core.domain.watching.model.Continuation
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvAccent
 import com.filmax.core.tv.designsystem.TvButton
@@ -77,7 +77,7 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun TvHomeScreen(
     onOpenItem: (Int) -> Unit,
-    onPlay: (itemId: Int, season: Int, videoId: Int) -> Unit,
+    onPlay: (itemId: Int, season: Int, videoId: Int, resumePositionSeconds: Int) -> Unit,
     onOpenCollection: (id: Int, title: String) -> Unit,
     modifier: Modifier = Modifier,
     screenModel: HomeScreenModel = koinViewModel(),
@@ -127,7 +127,7 @@ fun TvHomeScreen(
 /** Действия главной одним объектом — как MovieActions в TV-деталях. */
 private data class TvHomeActions(
     val onOpenItem: (Int) -> Unit,
-    val onPlay: (itemId: Int, season: Int, videoId: Int) -> Unit,
+    val onPlay: (itemId: Int, season: Int, videoId: Int, resumePositionSeconds: Int) -> Unit,
     val onOpenCollection: (id: Int, title: String) -> Unit,
     val onReload: () -> Unit,
     val onLoadMoreRow: (HomeRowId) -> Unit,
@@ -161,7 +161,7 @@ private fun TvHomeContent(
                 TvHero(
                     item = hero,
                     // Фильм — единственный трек, эпизод выбирать не из чего: PlayerRoute.videoId = -1.
-                    onPlay = { actions.onPlay(hero.id, NO_SEASON, NO_VIDEO_ID) },
+                    onPlay = { actions.onPlay(hero.id, NO_SEASON, NO_VIDEO_ID, NO_RESUME_POSITION) },
                     onDetails = { actions.onOpenItem(hero.id) },
                     focus = focus,
                 )
@@ -207,11 +207,7 @@ private fun LazyListScope.tvContinueRail(row: HomeRow.Continue, actions: TvHomeA
                     history = entry,
                     modifier = focus.item(returnKey(row.id, entry.itemId)),
                     onClick = {
-                        onPlay(
-                            entry.itemId,
-                            entry.progress?.season ?: NO_SEASON,
-                            entry.progress?.videoId ?: NO_VIDEO_ID,
-                        )
+                        onPlay(entry.itemId, entry.season, entry.videoId, entry.savedPositionSeconds)
                     },
                 )
             }
@@ -435,14 +431,14 @@ private fun TvCollectionCard(collection: Collection, onClick: () -> Unit, modifi
 }
 
 @Composable
-private fun TvContinueCard(history: WatchHistory, onClick: () -> Unit, modifier: Modifier) {
+private fun TvContinueCard(history: Continuation, onClick: () -> Unit, modifier: Modifier) {
     TvProgressCard(
         modifier = modifier,
         title = history.title,
         meta = continueMeta(history.progress),
         // Карточка 16:9 — берём кадр, а не вертикальный постер: тот обрезался бы по центру.
         posterUrl = history.wideOrPoster,
-        progress = history.progress?.fraction ?: 0f,
+        progress = history.progress.fraction,
         onClick = onClick,
         posterContent = { url, posterModifier ->
             PosterImage(
@@ -455,6 +451,8 @@ private fun TvContinueCard(history: WatchHistory, onClick: () -> Unit, modifier:
         },
     )
 }
+
+private const val NO_RESUME_POSITION = 0
 
 /** Баннер «нет сети» над кэшированным контентом; фокус+OK — повторить (issue #42). */
 @Composable

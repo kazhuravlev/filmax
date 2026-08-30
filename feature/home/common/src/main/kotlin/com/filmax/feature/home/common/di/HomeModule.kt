@@ -10,6 +10,6 @@ import org.koin.dsl.module
 val homeModule = module {
     // Кэш последней ленты — single, чтобы переживать пересоздание use-case (офлайн-устойчивость #42).
     single { LastValueCache<HomeFeed>() }
-    factory { GetHomeFeedUseCase(catalog = get(), watching = get(), cache = get()) }
+    factory { GetHomeFeedUseCase(catalog = get(), watching = get(), continuations = get(), cache = get()) }
     viewModelOf(::HomeScreenModel)
 }

@@ -2,10 +2,13 @@ package com.filmax.feature.details.common
 
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.person.CastMember
+import com.filmax.core.domain.watching.model.Continuation
 
 data class DetailsState(
     val loading: Boolean = true,
     val item: Item? = null,
+    /** Рассчитан по history + tracklist, а не по одному `watchStatus` из деталей. */
+    val continuation: Continuation? = null,
     val similar: List<Item> = emptyList(),
     /**
      * Актёры с фото (TMDB) — украшение поверх строки имён от kino.watch. Пустой список, когда фото

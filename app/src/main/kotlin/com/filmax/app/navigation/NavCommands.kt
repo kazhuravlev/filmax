@@ -112,7 +112,12 @@ private fun Destination.toRoute(): Any = when (this) {
     Destination.DeviceSettings -> DeviceSettingsRoute
     Destination.DesignSystem -> DesignSystemRoute
     is Destination.Details -> DetailsRoute(itemId)
-    is Destination.Player -> PlayerRoute(itemId = itemId, videoId = videoId, season = season)
+    is Destination.Player -> PlayerRoute(
+        itemId = itemId,
+        videoId = videoId,
+        season = season,
+        resumePositionSeconds = resumePositionSeconds,
+    )
     is Destination.Trailer -> TrailerRoute(url = url, title = title)
     is Destination.CollectionDetail -> CollectionDetailRoute(collectionId = collectionId, title = title)
     is Destination.Filmography -> FilmographyRoute(name = name, isDirector = isDirector)

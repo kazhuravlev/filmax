@@ -74,6 +74,7 @@ import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemRating
 import com.filmax.core.domain.catalog.model.MediaTrack
 import com.filmax.core.domain.person.CastMember
+import com.filmax.core.domain.watching.model.Continuation
 import com.filmax.core.navigation.Destination
 import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxErrorModal
@@ -98,6 +99,7 @@ import org.koin.compose.koinInject
 
 /** Фильм играется целиком, без выбора дорожки: плеер ждёт videoId = -1. */
 private const val MOVIE_VIDEO_ID = -1
+private const val NO_RESUME_POSITION = 0
 
 /** «Сезона нет» — фильм или сезон неизвестен (PlayerRoute.season = -1). */
 private const val NO_SEASON = -1
@@ -143,13 +145,19 @@ fun DetailsScreen(
                 item = item,
                 extras = DetailsExtras(similar = state.similar, cast = state.cast),
                 isFav = state.isFav,
+                continuation = state.continuation,
                 actions = DetailsActions(
                     onBack = navigator::back,
                     // Второй аргумент — НОМЕР серии, а не её id: тем же числом kino.watch принимает
                     // и отдаёт прогресс. Фильм играется целиком ([MOVIE_VIDEO_ID]).
-                    onPlay = { season, videoId ->
+                    onPlay = { season, videoId, resumePositionSeconds ->
                         navigator.open(
-                            Destination.Player(itemId = item.id, videoId = videoId, season = season),
+                            Destination.Player(
+                                itemId = item.id,
+                                videoId = videoId,
+                                season = season,
+                                resumePositionSeconds = resumePositionSeconds,
+                            ),
                         )
                     },
                     onToggleFav = { screenModel.dispatch(DetailsEvent.ToggleFav) },
@@ -179,7 +187,7 @@ fun DetailsScreen(
 private data class DetailsActions(
     val onBack: () -> Unit,
     /** [season] ≤ 0 — фильм/сезон неизвестен; номер видео уникален только внутри сезона. */
-    val onPlay: (season: Int, videoId: Int) -> Unit,
+    val onPlay: (season: Int, videoId: Int, resumePositionSeconds: Int) -> Unit,
     val onToggleFav: () -> Unit,
     val onShare: () -> Unit,
     val onOpenItem: (Int) -> Unit,
@@ -210,9 +218,12 @@ private fun DetailsContent(
     item: Item,
     extras: DetailsExtras,
     isFav: Boolean,
+    continuation: Continuation?,
     actions: DetailsActions,
 ) {
-    val series = remember(item) { if (item.isSeries()) calculateSeriesData(item.tracklist) else null }
+    val series = remember(item, continuation) {
+        if (item.isSeries()) calculateSeriesData(item.tracklist, continuation) else null
+    }
     // Селектор стартует на сезоне недосмотренной серии, а не на первом: продолжают чаще, чем
     // начинают заново.
     var selectedSeason by remember(item.id) { mutableIntStateOf(series?.resumeSeasonIndex ?: 0) }
@@ -242,6 +253,7 @@ private fun DetailsContent(
                 item = item,
                 extras = extras,
                 isFav = isFav,
+                continuation = continuation,
                 series = seriesUi,
                 actions = actions,
             )
@@ -254,6 +266,7 @@ private fun DetailsBody(
     item: Item,
     extras: DetailsExtras,
     isFav: Boolean,
+    continuation: Continuation?,
     series: SeriesUiState,
     actions: DetailsActions,
 ) {
@@ -274,9 +287,18 @@ private fun DetailsBody(
                 // Сериал без серий играть нечем — кнопка молчит, а не открывает пустой плеер.
                 // В плеер уходят номер серии И сезон: номер уникален только внутри сезона.
                 if (series.data == null) {
-                    actions.onPlay(NO_SEASON, MOVIE_VIDEO_ID)
+                    actions.onPlay(NO_SEASON, MOVIE_VIDEO_ID, NO_RESUME_POSITION)
                 } else {
-                    target?.let { actions.onPlay(it.seasonNumber, it.number) }
+                    target?.let {
+                        val position = continuation
+                            ?.takeIf { candidate ->
+                                candidate.isActualContinuation &&
+                                    candidate.season == it.seasonNumber && candidate.videoId == it.number
+                            }
+                            ?.savedPositionSeconds
+                            ?: NO_RESUME_POSITION
+                        actions.onPlay(it.seasonNumber, it.number, position)
+                    }
                 }
             },
             onToggleFav = actions.onToggleFav,
@@ -299,7 +321,7 @@ private fun DetailsBody(
                 episodes = series.episodes,
                 selectedSeason = series.selectedSeason,
                 onSelectSeason = series.onSelectSeason,
-                onPlayEpisode = actions.onPlay,
+                onPlayEpisode = { season, videoId -> actions.onPlay(season, videoId, NO_RESUME_POSITION) },
             ),
             modifier = Modifier.padding(top = 24.dp),
         )

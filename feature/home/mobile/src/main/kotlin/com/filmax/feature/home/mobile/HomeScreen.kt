@@ -70,7 +70,7 @@ import org.koin.compose.koinInject
  */
 private data class HomeActions(
     val onOpenItem: (Int) -> Unit,
-    val onPlay: (itemId: Int, season: Int, videoId: Int) -> Unit,
+    val onPlay: (itemId: Int, season: Int, videoId: Int, resumePositionSeconds: Int) -> Unit,
     val onOpenCollection: (id: Int, title: String) -> Unit,
     val onOpenSearch: () -> Unit,
     val onOpenProfile: () -> Unit,
@@ -150,7 +150,7 @@ private fun HomeFeed(
                 HomeHero(
                     item = hero,
                     // Фильм — единственный трек, эпизод выбирать не из чего.
-                    onPlay = { actions.onPlay(hero.id, NO_SEASON, NO_VIDEO_ID) },
+                    onPlay = { actions.onPlay(hero.id, NO_SEASON, NO_VIDEO_ID, NO_RESUME_POSITION) },
                     onOpenItem = { actions.onOpenItem(hero.id) },
                 )
             }
@@ -165,8 +165,15 @@ private fun HomeFeed(
  */
 private fun Navigator.homeActions() = HomeActions(
     onOpenItem = { itemId -> open(Destination.Details(itemId)) },
-    onPlay = { itemId, season, videoId ->
-        open(Destination.Player(itemId = itemId, videoId = videoId, season = season))
+    onPlay = { itemId, season, videoId, resumePositionSeconds ->
+        open(
+            Destination.Player(
+                itemId = itemId,
+                videoId = videoId,
+                season = season,
+                resumePositionSeconds = resumePositionSeconds,
+            ),
+        )
     },
     onOpenCollection = { id, title -> open(Destination.CollectionDetail(id, title)) },
     onOpenSearch = { open(Destination.Catalog) },
@@ -202,7 +209,7 @@ private val HomeRowId.title: String
 
 private fun LazyListScope.continueRow(
     row: HomeRow.Continue,
-    onPlay: (itemId: Int, season: Int, videoId: Int) -> Unit,
+    onPlay: (itemId: Int, season: Int, videoId: Int, resumePositionSeconds: Int) -> Unit,
 ) {
     item(key = row.id.name) {
         TitledRow(title = row.id.title) {
@@ -213,12 +220,13 @@ private fun LazyListScope.continueRow(
                     title = entry.title,
                     meta = continueMeta(entry.progress),
                     posterUrl = entry.wideOrPoster,
-                    progress = entry.progress?.fraction ?: 0f,
+                    progress = entry.progress.fraction,
                     onClick = {
                         onPlay(
                             entry.itemId,
-                            entry.progress?.season ?: NO_SEASON,
-                            entry.progress?.videoId ?: NO_VIDEO_ID,
+                            entry.season,
+                            entry.videoId,
+                            entry.savedPositionSeconds,
                         )
                     },
                 )
@@ -226,6 +234,8 @@ private fun LazyListScope.continueRow(
         }
     }
 }
+
+private const val NO_RESUME_POSITION = 0
 
 private fun LazyListScope.posterRow(
     row: HomeRow.Titles,

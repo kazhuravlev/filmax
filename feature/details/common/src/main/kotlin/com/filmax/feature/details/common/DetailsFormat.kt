@@ -7,8 +7,9 @@ import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.catalog.model.MediaTrack
 import com.filmax.core.domain.person.CastMember
+import com.filmax.core.domain.watching.model.Continuation
 
-/** Статусы просмотра kino.watch (`watching.status`): -1 не начат, 0 в процессе, 1 досмотрен. */
+/** Статусы нужны подписям и прогрессу карточек эпизодов. */
 const val WATCH_STATUS_IN_PROGRESS = 0
 const val WATCH_STATUS_FINISHED = 1
 
@@ -25,39 +26,28 @@ private const val MINUTES_IN_HOUR = 60
 data class SeriesData(
     /** Пары «номер сезона → серии по порядку», отсортированные по номеру сезона. */
     val seasons: List<Pair<Int, List<MediaTrack>>>,
-    /** Эпизод для «продолжить»: в процессе → следующая после досмотренной → иначе null. */
+    /** Эпизод для «Продолжить», только когда общий расчёт признал его незавершённым. */
     val resume: MediaTrack?,
     /** Индекс сезона эпизода «продолжить» в [seasons] (0, если не определён). */
     val resumeSeasonIndex: Int,
 )
 
 /** Считает [SeriesData] из плейлиста серий — чистая функция, тестируемая отдельно от UI. */
-fun calculateSeriesData(tracklist: List<MediaTrack>): SeriesData {
+fun calculateSeriesData(tracklist: List<MediaTrack>, continuation: Continuation? = null): SeriesData {
     val seasons = tracklist
         .groupBy { it.seasonNumber }
         .toSortedMap()
         .map { (number, episodes) -> number to episodes.sortedBy { it.number } }
-    val resume = resumeEpisode(seasons)
+    val resume = continuation
+        ?.takeIf { it.isActualContinuation }
+        ?.let { target ->
+            seasons.asSequence().flatMap { it.second.asSequence() }
+                .firstOrNull { it.seasonNumber == target.season && it.number == target.videoId }
+        }
     val resumeSeasonIndex = resume
         ?.let { episode -> seasons.indexOfFirst { it.first == episode.seasonNumber }.takeIf { it >= 0 } }
         ?: 0
     return SeriesData(seasons = seasons, resume = resume, resumeSeasonIndex = resumeSeasonIndex)
-}
-
-/**
- * Точка «продолжить»: недосмотренная серия → СЛЕДУЮЩАЯ после последней досмотренной
- * («продолжить» — это смотреть дальше, а не пересматривать) → всё досмотрено — последняя
- * (пересмотр). Порядок — по отсортированным сезонам, а не по сырому tracklist.
- */
-private fun resumeEpisode(seasons: List<Pair<Int, List<MediaTrack>>>): MediaTrack? {
-    val ordered = seasons.flatMap { (_, episodes) -> episodes }
-    val inProgress = ordered.firstOrNull { it.watchStatus == WATCH_STATUS_IN_PROGRESS }
-    val lastWatched = ordered.indexOfLast { it.watchStatus == WATCH_STATUS_FINISHED }
-    return when {
-        inProgress != null -> inProgress
-        lastWatched >= 0 -> ordered.getOrNull(lastWatched + 1) ?: ordered[lastWatched]
-        else -> null
-    }
 }
 
 /**

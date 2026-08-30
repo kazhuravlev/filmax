@@ -6,6 +6,7 @@ import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.common.LastValueCache
 import com.filmax.core.domain.common.firstErrorMessage
 import com.filmax.core.domain.common.getOrNull
+import com.filmax.core.domain.watching.model.ContinuationResolver
 import com.filmax.core.domain.watching.WatchingRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -21,6 +22,7 @@ import kotlinx.coroutines.coroutineScope
 class GetHomeFeedUseCase(
     private val catalog: CatalogRepository,
     private val watching: WatchingRepository,
+    private val continuations: ContinuationResolver,
     private val cache: LastValueCache<HomeFeed>,
 ) {
     suspend operator fun invoke(): HomeFeed = coroutineScope {
@@ -36,9 +38,14 @@ class GetHomeFeedUseCase(
         val forYou = forYouDeferred.await()
         val history = historyDeferred.await()
 
+        val continueWatching = history.getOrNull()
+            ?.let { continuations.resolve(it) }
+            ?.filter { it.isActualContinuation }
+            ?.take(CONTINUE_WATCHING_LIMIT)
+            .orEmpty()
         val feed = HomeFeed(
             hero = hot.getOrNull()?.items?.firstOrNull(),
-            continueWatching = history.getOrNull()?.take(CONTINUE_WATCHING_LIMIT) ?: emptyList(),
+            continueWatching = continueWatching,
             collections = collections.getOrNull()?.take(COLLECTIONS_LIMIT) ?: emptyList(),
             trending = trending.getOrNull()?.items?.take(ROW_LIMIT) ?: emptyList(),
             forYou = forYou.getOrNull()?.items?.take(ROW_LIMIT) ?: emptyList(),

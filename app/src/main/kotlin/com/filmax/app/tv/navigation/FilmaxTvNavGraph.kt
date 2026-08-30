@@ -163,8 +163,8 @@ private fun NavGraphBuilder.tvDestinations(
 
     tvHomeScreen(
         onOpenItem = { navController.navigate(DetailsRoute(it)) },
-        onPlay = { itemId, season, videoId ->
-            navController.navigate(PlayerRoute(itemId, videoId, season))
+        onPlay = { itemId, season, videoId, resumePositionSeconds ->
+            navController.navigate(PlayerRoute(itemId, videoId, season, resumePositionSeconds))
         },
         onOpenCollection = { id, title ->
             navController.navigate(CollectionDetailRoute(collectionId = id, title = title))
@@ -189,8 +189,8 @@ private fun NavGraphBuilder.tvDestinations(
     tvDeviceSettingsScreen(onBack = { navController.popBackStack() })
 
     tvDetailsScreen(
-        onPlay = { itemId, season, videoId ->
-            navController.navigate(PlayerRoute(itemId, videoId, season))
+        onPlay = { itemId, season, videoId, resumePositionSeconds ->
+            navController.navigate(PlayerRoute(itemId, videoId, season, resumePositionSeconds))
         },
         onOpenItem = { navController.navigate(DetailsRoute(it)) },
         onOpenPerson = { name, isDirector ->

@@ -164,10 +164,10 @@ class PlayerScreenModel(
                         player.setMediaItem(buildMediaItem(initial.url))
                         player.prepare()
                         applyAudioPreference()
-                        // Продолжаем с сохранённой позиции. Досмотренный до конца трек
-                        // начинаем сначала — иначе пересмотр стартовал бы с титров.
-                        track?.watchedSeconds
-                            ?.takeIf { it > 0 && track.watchStatus != WATCH_STATUS_FINISHED }
+                        // Только явный маршрут «Продолжить» восстанавливает позицию. Статус трека
+                        // здесь не участвует: history может хранить позицию при watchStatus == 1.
+                        route.resumePositionSeconds
+                            .takeIf { it > 0 }
                             ?.let { player.seekTo(it * MILLIS_IN_SECOND) }
                         player.playWhenReady = true
                     }
@@ -396,9 +396,6 @@ class PlayerScreenModel(
         /** Трек маршрута: номер видео + сезон (у фильма сезона нет — совпадения по номеру достаточно). */
         fun MediaTrack.matchesRoute(route: PlayerRoute): Boolean =
             number == route.videoId && (route.season <= 0 || seasonNumber == route.season)
-
-        /** `watchStatus` из API: 1 — трек досмотрен до конца. */
-        const val WATCH_STATUS_FINISHED = 1
 
         /** Порог отправки прогресса: реже, чем тик плеера (1 с), но чаще, чем теряется место. */
         const val PROGRESS_STEP_SECONDS = 5

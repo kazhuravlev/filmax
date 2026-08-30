@@ -9,6 +9,7 @@ import com.filmax.core.domain.usecase.home.GetHomeFeedUseCase
 import com.filmax.core.domain.usecase.home.HomeFeed
 import com.filmax.core.domain.usecase.watching.ToggleWatchedUseCase
 import com.filmax.core.domain.usecase.watching.ToggleWatchlistUseCase
+import com.filmax.core.domain.watching.model.ContinuationResolver
 import com.filmax.core.network.di.networkModule
 import com.filmax.core.network.di.platformNetworkModule
 import com.filmax.data.auth.di.authModule
@@ -25,7 +26,8 @@ import org.koin.dsl.module
 val useCaseModule = module {
     // Кэш последней ленты — single, чтобы переживать пересоздание use-case (офлайн-устойчивость #42).
     single { LastValueCache<HomeFeed>() }
-    factory { GetHomeFeedUseCase(catalog = get(), watching = get(), cache = get()) }
+    factory { ContinuationResolver(catalog = get()) }
+    factory { GetHomeFeedUseCase(catalog = get(), watching = get(), continuations = get(), cache = get()) }
     factory { ObserveAuthStateUseCase(get()) }
     factory { RequestDeviceCodeUseCase(get()) }
     factory { PollForTokenUseCase(get()) }

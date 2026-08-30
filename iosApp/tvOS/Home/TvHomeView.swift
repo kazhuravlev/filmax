@@ -27,7 +27,7 @@ struct TvHomeView: View {
                 if let hero = feed.hero { TvHeroBanner(item: hero) }
 
                 if !feed.continueWatching.isEmpty {
-                    TvHistoryRail(title: "Продолжить просмотр", items: feed.continueWatching)
+                    TvContinuationRail(title: "Продолжить просмотр", items: feed.continueWatching)
                 }
                 if !feed.trending.isEmpty {
                     TvItemRail(title: "В тренде", items: feed.trending)
@@ -106,6 +106,30 @@ struct TvItemRail: View {
                             title: item.title,
                             subtitle: item.metaLine,
                             ratingText: item.ratingText
+                        )
+                    }
+                }
+                .padding(.vertical, DS.Spacing.lg)
+            }
+        }
+    }
+}
+
+struct TvContinuationRail: View {
+    let title: String
+    let items: [Continuation]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.md) {
+            TvSectionHeader(title: title)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: DS.Spacing.xl) {
+                    ForEach(items, id: \.itemId) { continuation in
+                        TvPosterCard(
+                            route: .details(itemId: continuation.itemId),
+                            posterURL: continuation.wideOrPoster,
+                            title: continuation.title,
+                            progress: Double(continuation.progress.fraction)
                         )
                     }
                 }

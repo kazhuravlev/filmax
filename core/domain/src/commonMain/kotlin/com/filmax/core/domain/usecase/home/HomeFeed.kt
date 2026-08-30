@@ -2,7 +2,7 @@ package com.filmax.core.domain.usecase.home
 
 import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.Item
-import com.filmax.core.domain.watching.model.WatchHistory
+import com.filmax.core.domain.watching.model.Continuation
 
 /**
  * Готовые к показу данные главного экрана. Композитная модель — собирается из нескольких
@@ -11,7 +11,7 @@ import com.filmax.core.domain.watching.model.WatchHistory
  */
 data class HomeFeed(
     val hero: Item?,
-    val continueWatching: List<WatchHistory>,
+    val continueWatching: List<Continuation>,
     val collections: List<Collection>,
     val trending: List<Item>,
     val forYou: List<Item>,

@@ -68,6 +68,7 @@ import com.filmax.core.designsystem.ShapeFull
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.model.WatchHistory
+import com.filmax.core.domain.watching.model.Continuation
 import com.filmax.core.navigation.Destination
 import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxEmptyState
@@ -307,7 +308,7 @@ private fun MineGrid(state: LibraryState, segment: MineSegment, actions: MineAct
         contentPadding = GridPadding,
     ) {
         when (segment) {
-            MineSegment.CONTINUE -> continueSegment(state.history, actions)
+            MineSegment.CONTINUE -> continueSegment(state.continuations, actions)
             MineSegment.WATCHLIST -> watchlistSegment(state, actions)
             MineSegment.BOOKMARKS -> bookmarksSegment(state, actions)
             MineSegment.HISTORY -> historySegment(state, actions)
@@ -316,12 +317,8 @@ private fun MineGrid(state: LibraryState, segment: MineSegment, actions: MineAct
 }
 
 /** «Продолжить» — начатое, но не досмотренное. Ведёт сразу в плеер, минуя детали. */
-private fun LazyGridScope.continueSegment(history: List<WatchHistory>, actions: MineActions) {
-    val started = history.filter { entry ->
-        val fraction = entry.progress?.fraction ?: 0f
-        fraction > CONTINUE_MIN_FRACTION && fraction < CONTINUE_MAX_FRACTION
-    }
-    if (started.isEmpty()) {
+private fun LazyGridScope.continueSegment(continuations: List<Continuation>, actions: MineActions) {
+    if (continuations.isEmpty()) {
         emptyItem(
             MineEmptySpec(
                 icon = Icons.Filled.PlayCircleOutline,
@@ -332,7 +329,9 @@ private fun LazyGridScope.continueSegment(history: List<WatchHistory>, actions: 
         )
         return
     }
-    items(started, key = { it.itemId }) { entry -> ProgressCard(entry = entry, onOpenItem = actions.onOpenItem) }
+    items(continuations, key = { it.itemId }) { continuation ->
+        continuation.history?.let { entry -> ProgressCard(entry = entry, onOpenItem = actions.onOpenItem) }
+    }
 }
 
 /**
@@ -839,8 +838,6 @@ private const val WIDE_COLUMNS = 2
 private const val FOLDER_COLUMNS = 2
 
 /** Доля просмотра, при которой тайтл считается начатым, но не досмотренным. */
-private const val CONTINUE_MIN_FRACTION = 0.01f
-private const val CONTINUE_MAX_FRACTION = 0.95f
 
 /** За сколько карточек до конца сетки просить следующую страницу папки (примерно ряд). */
 private const val LOAD_MORE_TAIL = 4

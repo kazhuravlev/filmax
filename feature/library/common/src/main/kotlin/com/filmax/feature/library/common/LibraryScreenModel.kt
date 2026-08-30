@@ -7,6 +7,7 @@ import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.WatchingRepository
+import com.filmax.core.domain.watching.model.ContinuationResolver
 import com.filmax.core.presentation.BaseScreenModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -17,6 +18,7 @@ import kotlinx.coroutines.coroutineScope
 @Suppress("TooManyFunctions")
 class LibraryScreenModel(
     private val watching: WatchingRepository,
+    private val continuations: ContinuationResolver,
     private val user: UserRepository,
     private val downloadsRepo: DownloadsRepository,
     private val favoritesRepo: FavoritesRepository,
@@ -69,10 +71,15 @@ class LibraryScreenModel(
                 val listsDeferred = async { user.getBookmarkFolders() }
                 val history = historyDeferred.await()
                 val lists = listsDeferred.await()
+                val resolvedContinuations = history.getOrNull()
+                    ?.let { continuations.resolve(it) }
+                    ?.filter { it.isActualContinuation }
+                    .orEmpty()
                 updateState {
                     it.copy(
                         loading = false,
                         history = history.getOrNull().orEmpty(),
+                        continuations = resolvedContinuations,
                         lists = lists.getOrNull().orEmpty(),
                         error = firstErrorMessage(history, lists),
                     )
@@ -84,7 +91,12 @@ class LibraryScreenModel(
     private fun removeFromHistory(itemId: Int) {
         screenModelScope {
             watching.clearHistory(itemId)
-            updateState { s -> s.copy(history = s.history.filter { it.itemId != itemId }) }
+            updateState { s ->
+                s.copy(
+                    history = s.history.filter { it.itemId != itemId },
+                    continuations = s.continuations.filter { it.itemId != itemId },
+                )
+            }
         }
     }
 
@@ -92,7 +104,7 @@ class LibraryScreenModel(
         val ids = state.history.map { it.itemId }
         screenModelScope { _ ->
             ids.forEach { id -> watching.clearHistory(id) }
-            updateState { it.copy(history = emptyList()) }
+            updateState { it.copy(history = emptyList(), continuations = emptyList()) }
         }
     }
 

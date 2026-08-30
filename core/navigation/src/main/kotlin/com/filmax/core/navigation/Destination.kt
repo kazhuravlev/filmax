@@ -32,7 +32,13 @@ sealed interface Destination {
      * прогресс. [season] обязателен вместе с ним — номер уникален только внутри сезона.
      * Дефолтные `-1` означают «фильм или неизвестная серия»: плеер возьмёт первый трек.
      */
-    data class Player(val itemId: Int, val videoId: Int = -1, val season: Int = -1) : Destination
+    data class Player(
+        val itemId: Int,
+        val videoId: Int = -1,
+        val season: Int = -1,
+        /** Ненулевая позиция передаётся только из явного сценария «Продолжить просмотр». */
+        val resumePositionSeconds: Int = 0,
+    ) : Destination
 
     data class Trailer(val url: String, val title: String) : Destination
 

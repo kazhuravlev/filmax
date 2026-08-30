@@ -31,7 +31,7 @@ struct HomeView: View {
                 if let hero = feed.hero { HeroBanner(item: hero) }
 
                 if !feed.continueWatching.isEmpty {
-                    HistoryRail(title: "Продолжить просмотр", items: feed.continueWatching)
+                    ContinuationRail(title: "Продолжить просмотр", items: feed.continueWatching)
                 }
                 if !feed.trending.isEmpty {
                     ItemRail(title: "В тренде", items: feed.trending)
@@ -139,7 +139,34 @@ struct ItemRail: View {
     }
 }
 
-/// Рельса «Продолжить просмотр» из истории с прогресс-полосой.
+/// Рельса «Продолжить просмотр» из единого расчёта continuation с прогресс-полосой.
+struct ContinuationRail: View {
+    let title: String
+    let items: [Continuation]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+            SectionHeader(title: title).padding(.horizontal, DS.Spacing.md)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: DS.Spacing.md) {
+                    ForEach(items, id: \.itemId) { continuation in
+                        NavigationLink(value: AppRoute.details(itemId: continuation.itemId)) {
+                            PosterCard(
+                                posterURL: continuation.wideOrPoster,
+                                title: continuation.title,
+                                progress: Double(continuation.progress.fraction)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, DS.Spacing.md)
+            }
+        }
+    }
+}
+
+/// Рельса полной истории: используется разделом «Моё», где запись можно открыть из контекста.
 struct HistoryRail: View {
     let title: String
     let items: [WatchHistory]

@@ -4,6 +4,7 @@ import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.downloads.model.DownloadedItem
 import com.filmax.core.domain.favorites.model.FavoriteItem
 import com.filmax.core.domain.user.model.BookmarkFolder
+import com.filmax.core.domain.watching.model.Continuation
 import com.filmax.core.domain.watching.model.WatchHistory
 
 /**
@@ -38,6 +39,8 @@ data class LibraryState(
     val tab: LibraryTab = LibraryTab.FAVORITES,
     val favorites: List<FavoriteItem> = emptyList(),
     val history: List<WatchHistory> = emptyList(),
+    /** Только реально незавершённые тайтлы; вычисляются по общей continuation-логике. */
+    val continuations: List<Continuation> = emptyList(),
     val downloads: List<DownloadedItem> = emptyList(),
     val lists: List<BookmarkFolder> = emptyList(),
     /** Папка-закладка, в которую провалились; null — показываем список папок. */

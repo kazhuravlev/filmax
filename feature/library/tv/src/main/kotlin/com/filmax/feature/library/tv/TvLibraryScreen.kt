@@ -58,6 +58,7 @@ import androidx.compose.ui.window.Dialog
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.model.WatchHistory
+import com.filmax.core.domain.watching.model.Continuation
 import com.filmax.core.domain.watching.model.WatchProgress
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvAccent
@@ -319,7 +320,7 @@ private fun MineGrid(
         contentPadding = GridPadding,
     ) {
         when (segment) {
-            MineSegment.CONTINUE -> continueSegment(state.history, actions.onOpenItem, focus)
+            MineSegment.CONTINUE -> continueSegment(state.continuations, actions.onOpenItem, focus)
             MineSegment.WATCHLIST -> watchlistSegment(state, actions.onOpenItem, focus)
             MineSegment.BOOKMARKS -> bookmarksSegment(state, ui, actions, focus)
             MineSegment.HISTORY -> historySegment(state, actions.onOpenItem, focus)
@@ -329,15 +330,11 @@ private fun MineGrid(
 
 /** «Продолжить» — начатое, но не досмотренное. Ведёт в карточку тайтла: там и «продолжить», и контекст. */
 private fun LazyGridScope.continueSegment(
-    history: List<WatchHistory>,
+    continuations: List<Continuation>,
     onOpenItem: (Int) -> Unit,
     focus: TvScreenFocus,
 ) {
-    val started = history.filter { entry ->
-        val fraction = entry.progress?.fraction ?: 0f
-        fraction > CONTINUE_MIN_FRACTION && fraction < CONTINUE_MAX_FRACTION
-    }
-    if (started.isEmpty()) {
+    if (continuations.isEmpty()) {
         emptyItem(
             icon = Icons.Filled.PlayCircleOutline,
             title = "Ничего не начато",
@@ -345,13 +342,15 @@ private fun LazyGridScope.continueSegment(
         )
         return
     }
-    items(started, key = { it.itemId }) { entry ->
-        ProgressCard(
-            entry = entry,
-            returnKey = "continue:${entry.itemId}",
-            focus = focus,
-            onOpenItem = onOpenItem,
-        )
+    items(continuations, key = { it.itemId }) { continuation ->
+        continuation.history?.let { entry ->
+            ProgressCard(
+                entry = entry,
+                returnKey = "continue:${entry.itemId}",
+                focus = focus,
+                onOpenItem = onOpenItem,
+            )
+        }
     }
 }
 
@@ -904,8 +903,6 @@ private const val FOLDER_COLUMNS = 3
 /** Фильм — единственный трек, эпизод выбирать не из чего: PlayerRoute.videoId = -1. */
 
 /** Доля просмотра, при которой тайтл считается начатым, но не досмотренным. */
-private const val CONTINUE_MIN_FRACTION = 0.01f
-private const val CONTINUE_MAX_FRACTION = 0.95f
 
 private const val SECONDS_IN_MINUTE = 60
 
