@@ -62,9 +62,23 @@ val tmdbApiKey: String = (System.getenv("TMDB_API_KEY") ?: localProps.getPropert
 val demoAccessToken: String = (localProps.getProperty("demo.accessToken") ?: "").trim()
 val demoRefreshToken: String = (localProps.getProperty("demo.refreshToken") ?: "").trim()
 
-// In-app update читает GitHub Releases ПРИВАТНОГО репозитория, поэтому в сборку зашивается
-// fine-grained токен ТОЛЬКО на чтение contents этого репо (local.properties → github.updateToken,
-// в CI — env UPDATE_GITHUB_TOKEN). Пусто — проверка обновлений молча не находит релизов.
+// In-app update читает GitHub Releases репозитория, из которого собран APK. В CI GitHub сам
+// задаёт GITHUB_REPOSITORY, локально берём remote.origin.url. Так форки и контрибьюторские
+// сборки не обращаются к исходному репозиторию. Если определить репозиторий нельзя, обновления
+// отключаются (пустое значение), а не перенаправляются в чужой репозиторий.
+fun githubRepository(): String {
+    fun validSlug(value: String): String? =
+        value.trim().takeIf { Regex("^[^/\\s]+/[^/\\s]+$").matches(it) }
+
+    validSlug(System.getenv("GITHUB_REPOSITORY") ?: "")?.let { return it }
+
+    val remote = providers.exec {
+        commandLine("git", "config", "--get", "remote.origin.url")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim().removeSuffix(".git")
+    return Regex("github\\.com[:/]([^/]+/[^/]+)$").find(remote)?.groupValues?.get(1).orEmpty()
+}
+
 val updateGithubToken: String =
     (System.getenv("UPDATE_GITHUB_TOKEN") ?: localProps.getProperty("github.updateToken") ?: "").trim()
 
@@ -97,8 +111,8 @@ android {
         // По умолчанию токена нет — его несёт только build type `demo`.
         buildConfigField("String", "DEMO_ACCESS_TOKEN", "\"\"")
         buildConfigField("String", "DEMO_REFRESH_TOKEN", "\"\"")
-        // In-app update: откуда читать релизы и чем авторизоваться (см. GitHubUpdateRepository).
-        buildConfigField("String", "UPDATE_GITHUB_REPO", "\"malyi-m-dev/filmax\"")
+        // In-app update: репозиторий определяется из окружения/remote при сборке.
+        buildConfigField("String", "UPDATE_GITHUB_REPO", "\"${githubRepository()}\"")
         buildConfigField("String", "UPDATE_GITHUB_TOKEN", "\"$updateGithubToken\"")
     }
 
