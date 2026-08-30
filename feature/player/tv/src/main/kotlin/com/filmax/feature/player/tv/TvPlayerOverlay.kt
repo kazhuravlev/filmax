@@ -253,14 +253,13 @@ private fun PlayerTransport(ui: TvPlayerUiState, menu: PlayerActions, modifier: 
         Scrubber(
             positionMs = if (ui.isScrubbing) ui.scrubTargetMs else ui.positionMs,
             durationMs = ui.durationMs,
-            active = ui.isScrubbing,
+            active = ui.mode == PlayerMode.Progress,
             modifier = Modifier.fillMaxWidth(),
         )
         TransportHints(
             isPlaying = ui.isPlaying,
-            // Виртуальный фокус транспорта: пока не перематываем и не в настройках — «работаем»
-            // с кнопкой паузы; при перемотке фокус-кольцо переезжает на thumb скраббера.
-            focused = ui.mode == PlayerMode.Transport && !ui.isScrubbing,
+            // Виртуальный фокус транспорта: кнопка Play/Pause активна до перехода на прогресс-бар.
+            focused = ui.mode == PlayerMode.Transport,
             modifier = Modifier.padding(top = 16.dp),
         )
         Text(
@@ -375,7 +374,6 @@ private fun TransportHints(isPlaying: Boolean, focused: Boolean, modifier: Modif
         horizontalArrangement = Arrangement.spacedBy(26.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SeekHint(label = "−${SEEK_STEPS_SEC.first()} с")
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(5.dp),
@@ -398,14 +396,7 @@ private fun TransportHints(isPlaying: Boolean, focused: Boolean, modifier: Modif
                 color = TvOnSurfaceVariant,
             )
         }
-        SeekHint(label = "+${SEEK_STEPS_SEC.first()} с")
     }
-}
-
-/** Базовый шаг перемотки в кольце: с разгона реальный шаг показывает подпись по центру кадра. */
-@Composable
-private fun SeekHint(label: String) {
-    Text(label, style = MaterialTheme.typography.bodySmall, color = TvOnSurfaceVariant)
 }
 
 /**

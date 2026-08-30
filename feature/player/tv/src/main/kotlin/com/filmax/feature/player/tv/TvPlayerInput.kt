@@ -12,7 +12,7 @@ import androidx.media3.common.Player
 import com.filmax.core.domain.catalog.model.MediaTrack
 
 /** Что сейчас ведёт D-pad: транспорт (пауза/перемотка) или ряд настроек под скраббером. */
-internal enum class PlayerMode { Transport, Settings }
+internal enum class PlayerMode { Transport, Progress, Settings }
 
 /**
  * Пункт ряда настроек. Первые четыре открывают поповер выбора, [Episodes] — боковую панель
@@ -146,8 +146,8 @@ internal class TvPlayerUiState(val player: Player) {
 
     /**
      * Раскладка D-pad — дословно по гайдлайну Google: Center — пауза/воспроизведение, Left/Right —
-     * перемотка (состояние play/pause при этом НЕ меняется), Up/Down — «peek»: показывают прогресс,
-     * не ставя на паузу. Неизвестные клавиши не трогаем — иначе съедим громкость и системные.
+     * перемотка доступна только после перехода на прогресс-бар клавишей Up, Down открывает
+     * настройки. Неизвестные клавиши не трогаем — иначе съедим громкость и системные.
      */
     fun onKey(key: Key, menu: PlayerActions): Boolean = when {
         // OK при видимой плашке автоперехода (и только в транспорте) — следующая серия сразу.
@@ -236,8 +236,8 @@ internal class TvPlayerUiState(val player: Player) {
 
     private fun onTransportKey(key: Key, menu: PlayerActions): Boolean {
         when (key) {
-            Key.DirectionLeft, Key.MediaRewind -> scrub(-1)
-            Key.DirectionRight, Key.MediaFastForward -> scrub(1)
+            Key.DirectionLeft, Key.MediaRewind -> if (mode == PlayerMode.Progress) scrub(-1) else touch()
+            Key.DirectionRight, Key.MediaFastForward -> if (mode == PlayerMode.Progress) scrub(1) else touch()
             Key.DirectionCenter, Key.Enter, Key.MediaPlayPause -> togglePlay()
             Key.DirectionDown -> {
                 if (menu.items.isNotEmpty()) mode = PlayerMode.Settings
@@ -246,6 +246,7 @@ internal class TvPlayerUiState(val player: Player) {
                 touch()
             }
             Key.DirectionUp -> {
+                mode = PlayerMode.Progress
                 seekLabel = null
                 touch()
             }
@@ -295,6 +296,11 @@ internal class TvPlayerUiState(val player: Player) {
             true
         }
         mode == PlayerMode.Settings -> {
+            mode = PlayerMode.Transport
+            touch()
+            true
+        }
+        mode == PlayerMode.Progress -> {
             mode = PlayerMode.Transport
             touch()
             true
