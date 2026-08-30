@@ -411,10 +411,10 @@ private fun LazyGridScope.folderTiles(
         item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { BookmarksEmpty(onNewFolder) }
         return
     }
-    item(key = "new_folder") { NewFolderTile(onClick = onNewFolder) }
     items(folders, key = { it.id }) { folder ->
         FolderTile(folder = folder, onClick = { onOpenFolder(folder) })
     }
+    item(key = "new_folder") { NewFolderTile(onClick = onNewFolder) }
 }
 
 private fun LazyGridScope.folderItems(

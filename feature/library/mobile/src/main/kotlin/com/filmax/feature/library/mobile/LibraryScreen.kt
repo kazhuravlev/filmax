@@ -381,7 +381,6 @@ private fun LazyGridScope.bookmarksSegment(state: LibraryState, actions: MineAct
         )
 
         else -> {
-            item(key = "new_folder") { NewFolderTile(onClick = actions.onNewFolder) }
             items(state.lists, key = { it.id }) { folder ->
                 FolderTile(
                     folder = folder,
@@ -389,6 +388,7 @@ private fun LazyGridScope.bookmarksSegment(state: LibraryState, actions: MineAct
                     onLongClick = { actions.onDeleteFolder(folder) },
                 )
             }
+            item(key = "new_folder") { NewFolderTile(onClick = actions.onNewFolder) }
         }
     }
 }
@@ -510,7 +510,7 @@ private fun FolderTile(folder: BookmarkFolder, onClick: () -> Unit, onLongClick:
     }
 }
 
-/** Плитка «＋ Новая папка» — первая ячейка сетки папок и вход в диалог создания. */
+/** Плитка «＋ Новая папка» — последняя ячейка сетки папок и вход в диалог создания. */
 @Composable
 private fun NewFolderTile(onClick: () -> Unit) {
     Column(
