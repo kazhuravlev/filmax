@@ -1,0 +1,72 @@
+version: '3'
+
+vars:
+  SECRETS_DIR: .secrets
+  KEYSTORE_FILE: '{{.SECRETS_DIR}}/filmax-release.jks'
+  ENCODED_KEYSTORE_FILE: '{{.SECRETS_DIR}}/filmax-release.jks.base64'
+  KEY_ALIAS: filmax
+  KEY_VALIDITY_DAYS: '10000'
+
+tasks:
+  secrets:check-tools:
+    internal: true
+    desc: Check tools required for signing-key generation
+    preconditions:
+      - sh: command -v keytool >/dev/null 2>&1
+        msg: keytool not found; install JDK 17 first.
+      - sh: command -v openssl >/dev/null 2>&1
+        msg: openssl not found; install OpenSSL first.
+
+  secrets:prepare:
+    internal: true
+    desc: Prepare a private directory for local signing files
+    deps: [secrets:check-tools]
+    preconditions:
+      - sh: test ! -e '{{.KEYSTORE_FILE}}'
+        msg: '{{.KEYSTORE_FILE}} already exists; refusing to overwrite it.'
+      - sh: test ! -e '{{.ENCODED_KEYSTORE_FILE}}'
+        msg: '{{.ENCODED_KEYSTORE_FILE}} already exists; refusing to overwrite it.'
+    cmds:
+      - mkdir -p -m 700 '{{.SECRETS_DIR}}'
+      - chmod 700 '{{.SECRETS_DIR}}'
+
+  secrets:generate-keystore:
+    internal: true
+    desc: Generate the Android release keystore
+    deps: [secrets:prepare]
+    cmds:
+      - |
+        echo "Generating {{.KEYSTORE_FILE}}"
+        echo "keytool will ask twice for the keystore password."
+        echo "The key password defaults to the same value."
+        keytool -genkeypair -v \
+          -keystore '{{.KEYSTORE_FILE}}' \
+          -alias '{{.KEY_ALIAS}}' \
+          -keyalg RSA \
+          -keysize 2048 \
+          -validity '{{.KEY_VALIDITY_DAYS}}' \
+          -dname "CN=Filmax Release, OU=Android, O=Filmax, C=XX"
+      - chmod 600 '{{.KEYSTORE_FILE}}'
+
+  secrets:encode-keystore:
+    internal: true
+    desc: Encode the keystore for the KEYSTORE_BASE64 GitHub Secret
+    deps: [secrets:generate-keystore]
+    cmds:
+      - openssl base64 -A -in '{{.KEYSTORE_FILE}}' -out '{{.ENCODED_KEYSTORE_FILE}}'
+      - chmod 600 '{{.ENCODED_KEYSTORE_FILE}}'
+
+  generate:secrets:
+    desc: Generate the Android release keystore and its Base64 form for GitHub Secrets
+    deps: [secrets:encode-keystore]
+    cmds:
+      - |
+        echo
+        echo "Created: {{.KEYSTORE_FILE}}"
+        echo "Created: {{.ENCODED_KEYSTORE_FILE}}"
+        echo
+        echo "Create these GitHub Actions Secrets:"
+        echo "  KEYSTORE_BASE64   <- paste the contents of {{.ENCODED_KEYSTORE_FILE}}"
+        echo "  KEYSTORE_PASSWORD <- the keystore password you entered"
+        echo "  KEY_ALIAS         <- {{.KEY_ALIAS}}"
+        echo "  KEY_PASSWORD      <- the same password as KEYSTORE_PASSWORD"
