@@ -109,6 +109,15 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "APK: $dest and filmax.apk (${size_mb} МБ)"
 
+      - name: Generate SHA-256 checksums
+        id: checksums
+        env:
+          APK: ${{ steps.apk.outputs.path }}
+          APK_LATEST: ${{ steps.apk.outputs.latest_path }}
+        run: |
+          sha256sum "$APK" "$APK_LATEST" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
       # Авто-changelog из коммитов между предыдущим и текущим тегом.
       # Коммиты по Conventional Commits (feat/fix/perf/...), группируем по типам.
       - name: Generate changelog
@@ -153,14 +162,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APK: ${{ steps.apk.outputs.path }}
           APK_LATEST: ${{ steps.apk.outputs.latest_path }}
+          CHECKSUMS: SHA256SUMS.txt
           TITLE: Filmax ${{ steps.apk.outputs.version }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$APK" "$APK_LATEST" --clobber
+            gh release upload "$TAG" "$APK" "$APK_LATEST" "$CHECKSUMS" --clobber
             gh release edit "$TAG" --title "$TITLE" --notes-file "$RUNNER_TEMP/changelog.md"
             echo "GitHub Release $TAG обновлён (APK доложен)."
           else
-            gh release create "$TAG" "$APK" "$APK_LATEST" \
+            gh release create "$TAG" "$APK" "$APK_LATEST" "$CHECKSUMS" \
               --title "$TITLE" \
               --notes-file "$RUNNER_TEMP/changelog.md"
             echo "GitHub Release $TAG опубликован."
