@@ -99,13 +99,15 @@ jobs:
           version="${TAG#v}"
           dest="filmax-${version}.apk"
           cp "$path" "$dest"
+          cp "$path" "filmax.apk"
           size_mb=$(( $(stat -c%s "$dest") / 1048576 ))
           {
             echo "path=$dest"
+            echo "latest_path=filmax.apk"
             echo "version=$version"
             echo "size_mb=$size_mb"
           } >> "$GITHUB_OUTPUT"
-          echo "APK: $dest (${size_mb} МБ)"
+          echo "APK: $dest and filmax.apk (${size_mb} МБ)"
 
       # Авто-changelog из коммитов между предыдущим и текущим тегом.
       # Коммиты по Conventional Commits (feat/fix/perf/...), группируем по типам.
@@ -150,14 +152,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           APK: ${{ steps.apk.outputs.path }}
+          APK_LATEST: ${{ steps.apk.outputs.latest_path }}
           TITLE: Filmax ${{ steps.apk.outputs.version }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$APK" --clobber
+            gh release upload "$TAG" "$APK" "$APK_LATEST" --clobber
             gh release edit "$TAG" --title "$TITLE" --notes-file "$RUNNER_TEMP/changelog.md"
             echo "GitHub Release $TAG обновлён (APK доложен)."
           else
-            gh release create "$TAG" "$APK" \
+            gh release create "$TAG" "$APK" "$APK_LATEST" \
               --title "$TITLE" \
               --notes-file "$RUNNER_TEMP/changelog.md"
             echo "GitHub Release $TAG опубликован."
