@@ -376,7 +376,6 @@ private fun TransportHints(isPlaying: Boolean, focused: Boolean, modifier: Modif
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             CircleBox(size = PauseFocusOuter, color = if (focused) TvFocus else TvFocus.copy(alpha = 0f)) {
                 CircleBox(size = PauseFocusInner, color = if (focused) TvFocusHalo else TvFocusHalo.copy(alpha = 0f)) {
@@ -390,11 +389,6 @@ private fun TransportHints(isPlaying: Boolean, focused: Boolean, modifier: Modif
                     }
                 }
             }
-            Text(
-                if (isPlaying) "OK — пауза" else "OK — смотреть",
-                style = MaterialTheme.typography.labelSmall,
-                color = TvOnSurfaceVariant,
-            )
         }
     }
 }
