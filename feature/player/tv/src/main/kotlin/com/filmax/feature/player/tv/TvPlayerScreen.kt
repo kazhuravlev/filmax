@@ -83,7 +83,7 @@ fun TvPlayerScreen(
     PlayerContent(ui = ui, state = state, menu = menu, error = appError, modifier = modifier)
 }
 
-/** Ряд настроек кадра: пункт показываем только там, где реально есть из чего выбрать. */
+/** Ряд настроек кадра: субтитры показываем всегда, но активируем только после загрузки дорожек. */
 private fun playerMenu(
     state: PlayerState,
     episodesPanel: EpisodesPanelData?,
@@ -93,7 +93,7 @@ private fun playerMenu(
     items = buildList {
         if (state.qualities.size > 1) add(SettingsAction.Quality)
         if (state.audioTracks.size > 1) add(SettingsAction.Audio)
-        if (state.subtitles.size > 1) add(SettingsAction.Subtitle)
+        add(SettingsAction.Subtitle)
         // Скорость доступна всегда — набор фиксированный, выбирать есть из чего.
         add(SettingsAction.Speed)
         if (episodesPanel != null) add(SettingsAction.Episodes)
@@ -106,6 +106,7 @@ private fun playerMenu(
         state.nextTrack?.let { next -> onPlayEpisode?.invoke(next.seasonNumber, next.number) }
     },
     episodes = episodesPanel,
+    enabled = { action -> action != SettingsAction.Subtitle || state.subtitles.size > 1 },
 )
 
 /**

@@ -1,11 +1,9 @@
 package com.filmax.feature.player.common
 
 import android.content.Context
-import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
@@ -15,7 +13,6 @@ import androidx.navigation.toRoute
 import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.catalog.model.AudioTrack
 import com.filmax.core.domain.catalog.model.MediaTrack
-import com.filmax.core.domain.catalog.model.SubtitleTrack
 import com.filmax.core.domain.common.ErrorReporting
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.error.AppError
@@ -50,15 +47,16 @@ class PlayerScreenModel(
         .setSeekForwardIncrementMs(SEEK_INCREMENT_MS)
         .build()
 
-    /** Субтитры текущего трека — нужны, чтобы пересобрать MediaItem при смене качества. */
-    private var trackSubtitles: List<SubtitleTrack> = emptyList()
     private var audioPreference: String = PlaybackSettings.AudioOriginal
+    private var subtitlePreference: String = PlaybackSettings.SubtitleOff
 
     /** Выбранный трек/эпизод — нужен для сохранения прогресса (сериалы пишутся по сезону). */
     private var selectedTrack: MediaTrack? = null
 
     /** Аудиогруппы последнего onTracksChanged — по ним selectAudio делает точечный override. */
     private var audioGroups: List<Tracks.Group> = emptyList()
+    /** Текстовые группы последнего onTracksChanged — по ним selectSubtitle выбирает HLS-дорожку. */
+    private var textGroups: List<Tracks.Group> = emptyList()
 
     /**
      * Озвучка, выбранная для этого тайтла (язык|тип|студия). Читается при загрузке и
@@ -87,8 +85,11 @@ class PlayerScreenModel(
                 }
             }
 
-            // Аудиодорожки известны только после разбора манифеста — читаем их здесь.
-            override fun onTracksChanged(tracks: Tracks) = updateAudioTracks(tracks)
+            // Аудио и субтитры известны только после разбора манифеста — читаем их здесь.
+            override fun onTracksChanged(tracks: Tracks) {
+                updateAudioTracks(tracks)
+                updateSubtitleTracks(tracks)
+            }
         })
         onFetchData()
     }
@@ -126,6 +127,7 @@ class PlayerScreenModel(
         screenModelScope { _ ->
             val settings = playbackSettings.settings.first()
             audioPreference = settings.audioLanguage
+            subtitlePreference = settings.subtitleLanguage
             savedVoiceKey = playbackSettings.voiceKeyFor(route.itemId)
             when (val result = catalog.getItemDetails(route.itemId)) {
                 is RequestResult.Success -> {
@@ -138,24 +140,11 @@ class PlayerScreenModel(
                     val trackIndex = item.tracklist.indexOfFirst { it.matchesRoute(route) }.coerceAtLeast(0)
                     val track = item.tracklist.getOrNull(trackIndex)
                     selectedTrack = track
-                    trackSubtitles = track?.subtitles.orEmpty()
 
                     val qualities = streamQualities(track)
                     // Предпочитаемое качество из настроек; «Авто»/нет совпадения — лучшее доступное.
                     val initial = qualities.firstOrNull { it.label == settings.quality }
                         ?: qualities.firstOrNull()
-
-                    // Субтитры: «Выкл» + языки из трека.
-                    val subtitleOptions = buildList {
-                        add(SubtitleOption(PlaybackSettings.SubtitleOff, null))
-                        trackSubtitles.forEach { add(SubtitleOption(langDisplay(it.lang), it.lang)) }
-                    }
-                    val selectedSubtitle = if (settings.subtitleLanguage == PlaybackSettings.SubtitleOff) {
-                        subtitleOptions.first()
-                    } else {
-                        subtitleOptions.firstOrNull { it.label == settings.subtitleLanguage }
-                            ?: subtitleOptions.first()
-                    }
 
                     updateState {
                         it.copy(
@@ -166,8 +155,6 @@ class PlayerScreenModel(
                             streamUrl = initial?.url,
                             qualities = qualities,
                             currentQuality = initial?.label,
-                            subtitles = subtitleOptions,
-                            currentSubtitle = selectedSubtitle.label,
                         )
                     }
 
@@ -176,7 +163,7 @@ class PlayerScreenModel(
                         reportPlaybackStart(initial)
                         player.setMediaItem(buildMediaItem(initial.url))
                         player.prepare()
-                        applyTrackPreferences(selectedSubtitle.lang)
+                        applyAudioPreference()
                         // Продолжаем с сохранённой позиции. Досмотренный до конца трек
                         // начинаем сначала — иначе пересмотр стартовал бы с титров.
                         track?.watchedSeconds
@@ -251,7 +238,8 @@ class PlayerScreenModel(
 
     private fun selectSubtitle(label: String) {
         val option = state.subtitles.firstOrNull { it.label == label } ?: return
-        applyTrackPreferences(option.lang)
+        subtitlePreference = option.lang ?: PlaybackSettings.SubtitleOff
+        applySubtitleSelection(option)
         screenModelScope { _ -> updateState { it.copy(currentSubtitle = label) } }
     }
 
@@ -309,35 +297,60 @@ class PlayerScreenModel(
         }
     }
 
-    /** Собирает MediaItem с вложенными конфигурациями субтитров текущего трека. */
-    private fun buildMediaItem(url: String): MediaItem {
-        val subtitleConfigs = trackSubtitles.map { subtitle ->
-            val mime = if (subtitle.url.endsWith(".vtt", ignoreCase = true)) {
-                MimeTypes.TEXT_VTT
-            } else {
-                MimeTypes.APPLICATION_SUBRIP
+    /** Снимает список субтитров непосредственно с HLS-дорожек, найденных ExoPlayer. */
+    private fun updateSubtitleTracks(tracks: Tracks) {
+        textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+        val options = buildList {
+            add(SubtitleOption(PlaybackSettings.SubtitleOff, null))
+            textGroups.forEachIndexed { index, group ->
+                val format = group.getTrackFormat(0)
+                val label = format.label?.takeIf { it.isNotBlank() }
+                    ?: langDisplay(format.language)
+                add(SubtitleOption(label, format.language, index))
             }
-            MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitle.url))
-                .setLanguage(subtitle.lang)
-                .setMimeType(mime)
-                .build()
         }
+        val selected = options.firstOrNull { option ->
+            option.lang != null &&
+                (option.label == subtitlePreference || option.lang == subtitlePreference ||
+                    option.lang == langCode(subtitlePreference))
+        } ?: options.first()
+        applySubtitleSelection(selected)
+        screenModelScope { _ ->
+            updateState {
+                it.copy(
+                    subtitles = options.takeIf { it.size > 1 }.orEmpty(),
+                    currentSubtitle = selected.label,
+                )
+            }
+        }
+    }
+
+    /** Собирает MediaItem только с потоком: текстовые дорожки приходят из его HLS-манифеста. */
+    private fun buildMediaItem(url: String): MediaItem {
         return MediaItem.Builder()
             .setUri(url)
-            .setSubtitleConfigurations(subtitleConfigs)
             .build()
     }
 
-    /** Применяет предпочтения дорожек к плееру: язык аудио и язык/выключение субтитров. */
-    private fun applyTrackPreferences(subtitleLang: String?) {
+    /** Применяет предпочтение аудио; текстовая дорожка выбирается после разбора HLS. */
+    private fun applyAudioPreference() {
         val builder = player.trackSelectionParameters.buildUpon()
         langCode(audioPreference)?.let { builder.setPreferredAudioLanguage(it) }
-        if (subtitleLang == null) {
-            builder.setPreferredTextLanguage(null)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        player.trackSelectionParameters = builder.build()
+    }
+
+    /** Включает/выключает конкретную HLS-группу субтитров. */
+    private fun applySubtitleSelection(option: SubtitleOption) {
+        val builder = player.trackSelectionParameters.buildUpon()
+        if (option.groupIndex < 0) {
             builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
         } else {
-            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-            builder.setPreferredTextLanguage(subtitleLang)
+            textGroups.getOrNull(option.groupIndex)?.let { group ->
+                builder
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
+            }
         }
         player.trackSelectionParameters = builder.build()
     }

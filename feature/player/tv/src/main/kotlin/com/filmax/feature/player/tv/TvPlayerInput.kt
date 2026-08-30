@@ -11,7 +11,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.media3.common.Player
 import com.filmax.core.domain.catalog.model.MediaTrack
 
-/** Что сейчас ведёт D-pad: транспорт (пауза/перемотка) или ряд настроек под скраббером. */
+/** Что сейчас ведёт D-pad: Play/Pause, прогресс-бар или ряд настроек под скраббером. */
 internal enum class PlayerMode { Transport, Progress, Settings }
 
 /**
@@ -52,12 +52,15 @@ internal class PlayerActions(
     val onSelect: (SettingsAction, String) -> Unit,
     val onNextEpisode: () -> Unit,
     val episodes: EpisodesPanelData? = null,
+    val enabled: (SettingsAction) -> Boolean = { true },
 ) {
     /** Есть ли следующая серия и навигация к ней — условие автоперехода и пункта в ряду. */
     val hasNextEpisode: Boolean get() = SettingsAction.NextEpisode in items
 
     fun selectedIndex(action: SettingsAction): Int =
         options(action).indexOf(selected(action)).coerceAtLeast(0)
+
+    fun isEnabled(action: SettingsAction): Boolean = enabled(action)
 }
 
 /**
@@ -256,6 +259,7 @@ internal class TvPlayerUiState(val player: Player) {
     }
 
     fun activate(action: SettingsAction, menu: PlayerActions) {
+        if (!menu.isEnabled(action)) return
         when (action) {
             SettingsAction.NextEpisode -> menu.onNextEpisode()
             // Панель открывается на играющей сейчас серии — переключить на соседнюю быстрее всего.

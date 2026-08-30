@@ -18,7 +18,7 @@ data class StreamQuality(val label: String, val urls: List<String>) {
 }
 
 /** Вариант субтитров; [lang] == null означает «Выкл». */
-data class SubtitleOption(val label: String, val lang: String?)
+data class SubtitleOption(val label: String, val lang: String?, val groupIndex: Int = -1)
 
 /**
  * Аудиодорожка потока. [groupIndex] — индекс аудиогруппы в Media3 `Tracks`: выбор идёт точечным

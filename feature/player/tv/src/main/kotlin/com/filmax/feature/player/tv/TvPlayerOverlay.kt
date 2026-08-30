@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.focusProperties
@@ -416,11 +417,16 @@ private fun SettingsBar(ui: TvPlayerUiState, menu: PlayerActions, modifier: Modi
             TvChip(
                 label = action.label,
                 selected = isCursor,
-                onClick = {
-                    ui.settingsCursor = index
-                    ui.activate(action, menu)
+                onClick = if (menu.isEnabled(action)) {
+                    {
+                        ui.settingsCursor = index
+                        ui.activate(action, menu)
+                    }
+                } else {
+                    {}
                 },
                 modifier = Modifier
+                    .alpha(if (menu.isEnabled(action)) 1f else 0.45f)
                     .focusProperties { canFocus = false }
                     // Чип-курсор поверх соседей: увеличенный масштабом чип иначе уходил ПОД
                     // следующий по порядку отрисовки.
