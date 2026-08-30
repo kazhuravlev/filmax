@@ -58,12 +58,6 @@ internal fun EpisodesPanel(
             hasPrev = seasonCursor > 0,
             hasNext = seasonCursor < panel.seasons.lastIndex,
         )
-        Text(
-            "◄ ► сезон · OK — смотреть",
-            style = MaterialTheme.typography.labelSmall,
-            color = TvOnSurfaceDim,
-            modifier = Modifier.padding(top = 3.dp, start = 8.dp),
-        )
         // Список пересоздаётся на каждый сезон, а не переиспользует один LazyListState.
         // Соседний сезон — это другой набор данных: другие ключи и другая длина (у сериала на
         // 28 сезонов бывает и 18 серий, и 4). Общий стейт тащил в него позицию прошлого сезона,
