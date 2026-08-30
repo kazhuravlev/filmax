@@ -10,7 +10,7 @@ package com.filmax.core.domain.user.model
 data class DeviceOption(val id: Int, val label: String)
 
 /**
- * Тип потока. Значения kino.pub: HTTP (прогрессивная отдача) и HLS/HLS4 (адаптивный поток).
+ * Тип потока. Значения kino.watch: HTTP (прогрессивная отдача) и HLS/HLS4 (адаптивный поток).
  * API в этом проекте отдаёт `streaming_type` числом, поэтому варианты пронумерованы по возрастанию
  * id так, как их принимает эндпоинт. Если бэкенд реально присылает строку — менять надо DTO и
  * домен (`streamingType: String`), а не этот список.

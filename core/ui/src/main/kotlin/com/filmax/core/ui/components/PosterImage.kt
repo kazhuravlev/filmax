@@ -48,7 +48,7 @@ fun PosterImage(
     accentColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
 ) {
     val placeholder = remember(accentColor) { posterPlaceholderBrush(accentColor) }
-    // Битую ссылку помечаем знаком, а не оставляем пустую плашку: kino.pub отдаёт адрес постера
+    // Битую ссылку помечаем знаком, а не оставляем пустую плашку: kino.watch отдаёт адрес постера
     // всегда, даже когда файла нет (у подборки 967 это честный 404), и голый градиент читается
     // как вечная загрузка. Ключ — url: при переиспользовании карточки в ленте флаг сбрасывается.
     var failed by remember(url) { mutableStateOf(false) }

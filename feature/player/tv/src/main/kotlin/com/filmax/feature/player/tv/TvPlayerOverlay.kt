@@ -180,7 +180,7 @@ internal fun AutoNextCard(label: String, seconds: Int, modifier: Modifier = Modi
     }
 }
 
-/** Плашка «нужна подписка»: без неё kino.pub не отдаст поток, и экран остался бы просто чёрным. */
+/** Плашка «нужна подписка»: без неё kino.watch не отдаст поток, и экран остался бы просто чёрным. */
 @Composable
 internal fun SubscriptionCard(modifier: Modifier = Modifier) {
     Column(
@@ -197,7 +197,7 @@ internal fun SubscriptionCard(modifier: Modifier = Modifier) {
             textAlign = TextAlign.Center,
         )
         Text(
-            "Просмотр доступен только с активной подпиской — оформите её в аккаунте kino.pub",
+            "Просмотр доступен только с активной подпиской — оформите её в аккаунте kino.watch",
             style = MaterialTheme.typography.bodySmall,
             color = TvOnSurfaceVariant,
             textAlign = TextAlign.Center,

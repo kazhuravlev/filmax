@@ -27,7 +27,7 @@ private fun HistoryEntryDto.toDomain(): WatchHistory {
             status = WATCH_STATUS_IN_PROGRESS,
             timeSeconds = time,
             durationSeconds = duration,
-            // `number`, а не id: тем же числом kino.pub принимает прогресс в marktime и
+            // `number`, а не id: тем же числом kino.watch принимает прогресс в marktime и
             // им же плеер выбирает дорожку.
             videoId = media?.number,
             season = media?.snumber?.takeIf { it > 0 },
@@ -101,7 +101,7 @@ internal class WatchingRepositoryImpl(
         safeRequest { api.markAllNotificationsRead() }
 
     private companion object {
-        // kino.pub отдаёт временные метки в секундах — переводим в миллисекунды.
+        // kino.watch отдаёт временные метки в секундах — переводим в миллисекунды.
         const val MILLIS_IN_SECOND = 1000
     }
 }

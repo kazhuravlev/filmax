@@ -400,7 +400,7 @@ private fun SortFieldChip(field: CatalogSort, onPick: (CatalogSort) -> Unit) {
     }
 }
 
-/** Стрелка направления: вверх — по возрастанию, вниз — по убыванию (kino.pub `-field`). */
+/** Стрелка направления: вверх — по возрастанию, вниз — по убыванию (kino.watch `-field`). */
 @Composable
 private fun DirectionToggle(ascending: Boolean, onClick: () -> Unit) {
     Box(

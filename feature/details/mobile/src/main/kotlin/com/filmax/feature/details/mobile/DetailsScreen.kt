@@ -145,7 +145,7 @@ fun DetailsScreen(
                 isFav = state.isFav,
                 actions = DetailsActions(
                     onBack = navigator::back,
-                    // Второй аргумент — НОМЕР серии, а не её id: тем же числом kino.pub принимает
+                    // Второй аргумент — НОМЕР серии, а не её id: тем же числом kino.watch принимает
                     // и отдаёт прогресс. Фильм играется целиком ([MOVIE_VIDEO_ID]).
                     onPlay = { season, videoId ->
                         navigator.open(
@@ -260,9 +260,9 @@ private fun DetailsBody(
     val sidePadding = Modifier.padding(horizontal = FilmaxMetrics.DetailsPadding)
     // Кнопка играет недосмотренную серию, иначе первую серию ВЫБРАННОГО сезона.
     val target = series.data?.let { it.resume ?: series.episodes.firstOrNull() ?: item.tracklist.firstOrNull() }
-    // Трейлер показываем, только если url — играбельный http(s) (kino.pub отдаёт прямой HLS).
+    // Трейлер показываем, только если url — играбельный http(s) (kino.watch отдаёт прямой HLS).
     val trailerUrl = item.trailer?.url?.takeIf { it.startsWith("http") }
-    // Люди для секции «Актёры»: фото из TMDB, если доехали; иначе — имена из строки kino.pub.
+    // Люди для секции «Актёры»: фото из TMDB, если доехали; иначе — имена из строки kino.watch.
     val people = remember(extras.cast, item.cast) { resolveCast(extras.cast, item.cast) }
 
     DetailsHeader(item = item, series = series.data, modifier = sidePadding)
@@ -419,7 +419,7 @@ private fun MetaRow(parts: List<String>, modifier: Modifier = Modifier) {
  */
 @Composable
 private fun RatingsRow(rating: ItemRating, modifier: Modifier = Modifier) {
-    // ratingLabel режет «0» (у kino.pub это «оценки нет») и приводит «8.312» к одному знаку.
+    // ratingLabel режет «0» (у kino.watch это «оценки нет») и приводит «8.312» к одному знаку.
     val sources = remember(rating) {
         buildList {
             ratingLabel(rating.kinopoisk)?.let { add(it to "КиноПоиск") }
@@ -589,7 +589,7 @@ private fun DetailsAbout(item: Item, modifier: Modifier = Modifier) {
 
 /**
  * Состав тайтла карточками с фото. Фото приходят из TMDB ([DetailsState.cast]); пока их нет —
- * показываем те же карточки, но с инициалами вместо фото (имена всегда есть от kino.pub). Любая
+ * показываем те же карточки, но с инициалами вместо фото (имена всегда есть от kino.watch). Любая
  * карточка кликабельна и ведёт в фильмографию человека.
  */
 @Composable
@@ -621,7 +621,7 @@ private fun CastSection(
         if (director.isNotBlank()) {
             DirectorLine(
                 director = director,
-                // По запятой — только первый режиссёр: kino.pub ищет по одному имени в `director`.
+                // По запятой — только первый режиссёр: kino.watch ищет по одному имени в `director`.
                 onClick = { onOpenPerson(director.substringBefore(",").trim(), true) },
                 modifier = Modifier.padding(
                     start = FilmaxMetrics.DetailsPadding,
@@ -865,7 +865,7 @@ private fun EpisodeThumb(episode: MediaTrack) {
             .background(MaterialTheme.colorScheme.surfaceContainer),
         contentAlignment = Alignment.Center,
     ) {
-        // У kino.pub thumbnail часто пустой, и пустая плитка не отличима от соседней — тогда
+        // У kino.watch thumbnail часто пустой, и пустая плитка не отличима от соседней — тогда
         // показываем крупный номер серии.
         if (episode.thumbnail.isNotBlank()) {
             PosterImage(
@@ -941,7 +941,7 @@ private fun playLabel(resume: MediaTrack?): String = when {
     else -> "Продолжить · Серия ${resume.number}"
 }
 
-/** «Сезон 1»; у тайтла без сезонов (kino.pub отдаёт 0) сезона нет — есть просто серии. */
+/** «Сезон 1»; у тайтла без сезонов (kino.watch отдаёт 0) сезона нет — есть просто серии. */
 private fun seasonLabel(number: Int): String = if (number > 0) "Сезон $number" else "Серии"
 
 /** «S1 · E3» — как в макете; без сезона остаётся только номер серии. */

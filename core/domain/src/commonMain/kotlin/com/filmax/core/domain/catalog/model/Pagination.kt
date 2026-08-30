@@ -1,7 +1,7 @@
 package com.filmax.core.domain.catalog.model
 
 data class Pagination(
-    /** Всего страниц (kino.pub отдаёт в `pagination.total` именно число страниц). */
+    /** Всего страниц (kino.watch отдаёт в `pagination.total` именно число страниц). */
     val total: Int,
     /** Текущая страница (1-based). */
     val current: Int,

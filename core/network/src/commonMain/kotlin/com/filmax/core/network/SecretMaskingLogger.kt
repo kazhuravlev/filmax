@@ -5,7 +5,7 @@ import io.ktor.client.plugins.logging.Logger
 /**
  * Логгер HTTP, вычищающий секреты из строк перед записью.
  *
- * `sanitizeHeader` у Ktor режет только заголовки, а OAuth-обмен kino.pub передаёт секреты
+ * `sanitizeHeader` у Ktor режет только заголовки, а OAuth-обмен kino.watch передаёт секреты
  * **в query-параметрах**: `oauth2/device?grant_type=refresh_token&refresh_token=…`. Без маскировки
  * refresh-токен уходил в logcat целиком — а он даёт бессрочный доступ к аккаунту (по нему
  * выпускается новый access, пока пользователь не разлогинится). Logcat читает любое приложение

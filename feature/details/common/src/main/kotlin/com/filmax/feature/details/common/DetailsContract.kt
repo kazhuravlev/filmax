@@ -8,7 +8,7 @@ data class DetailsState(
     val item: Item? = null,
     val similar: List<Item> = emptyList(),
     /**
-     * Актёры с фото (TMDB) — украшение поверх строки имён от kino.pub. Пустой список, когда фото
+     * Актёры с фото (TMDB) — украшение поверх строки имён от kino.watch. Пустой список, когда фото
      * недоступны (нет ключа TMDB, нет совпадения по IMDb, сбой): экран падает на строку `item.cast`.
      */
     val cast: List<CastMember> = emptyList(),

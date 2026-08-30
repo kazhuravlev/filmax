@@ -137,7 +137,7 @@ class LibraryScreenModel(
                 if (loaded.folder.id != open.folder.id) return@updateState current
                 current.copy(
                     openFolder = loaded.copy(
-                        // Страницы kino.pub могут пересечься: дубликат id уронил бы LazyGrid по key.
+                        // Страницы kino.watch могут пересечься: дубликат id уронил бы LazyGrid по key.
                         items = (loaded.items + itemPage?.items.orEmpty()).distinctBy { it.id },
                         page = if (itemPage != null) nextPage else loaded.page,
                         loadingMore = false,
@@ -207,7 +207,7 @@ class LibraryScreenModel(
     }
 
     private companion object {
-        /** Первая страница содержимого папки (нумерация kino.pub — с единицы). */
+        /** Первая страница содержимого папки (нумерация kino.watch — с единицы). */
         const val FIRST_PAGE = 1
     }
 }

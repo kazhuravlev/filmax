@@ -285,7 +285,7 @@ private fun MineGrid(state: LibraryState, segment: MineSegment, actions: MineAct
     val gridState = rememberLazyGridState()
     val openFolder = state.openFolder
 
-    // Догрузка следующей страницы папки: страниц у kino.pub может быть много, а счётчик на
+    // Догрузка следующей страницы папки: страниц у kino.watch может быть много, а счётчик на
     // плитке обещает всё содержимое — значит, до конца должно доскроллиться.
     val loadMore by remember {
         derivedStateOf {

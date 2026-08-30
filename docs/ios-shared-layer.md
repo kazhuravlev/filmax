@@ -264,7 +264,7 @@ suspend fun setSubtitleLanguage(language: String)
 DeviceCode(
   code: String,             // device_code — им поллим токен
   userCode: String,         // короткий код, который пользователь вводит на сайте
-  verificationUri: String,  // URL, куда идти вводить код (kino.pub/device)
+  verificationUri: String,  // URL, куда идти вводить код (kino.watch/device)
   expiresIn: Int,           // сколько секунд код действителен (общий таймаут поллинга)
   interval: Int,            // пауза между попытками поллинга, сек
 )

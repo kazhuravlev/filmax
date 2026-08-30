@@ -362,7 +362,7 @@ private fun CatalogTypeRow(
                 modifier = chipModifier,
             )
         }
-        // Направление: ↑ по возрастанию (kino.pub `-field`), ↓ по убыванию.
+        // Направление: ↑ по возрастанию (kino.watch `-field`), ↓ по убыванию.
         item {
             TvChip(
                 label = if (sort.ascending) "↑ Возр." else "↓ Убыв.",
@@ -494,7 +494,7 @@ private fun resultsCount(count: Int): String {
 
 /**
  * Усреднённая внешняя оценка как «8.3». Точка, а не локальная запятая: шкала международная.
- * Ноль отсекается в [ratingLabel] — у kino.pub это «оценки нет», а не «ноль баллов».
+ * Ноль отсекается в [ratingLabel] — у kino.watch это «оценки нет», а не «ноль баллов».
  */
 internal fun formatRating(rating: Double?): String? = ratingLabel(rating)
 

@@ -14,7 +14,7 @@ import io.ktor.http.Parameters
 internal class WatchingApi(private val client: HttpClient) {
 
     /**
-     * Список начатого. [type] — только `movies` или `serials`: других значений у kino.pub нет,
+     * Список начатого. [type] — только `movies` или `serials`: других значений у kino.watch нет,
      * и на «all» эндпоинт молча отдавал пустоту (отсюда вечно пустая история).
      *
      * Прогресса тут НЕТ — только id/title/posters. За прогрессом — [getHistoryList].

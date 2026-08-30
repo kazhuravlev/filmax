@@ -27,13 +27,13 @@ private const val RECENT_LIMIT = 8
 /**
  * Что показывает чип «Все». `api/v1/items` без параметра `type` не ходит, поэтому «все» —
  * это объединение конкретных типов; ItemType.TV (эфирные каналы) в витрину не входит.
- * ANIME здесь нет: у kino.pub нет такого типа (api/v1/types), и аниме-тайтлы уже входят
+ * ANIME здесь нет: у kino.watch нет такого типа (api/v1/types), и аниме-тайтлы уже входят
  * в выдачу как movie/serial со своим жанром.
  */
 private val BrowseTypes = listOf(ItemType.MOVIE, ItemType.SERIES, ItemType.DOCUMENTARY)
 
 /**
- * Чип «Аниме»: типа «anime» у kino.pub НЕТ — аниме это ЖАНР (id 25) поверх фильмов и
+ * Чип «Аниме»: типа «anime» у kino.watch НЕТ — аниме это ЖАНР (id 25) поверх фильмов и
  * сериалов. Поэтому фильтр ANIME разворачивается в movie+serial с жанром [ANIME_GENRE_ID];
  * выбранный в ряду жанр на это время игнорируется — параметр `genre` в API один.
  */
@@ -42,7 +42,7 @@ private val AnimeTypes = listOf(ItemType.MOVIE, ItemType.SERIES)
 
 /**
  * Типы жанров, которые показываем в каталоге. `api/v1/genres` отдаёт одним списком жанры всех
- * разделов kino.pub, включая музыкальные («Blues», «Chillout»), — без этого фильтра они лезли
+ * разделов kino.watch, включая музыкальные («Blues», «Chillout»), — без этого фильтра они лезли
  * в чипы рядом с «Драмой». Значения совпадают с [ItemType.apiValue] соответствующих типов.
  */
 private val VIDEO_GENRE_TYPES = setOf("movie", "serial", "anime", "docuserial", "documovie", "tvshow", "3d")

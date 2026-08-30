@@ -12,7 +12,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             // Движок HTTP берём из core:network, но клиент TMDB строим свой: другой хост и
-            // свой api_key, БЕЗ Bearer-авторизации kino.pub. Ktor-плагины подключаем явно —
+            // свой api_key, БЕЗ Bearer-авторизации kino.watch. Ktor-плагины подключаем явно —
             // тем же бандлом, что и core:network (ContentNegotiation, json и т.д.).
             implementation(project(":core:network"))
             implementation(project(":core:domain"))

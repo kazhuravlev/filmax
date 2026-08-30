@@ -83,7 +83,7 @@ struct TvOnboardingView: View {
                 Text("Активируйте устройство")
                     .font(.system(size: 44, weight: .heavy))
                     .foregroundColor(.white)
-                step(1, "Откройте", "kino.pub/device")
+                step(1, "Откройте", "kino.watch/device")
                 step(2, "Войдите", "в аккаунт KinoPub")
                 step(3, "Введите", "код активации справа")
             }

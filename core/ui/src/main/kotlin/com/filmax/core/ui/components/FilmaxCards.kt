@@ -194,7 +194,7 @@ fun FilmaxRatingPill(rating: String, modifier: Modifier = Modifier) {
 /**
  * Оценка для пилюли: в домене строка вида «8.312», на экране нужен один знак.
  *
- * Ноль — это «оценки нет», а не «ноль баллов»: kino.pub отдаёт `0` для тайтлов без рейтинга,
+ * Ноль — это «оценки нет», а не «ноль баллов»: kino.watch отдаёт `0` для тайтлов без рейтинга,
  * и печатать «0.0» под постером — врать зрителю.
  */
 fun ratingLabel(raw: String?): String? = ratingLabel(raw?.toDoubleOrNull())

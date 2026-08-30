@@ -18,7 +18,7 @@ data class UserDto(
     val email: String? = null,
     val avatar: String? = null,
     @SerialName("reg_date") val regDate: Int? = null,
-    // kino.pub возвращает подписку вложенной в `user`, а не на верхнем уровне.
+    // kino.watch возвращает подписку вложенной в `user`, а не на верхнем уровне.
     val subscription: SubscriptionDto? = null,
     val profile: ProfileDto? = null,
 )

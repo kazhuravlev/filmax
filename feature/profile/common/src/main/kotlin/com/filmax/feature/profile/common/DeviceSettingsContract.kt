@@ -7,7 +7,7 @@ import com.filmax.core.domain.user.model.DeviceSettings
  *
  * [settings] — рабочая копия: тумблеры и селекторы правят её локально, на сервер уходит только
  * по «Сохранить» ([DeviceSettingsEvent.Save]). Так экран не бьёт по сети на каждый клик и
- * повторяет поведение оригинального клиента kino.pub.
+ * повторяет поведение оригинального клиента kino.watch.
  */
 data class DeviceSettingsState(
     val settings: DeviceSettings? = null,

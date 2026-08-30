@@ -41,7 +41,7 @@ data class HistoryEntryItemDto(
 /** Конкретное видео: серия сериала или единственная дорожка фильма. */
 @Serializable
 data class HistoryMediaDto(
-    /** Номер видео — им же kino.pub принимает и отдаёт прогресс (`marktime?video=`). */
+    /** Номер видео — им же kino.watch принимает и отдаёт прогресс (`marktime?video=`). */
     val number: Int = 0,
     /** Номер сезона; 0 — у фильма. */
     val snumber: Int = 0,

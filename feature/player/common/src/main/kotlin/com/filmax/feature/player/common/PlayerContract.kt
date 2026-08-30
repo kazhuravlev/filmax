@@ -5,7 +5,7 @@ import com.filmax.core.domain.catalog.model.MediaTrack
 
 /**
  * Доступное качество потока. [urls] — варианты доставки в порядке предпочтения (hls4 → hls → http):
- * у kino.pub они ведут на РАЗНЫЕ CDN-хосты, и hls4 (api.srvkp.com) бывает недоступен из-за
+ * у kino.watch они ведут на РАЗНЫЕ CDN-хосты, и один из них бывает недоступен из-за
  * DPI/SNI-блокировок. Плеер стартует с первого и при ошибке источника переключается на следующий.
  */
 data class StreamQuality(val label: String, val urls: List<String>) {

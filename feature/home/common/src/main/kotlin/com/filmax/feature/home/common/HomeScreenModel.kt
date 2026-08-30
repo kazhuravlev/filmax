@@ -147,7 +147,7 @@ private val RowPaging<*>.canLoadMore: Boolean
     get() = !loadingMore && !endReached && items.isNotEmpty() && items.size < HOME_ROW_MAX
 
 /**
- * Приклеивает страницу к ряду: дедуп по id (страницы kino.pub пересекаются) и потолок ряда.
+ * Приклеивает страницу к ряду: дедуп по id (страницы kino.watch пересекаются) и потолок ряда.
  * Пустая страница, отсутствие следующей или упёршийся потолок означают конец.
  */
 private fun <T> RowPaging<T>.append(page: List<T>, key: (T) -> Int, hasNextPage: Boolean): RowPaging<T> {

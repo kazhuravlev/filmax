@@ -22,7 +22,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
- * «Буду смотреть» на сервере — поверх папки-закладки kino.pub, а не в SharedPreferences.
+ * «Буду смотреть» на сервере — поверх папки-закладки kino.watch, а не в SharedPreferences.
  *
  * Раньше список жил только локально: не переживал переустановку и не синхронизировался между
  * устройствами (сервер отдаёт лишь тоггл `togglewatchlist` и флаг `in_watchlist`, но НЕ список).
@@ -135,7 +135,7 @@ internal class FavoritesRepositoryImpl(
     /**
      * Единственная точка записи списка — и единственное место, где он дедуплицируется.
      *
-     * Страницы `bookmarks/{id}` у kino.pub пересекаются (тайтл приходит и на первой, и на
+     * Страницы `bookmarks/{id}` у kino.watch пересекаются (тайтл приходит и на первой, и на
      * второй), а список уходит в LazyGrid с `key = id` — дубликат роняет экран «Моё» на
      * `IllegalArgumentException: Key … was already used`. Так же лечится содержимое обычных
      * папок в LibraryScreenModel и выдача каталога/поиска.

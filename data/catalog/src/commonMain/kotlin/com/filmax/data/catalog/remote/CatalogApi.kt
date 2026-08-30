@@ -59,7 +59,7 @@ internal class CatalogApi(private val client: HttpClient) {
             // conditions[] — повторяемый query-параметр. Ktor `parameter()` вызывает append(),
             // который НЕ схлопывает одинаковые ключи, поэтому в URL реально уходит
             // conditions[]=year>=2020&conditions[]=year<=2024 (скобки/операторы percent-энкодятся,
-            // PHP на стороне kino.pub декодирует `%5B%5D` обратно в массив).
+            // PHP на стороне kino.watch декодирует `%5B%5D` обратно в массив).
             query.conditions.forEach { condition -> parameter("conditions[]", condition) }
         }.body()
 

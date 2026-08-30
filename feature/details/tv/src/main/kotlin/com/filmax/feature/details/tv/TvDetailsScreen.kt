@@ -218,9 +218,9 @@ private fun DetailsContent(
     // Кнопка играет недосмотренную серию, иначе первую серию ВЫБРАННОГО сезона (у фильма дорожка
     // не выбирается вовсе).
     val target = series?.let { it.resume ?: episodes.firstOrNull() ?: item.tracklist.firstOrNull() }
-    // Трейлер показываем, только если url — играбельный http(s) (kino.pub отдаёт прямой HLS).
+    // Трейлер показываем, только если url — играбельный http(s) (kino.watch отдаёт прямой HLS).
     val trailerUrl = item.trailer?.url?.takeIf { it.startsWith("http") }
-    // Актёры карточками: фото из TMDB, если доехали; иначе — имена из строки kino.pub.
+    // Актёры карточками: фото из TMDB, если доехали; иначе — имена из строки kino.watch.
     val people = remember(cast, item.cast) { resolveCast(cast, item.cast) }
 
     val listState = rememberLazyListState()
@@ -498,7 +498,7 @@ private fun HeroButtons(
  */
 @Composable
 private fun RatingsRow(rating: ItemRating, modifier: Modifier = Modifier) {
-    // ratingLabel режет «0» (у kino.pub это «оценки нет») и приводит «8.312» к одному знаку.
+    // ratingLabel режет «0» (у kino.watch это «оценки нет») и приводит «8.312» к одному знаку.
     val sources = remember(rating) {
         buildList {
             ratingLabel(rating.kinopoisk)?.let { add(it to "КиноПоиск") }
@@ -558,7 +558,7 @@ private fun DetailsAbout(item: Item) {
 
 /**
  * Ряд актёров карточками с круглым аватаром. Фото приходят из TMDB ([DetailsState.cast]); пока
- * их нет — те же карточки с инициалами (имена всегда есть от kino.pub). Каждая карточка ведёт в
+ * их нет — те же карточки с инициалами (имена всегда есть от kino.watch). Каждая карточка ведёт в
  * фильмографию человека, поэтому каст на TV наконец фокусируемый и кликабельный, а не мёртвая строка.
  */
 private fun LazyListScope.castRail(people: List<CastMember>, onOpenPerson: (String, Boolean) -> Unit) {
@@ -586,7 +586,7 @@ private fun LazyListScope.directorSection(director: String, onOpenPerson: (Strin
                 TvChip(
                     label = director,
                     selected = false,
-                    // По запятой — только первый режиссёр: kino.pub ищет по одному имени.
+                    // По запятой — только первый режиссёр: kino.watch ищет по одному имени.
                     onClick = { onOpenPerson(director.substringBefore(",").trim(), true) },
                 )
             }
@@ -779,7 +779,7 @@ private fun EpisodeCard(
 }
 
 /**
- * Превью серии: кадр, а если его нет — крупный номер серии (у kino.pub thumbnail часто пустой,
+ * Превью серии: кадр, а если его нет — крупный номер серии (у kino.watch thumbnail часто пустой,
  * и пустая плитка не отличима от соседней).
  */
 @Composable

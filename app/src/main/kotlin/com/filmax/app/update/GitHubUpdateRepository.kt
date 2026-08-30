@@ -30,7 +30,7 @@ private data class AssetDto(
  * Обновления приложения из GitHub Releases: релизный CI публикует `filmax-X.Y.Z.apk` на каждый
  * тег vX.Y.Z, здесь мы читаем `releases/latest`, сравниваем с установленной версией и качаем APK.
  *
- * HTTP — голый [HttpURLConnection], а не Ktor из core:network: тому нужен весь стек kino.pub
+ * HTTP — голый [HttpURLConnection], а не Ktor из core:network: тому нужен весь стек kino.watch
  * (авторизация, refresh-токены), а здесь два запроса к чужому хосту без общего состояния.
  *
  * Репозиторий приватный, поэтому запросы идут с токеном из `BuildConfig.UPDATE_GITHUB_TOKEN`

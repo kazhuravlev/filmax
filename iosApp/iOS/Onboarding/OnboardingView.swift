@@ -97,7 +97,7 @@ private struct ActivationStep: View {
                 Text("Активируйте устройство")
                     .font(.system(size: 26, weight: .heavy))
                     .foregroundColor(.white)
-                stepRow(1, "Откройте", "kino.pub/device")
+                stepRow(1, "Откройте", "kino.watch/device")
                 stepRow(2, "Войдите", "в свой аккаунт KinoPub")
                 stepRow(3, "Введите", "код активации справа")
             }

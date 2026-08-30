@@ -129,7 +129,7 @@ data class AudioDto(
     val lang: String? = null,
     val title: String? = null,
     // Тип озвучки («Многоголосый», «Оригинал») и студия («BaibaKo») — из них оригинальный
-    // клиент kino.pub собирает подписи дорожек в плеере.
+    // клиент kino.watch собирает подписи дорожек в плеере.
     val type: AudioMetaDto? = null,
     val author: AudioMetaDto? = null,
 )
@@ -161,7 +161,7 @@ data class TrailerDto(
 
 @Serializable
 data class PaginationDto(
-    // kino.pub: `total` — число страниц, `perpage` — элементов на странице.
+    // kino.watch: `total` — число страниц, `perpage` — элементов на странице.
     val total: Int = 0,
     val current: Int = 1,
     @SerialName("perpage") val perPage: Int = 50,

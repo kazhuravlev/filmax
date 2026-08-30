@@ -9,7 +9,7 @@ import com.filmax.core.domain.catalog.model.ItemPage
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.common.RequestResult
 
-// Каталог kino.pub большой: детали, похожее, жанры, страны, подборки, hot/new, фильтруемая
+// Каталог kino.watch большой: детали, похожее, жанры, страны, подборки, hot/new, фильтруемая
 // выдача. Это один связный контракт, дробить его на несколько интерфейсов незачем.
 @Suppress("TooManyFunctions")
 interface CatalogRepository {
@@ -61,7 +61,7 @@ interface CatalogRepository {
 }
 
 /**
- * Поле сортировки каталога. [apiValue] — имя поля kino.pub для параметра `sort`; направление
+ * Поле сортировки каталога. [apiValue] — имя поля kino.watch для параметра `sort`; направление
  * (по возрастанию/убыванию) задаётся отдельно в [SortOption], а не удвоением значений enum.
  */
 enum class CatalogSort(val apiValue: String) {
@@ -75,7 +75,7 @@ enum class CatalogSort(val apiValue: String) {
 }
 
 /**
- * Сортировка с направлением. kino.pub: `sort=-field` — по УБЫВАНИЮ, `sort=field` — по
+ * Сортировка с направлением. kino.watch: `sort=-field` — по УБЫВАНИЮ, `sort=field` — по
  * возрастанию (проверено живым API: `-rating` отдаёт топ, `rating` — худшее). Раньше знак
  * трактовался наоборот, и «лучшее сверху» на деле показывало хвост каталога.
  * Дефолт — убывание: и «свежие», и «высокий рейтинг» читаются сверху вниз.

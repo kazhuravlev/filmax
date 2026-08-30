@@ -201,7 +201,7 @@ fun PlayerScreen(
             )
         }
 
-        // Плашка подписки — вне оверлея: без неё kino.pub не отдаст поток, и объяснение
+        // Плашка подписки — вне оверлея: без неё kino.watch не отдаст поток, и объяснение
         // должно быть видно всегда, а не только пока контролы на экране.
         if (state.subscriptionRequired && appError == null) {
             SubscriptionBanner(
@@ -552,7 +552,7 @@ private val PreviewBarHeight = 28.dp
 /** Отступ плашки подписки от статус-бара — ниже верхнего ряда контролов оверлея. */
 private val SubscriptionBannerTop = 76.dp
 
-/** Плашка «нужна подписка»: без неё kino.pub не отдаст поток, и экран остался бы просто чёрным. */
+/** Плашка «нужна подписка»: без неё kino.watch не отдаст поток, и экран остался бы просто чёрным. */
 @Composable
 private fun SubscriptionBanner(modifier: Modifier = Modifier) {
     Column(
@@ -564,7 +564,7 @@ private fun SubscriptionBanner(modifier: Modifier = Modifier) {
     ) {
         Text("Нужна подписка", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
         Text(
-            "Просмотр доступен только с активной подпиской kino.pub",
+            "Просмотр доступен только с активной подпиской kino.watch",
             color = Color.White.copy(alpha = 0.8f),
             fontSize = 12.sp,
         )

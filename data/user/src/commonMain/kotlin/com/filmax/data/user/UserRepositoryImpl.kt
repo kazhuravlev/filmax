@@ -21,7 +21,7 @@ internal class UserRepositoryImpl(
     override suspend fun getProfile(): RequestResult<UserProfile> = safeRequest {
         val dto = api.getAccountInfo()
         val user = requireNotNull(dto.user)
-        // Подписка может прийти вложенной в `user` (актуальный ответ kino.pub)
+        // Подписка может прийти вложенной в `user` (актуальный ответ kino.watch)
         // или на верхнем уровне — берём то, что есть.
         val subscriptionDto = user.subscription ?: dto.subscription
         UserProfile(
@@ -100,7 +100,7 @@ internal class UserRepositoryImpl(
         safeRequest { api.removeBookmarkItem(itemId, folderId) }
 
     private companion object {
-        // kino.pub отдаёт временные метки в секундах — переводим в миллисекунды.
+        // kino.watch отдаёт временные метки в секундах — переводим в миллисекунды.
         const val MILLIS_IN_SECOND = 1000
     }
 }

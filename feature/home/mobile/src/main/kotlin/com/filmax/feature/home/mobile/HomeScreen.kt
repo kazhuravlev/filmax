@@ -258,7 +258,7 @@ private fun LazyListScope.collectionsRow(
     onOpenCollection: (id: Int, title: String) -> Unit,
     onEvent: (HomeEvent) -> Unit,
 ) {
-    // Отсев пустых ссылок. Полностью «подборки без картинки» он не убирает: kino.pub отдаёт
+    // Отсев пустых ссылок. Полностью «подборки без картинки» он не убирает: kino.watch отдаёт
     // адрес постера всегда, даже когда файла нет (967 → /selection/medium/967.jpg = 404), и
     // такая карточка остаётся градиентной заглушкой с подписью.
     val withPoster = row.paging.items.mapNotNull { collection ->

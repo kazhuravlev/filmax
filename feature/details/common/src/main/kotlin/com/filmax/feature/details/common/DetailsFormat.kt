@@ -8,7 +8,7 @@ import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.catalog.model.MediaTrack
 import com.filmax.core.domain.person.CastMember
 
-/** Статусы просмотра kino.pub (`watching.status`): -1 не начат, 0 в процессе, 1 досмотрен. */
+/** Статусы просмотра kino.watch (`watching.status`): -1 не начат, 0 в процессе, 1 досмотрен. */
 const val WATCH_STATUS_IN_PROGRESS = 0
 const val WATCH_STATUS_FINISHED = 1
 
@@ -87,7 +87,7 @@ private fun durationLabel(minutes: Int): String {
 
 /**
  * Люди для секции «Актёры»: если фото из TMDB доехали — берём их (с ролями), иначе строим карточки
- * из строки имён kino.pub (`item.cast`, имена через запятую) без фото. Так каст кликабелен всегда,
+ * из строки имён kino.watch (`item.cast`, имена через запятую) без фото. Так каст кликабелен всегда,
  * а фото — приятное дополнение, а не условие.
  */
 fun resolveCast(cast: List<CastMember>, rawCast: String): List<CastMember> =

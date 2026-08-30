@@ -68,7 +68,7 @@ class OnboardingScreenModel(
                 timestamp = System.currentTimeMillis() / MILLIS_PER_SECOND,
             )
             if (result is RequestResult.Success) {
-                // Сообщаем бэку о клиенте (kino.pub device/notify) сразу после входа —
+                // Сообщаем бэку о клиенте (kino.watch device/notify) сразу после входа —
                 // best-effort: ошибка регистрации не должна мешать авторизации.
                 registerDevice()
                 updateState { it.copy(polling = false) }

@@ -262,7 +262,7 @@ private val YearBuckets = listOf(
     YearBucket(label = "до 1980", yearFrom = null, yearTo = 1979),
 )
 
-/** Пороги внешних оценок (kino.pub 0–10). «Любой» — без нижней границы. */
+/** Пороги внешних оценок (kino.watch 0–10). «Любой» — без нижней границы. */
 private val RatingThresholds: List<Pair<String, Int?>> = listOf(
     "Любой" to null,
     "5+" to 5,

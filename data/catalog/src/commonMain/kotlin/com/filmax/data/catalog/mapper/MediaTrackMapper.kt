@@ -42,7 +42,7 @@ fun AudioDto.toDomain() = AudioTrack(
     voiceAuthor = author?.title?.ifBlank { null },
 )
 
-/** null — субтитр без ссылки (бывает у kino.pub): дорожку не из чего играть, отбрасываем. */
+/** null — субтитр без ссылки (бывает у kino.watch): дорожку не из чего играть, отбрасываем. */
 fun SubtitleDto.toDomainOrNull(): SubtitleTrack? {
     val subtitleUrl = url?.takeIf { it.isNotBlank() } ?: return null
     return SubtitleTrack(

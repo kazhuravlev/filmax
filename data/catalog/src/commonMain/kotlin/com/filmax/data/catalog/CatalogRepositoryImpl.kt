@@ -17,7 +17,7 @@ import com.filmax.data.catalog.mapper.toDomain
 import com.filmax.data.catalog.remote.CatalogApi
 import com.filmax.data.catalog.remote.ItemsQuery
 
-// Значение параметра `quality` для фильтра «только 4K» (kino.pub: 4 = 2160p).
+// Значение параметра `quality` для фильтра «только 4K» (kino.watch: 4 = 2160p).
 private const val QUALITY_4K = 4
 
 // Реализация всего контракта CatalogRepository — столько же методов, дробить незачем.
@@ -78,14 +78,14 @@ internal class CatalogRepositoryImpl(
 
 /**
  * Короткие перегрузки без [SortOption] всегда сортируют по убыванию: «популярное», «лучшее»
- * и «свежее» читаются сверху вниз. kino.pub: минус-префикс = DESC (см. [SortOption.apiValue]).
+ * и «свежее» читаются сверху вниз. kino.watch: минус-префикс = DESC (см. [SortOption.apiValue]).
  */
 private val CatalogSort.descending: String get() = "-$apiValue"
 
 /**
  * Разворачивает доменные [CatalogFilters] в параметры `api/v1/items`. Диапазоны года и пороги
  * рейтингов уходят повторяемыми `conditions[]`, страна/качество/завершённость — отдельными
- * параметрами (так их принимает kino.pub).
+ * параметрами (так их принимает kino.watch).
  */
 private fun CatalogFilters.toQuery(
     type: ItemType,

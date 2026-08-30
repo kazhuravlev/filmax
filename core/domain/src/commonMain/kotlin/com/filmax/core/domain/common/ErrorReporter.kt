@@ -11,7 +11,7 @@ import kotlin.concurrent.Volatile
  */
 interface ErrorReporter {
 
-    /** Привязывает последующие отчёты к пользователю (username kino.pub); null — сброс при logout. */
+    /** Привязывает последующие отчёты к пользователю (username kino.watch); null — сброс при logout. */
     fun setUser(id: String?)
 
     /** Хлебная крошка: строка попадает в хронологию ближайшего отчёта, сама по себе не событие. */

@@ -693,7 +693,7 @@ private fun IndicatorsBlock() {
     SubLabel("Рейтинг и прогресс")
     DsCard {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // ratingLabel(0) → null: kino.pub отдаёт ноль для тайтлов без оценки, и такой пилюли
+            // ratingLabel(0) → null: kino.watch отдаёт ноль для тайтлов без оценки, и такой пилюли
             // в списке просто нет — здесь это видно на третьем аргументе.
             listOfNotNull(ratingLabel("8.312"), ratingLabel(7.5), ratingLabel(0.0))
                 .forEach { FilmaxRatingPill(rating = it) }
