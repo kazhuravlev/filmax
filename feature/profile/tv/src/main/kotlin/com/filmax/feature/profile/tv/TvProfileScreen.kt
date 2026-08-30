@@ -204,6 +204,7 @@ private data class ProfileActions(
     val onCycleQuality: () -> Unit,
     val onCycleAudio: () -> Unit,
     val onCycleSubtitle: () -> Unit,
+    val onResetSubtitlePreferences: () -> Unit,
     val onLogout: () -> Unit,
     val onCheckUpdates: () -> Unit,
 )
@@ -232,6 +233,7 @@ private fun profileActions(
             )
         )
     },
+    onResetSubtitlePreferences = { screenModel.dispatch(ProfileEvent.ResetSubtitlePreferences) },
     onLogout = { screenModel.dispatch(ProfileEvent.Logout) },
 )
 
@@ -249,6 +251,13 @@ private fun PlaybackRows(state: ProfileState, actions: ProfileActions) {
         SettingRow(
             spec = SettingRowSpec(label = "Субтитры", value = state.playback.subtitleLanguage),
             onClick = actions.onCycleSubtitle,
+        )
+        SettingRow(
+            spec = SettingRowSpec(
+                label = "Сбросить настройки субтитров",
+                labelColor = TvError,
+            ),
+            onClick = actions.onResetSubtitlePreferences,
         )
     }
 }

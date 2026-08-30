@@ -44,6 +44,7 @@ class ProfileScreenModel(
             is ProfileEvent.SetQuality -> setQuality(event.quality)
             is ProfileEvent.SetAudioLanguage -> setAudioLanguage(event.language)
             is ProfileEvent.SetSubtitleLanguage -> setSubtitleLanguage(event.language)
+            ProfileEvent.ResetSubtitlePreferences -> resetSubtitlePreferences()
         }
     }
 
@@ -57,6 +58,10 @@ class ProfileScreenModel(
 
     private fun setSubtitleLanguage(language: String) = screenModelScope {
         playbackSettings.setSubtitleLanguage(language)
+    }
+
+    private fun resetSubtitlePreferences() = screenModelScope {
+        playbackSettings.clearSubtitlePreferences()
     }
 
     override fun onFetchData() {

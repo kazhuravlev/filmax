@@ -22,6 +22,7 @@ sealed interface ProfileEvent {
     data class SetQuality(val quality: String) : ProfileEvent
     data class SetAudioLanguage(val language: String) : ProfileEvent
     data class SetSubtitleLanguage(val language: String) : ProfileEvent
+    data object ResetSubtitlePreferences : ProfileEvent
 }
 
 sealed interface ProfileSideEffect {

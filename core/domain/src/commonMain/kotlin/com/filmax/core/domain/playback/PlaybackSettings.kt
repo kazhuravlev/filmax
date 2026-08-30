@@ -33,6 +33,17 @@ interface PlaybackSettingsRepository {
     suspend fun setSubtitleLanguage(language: String)
 
     /**
+     * Выбранные субтитры конкретного тайтла. `null` означает, что плеер должен взять глобальный
+     * default из [PlaybackSettings.subtitleLanguage]; запись не устаревает сама.
+     */
+    suspend fun subtitlePreferenceFor(itemId: Int): String?
+
+    suspend fun setSubtitlePreference(itemId: Int, language: String)
+
+    /** Удаляет все сохранённые привязки субтитров к тайтлам, не меняя глобальный default. */
+    suspend fun clearSubtitlePreferences()
+
+    /**
      * Озвучка, выбранная для конкретного тайтла: следующие серии сериала стартуют с неё же.
      * [key] — непрозрачный идентификатор дорожки (язык|тип|студия), собирает и разбирает его
      * плеер. null — для тайтла озвучку ещё не выбирали.

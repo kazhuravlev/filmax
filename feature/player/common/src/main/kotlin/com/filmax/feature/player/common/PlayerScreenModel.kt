@@ -127,7 +127,9 @@ class PlayerScreenModel(
         screenModelScope { _ ->
             val settings = playbackSettings.settings.first()
             audioPreference = settings.audioLanguage
-            subtitlePreference = settings.subtitleLanguage
+            // Привязка к тайтлу сильнее глобального default и разделяется всеми его сериями.
+            subtitlePreference = playbackSettings.subtitlePreferenceFor(route.itemId)
+                ?: settings.subtitleLanguage
             savedVoiceKey = playbackSettings.voiceKeyFor(route.itemId)
             when (val result = catalog.getItemDetails(route.itemId)) {
                 is RequestResult.Success -> {
@@ -240,7 +242,12 @@ class PlayerScreenModel(
         val option = state.subtitles.firstOrNull { it.label == label } ?: return
         subtitlePreference = option.lang ?: PlaybackSettings.SubtitleOff
         applySubtitleSelection(option)
-        screenModelScope { _ -> updateState { it.copy(currentSubtitle = label) } }
+        screenModelScope { _ ->
+            // Запоминаем по тайтлу, а не как глобальный default: другая история не должна
+            // внезапно получить субтитры, выбранные для этого сериала.
+            playbackSettings.setSubtitlePreference(route.itemId, subtitlePreference)
+            updateState { it.copy(currentSubtitle = label) }
+        }
     }
 
     private fun selectAudio(label: String) {

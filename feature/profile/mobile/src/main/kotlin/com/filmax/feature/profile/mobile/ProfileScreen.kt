@@ -111,6 +111,7 @@ fun ProfileScreen(
                 null
             },
             onLogout = { screenModel.dispatch(ProfileEvent.Logout) },
+            onResetSubtitlePreferences = { screenModel.dispatch(ProfileEvent.ResetSubtitlePreferences) },
         ),
         modifier = modifier,
     )
@@ -133,6 +134,7 @@ private data class ProfileActions(
     val onCheckUpdates: () -> Unit,
     val onOpenDesignSystem: (() -> Unit)?,
     val onLogout: () -> Unit,
+    val onResetSubtitlePreferences: () -> Unit,
 )
 
 @Composable
@@ -153,9 +155,13 @@ private fun ProfileContent(
         ProfileHeader(profile = state.profile)
 
         SectionOverline("ПРОСМОТР")
-        // Настройки воспроизведения реальны: качество/аудио/субтитры хранятся локально
-        // (PlaybackSettingsRepository) и применяются в плеере. Заглушек на экране нет.
-        PlaybackRows(playback = state.playback, onOpenSheet = actions.onOpenSheet)
+        // Глобальные default'ы хранятся локально; отдельная строка чистит привязки субтитров
+        // к тайтлам, которые плеер создаёт при ручном выборе дорожки.
+        PlaybackRows(
+            playback = state.playback,
+            onOpenSheet = actions.onOpenSheet,
+            onResetSubtitlePreferences = actions.onResetSubtitlePreferences,
+        )
 
         // Блока «УСТРОЙСТВО» временно нет: device/info и device/settings отвечают 500,
         // и строка вела на нерабочий экран. Вернуть, когда бэкенд починят.
@@ -237,7 +243,11 @@ private fun SectionOverline(text: String) {
 }
 
 @Composable
-private fun PlaybackRows(playback: PlaybackSettings, onOpenSheet: (ProfileSheet) -> Unit) {
+private fun PlaybackRows(
+    playback: PlaybackSettings,
+    onOpenSheet: (ProfileSheet) -> Unit,
+    onResetSubtitlePreferences: () -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(RowGap)) {
         SettingRow(
             spec = SettingRowSpec(label = "Качество видео", value = playback.quality),
@@ -250,6 +260,13 @@ private fun PlaybackRows(playback: PlaybackSettings, onOpenSheet: (ProfileSheet)
         SettingRow(
             spec = SettingRowSpec(label = "Субтитры", value = playback.subtitleLanguage),
             onClick = { onOpenSheet(ProfileSheet.SUBTITLES) },
+        )
+        SettingRow(
+            spec = SettingRowSpec(
+                label = "Сбросить настройки субтитров",
+                labelColor = MaterialTheme.colorScheme.error,
+            ),
+            onClick = onResetSubtitlePreferences,
         )
     }
 }

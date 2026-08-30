@@ -22,6 +22,21 @@ internal class PlaybackSettingsRepositoryImpl(
 
     override suspend fun setSubtitleLanguage(language: String) = update { it.copy(subtitleLanguage = language) }
 
+    // Выбор субтитров — свой для тайтла: сериал переносит его между сериями, а фильм — между
+    // запусками. Записи не чистим автоматически, только явным действием из настроек.
+    override suspend fun subtitlePreferenceFor(itemId: Int): String? =
+        storage.getStringOrNull(KEY_SUBTITLE_PREFIX + itemId)
+
+    override suspend fun setSubtitlePreference(itemId: Int, language: String) {
+        storage.putString(KEY_SUBTITLE_PREFIX + itemId, language)
+    }
+
+    override suspend fun clearSubtitlePreferences() {
+        storage.keys
+            .filter { it.startsWith(KEY_SUBTITLE_PREFIX) }
+            .forEach(storage::remove)
+    }
+
     // Озвучка на тайтл — точечные ключи мимо state: это не глобальная настройка, а память
     // «какую дорожку слушали в этом сериале», и подписки на неё не нужны.
     override suspend fun voiceKeyFor(itemId: Int): String? =
@@ -50,5 +65,6 @@ internal class PlaybackSettingsRepositoryImpl(
         const val KEY_AUDIO = "playback_audio"
         const val KEY_SUBTITLES = "playback_subtitles"
         const val KEY_VOICE_PREFIX = "playback_voice_"
+        const val KEY_SUBTITLE_PREFIX = "playback_subtitle_"
     }
 }
