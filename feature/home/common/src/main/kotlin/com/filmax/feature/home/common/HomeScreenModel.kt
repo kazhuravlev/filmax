@@ -30,7 +30,7 @@ class HomeScreenModel(
     }
 
     override fun onFetchData() {
-        screenModelScope {
+        screenModelScope { _ ->
             updateState { it.copy(loading = true, error = null) }
             val feed = getHomeFeed()
             updateState { s ->
