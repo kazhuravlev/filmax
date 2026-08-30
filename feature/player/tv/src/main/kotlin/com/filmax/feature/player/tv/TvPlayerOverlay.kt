@@ -413,7 +413,7 @@ private fun SettingsButton(
     onClick: () -> Unit,
 ) {
     TvFocusCard(
-        onClick = if (enabled) onClick else {},
+        onClick = { if (enabled) onClick() },
         shape = TvMetrics.ChipShape,
         modifier = Modifier
             .width(SettingsButtonWidth)
