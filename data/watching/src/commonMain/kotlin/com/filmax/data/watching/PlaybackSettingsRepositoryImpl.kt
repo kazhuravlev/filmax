@@ -27,8 +27,8 @@ internal class PlaybackSettingsRepositoryImpl(
     override suspend fun subtitlePreferenceFor(itemId: Int): String? =
         storage.getStringOrNull(KEY_SUBTITLE_PREFIX + itemId)
 
-    override suspend fun setSubtitlePreference(itemId: Int, language: String) {
-        storage.putString(KEY_SUBTITLE_PREFIX + itemId, language)
+    override suspend fun setSubtitlePreference(itemId: Int, selectionKey: String) {
+        storage.putString(KEY_SUBTITLE_PREFIX + itemId, selectionKey)
     }
 
     override suspend fun clearSubtitlePreferences() {

@@ -240,7 +240,7 @@ class PlayerScreenModel(
 
     private fun selectSubtitle(label: String) {
         val option = state.subtitles.firstOrNull { it.label == label } ?: return
-        subtitlePreference = option.lang ?: PlaybackSettings.SubtitleOff
+        subtitlePreference = option.preferenceKey()
         applySubtitleSelection(option)
         screenModelScope { _ ->
             // Запоминаем по тайтлу, а не как глобальный default: другая история не должна
@@ -310,17 +310,23 @@ class PlayerScreenModel(
         val options = buildList {
             add(SubtitleOption(PlaybackSettings.SubtitleOff, null))
             textGroups.forEachIndexed { index, group ->
-                val format = group.getTrackFormat(0)
-                val label = format.label?.takeIf { it.isNotBlank() }
-                    ?: langDisplay(format.language)
-                add(SubtitleOption(label, format.language, index))
+                repeat(group.length) { trackIndex ->
+                    val format = group.getTrackFormat(trackIndex)
+                    val label = format.label?.takeIf { it.isNotBlank() }
+                        ?: langDisplay(format.language)
+                    add(
+                        SubtitleOption(
+                            label = label,
+                            lang = format.language,
+                            groupIndex = index,
+                            trackIndex = trackIndex,
+                            isForced = format.selectionFlags and C.SELECTION_FLAG_FORCED != 0,
+                        ),
+                    )
+                }
             }
         }
-        val selected = options.firstOrNull { option ->
-            option.lang != null &&
-                (option.label == subtitlePreference || option.lang == subtitlePreference ||
-                    option.lang == langCode(subtitlePreference))
-        } ?: options.first()
+        val selected = resolveSubtitleOption(options, subtitlePreference)
         applySubtitleSelection(selected)
         screenModelScope { _ ->
             updateState {
@@ -356,7 +362,7 @@ class PlayerScreenModel(
             textGroups.getOrNull(option.groupIndex)?.let { group ->
                 builder
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
+                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, option.trackIndex))
             }
         }
         player.trackSelectionParameters = builder.build()

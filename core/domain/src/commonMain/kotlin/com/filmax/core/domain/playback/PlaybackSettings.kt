@@ -38,7 +38,11 @@ interface PlaybackSettingsRepository {
      */
     suspend fun subtitlePreferenceFor(itemId: Int): String?
 
-    suspend fun setSubtitlePreference(itemId: Int, language: String)
+    /**
+     * Сохраняет непрозрачный идентификатор выбранной дорожки. Его формирует и разбирает плеер;
+     * старые сохранённые значения языка также поддерживаются для миграции без очистки настроек.
+     */
+    suspend fun setSubtitlePreference(itemId: Int, selectionKey: String)
 
     /** Удаляет все сохранённые привязки субтитров к тайтлам, не меняя глобальный default. */
     suspend fun clearSubtitlePreferences()

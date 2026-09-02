@@ -2,6 +2,7 @@ package com.filmax.feature.player.common
 
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.MediaTrack
+import com.filmax.core.domain.playback.PlaybackSettings
 
 /**
  * Доступное качество потока. [urls] — варианты доставки в порядке предпочтения (hls4 → hls → http):
@@ -18,7 +19,67 @@ data class StreamQuality(val label: String, val urls: List<String>) {
 }
 
 /** Вариант субтитров; [lang] == null означает «Выкл». */
-data class SubtitleOption(val label: String, val lang: String?, val groupIndex: Int = -1)
+data class SubtitleOption(
+    val label: String,
+    val lang: String?,
+    val groupIndex: Int = -1,
+    val trackIndex: Int = 0,
+    val isForced: Boolean = false,
+)
+
+/**
+ * Код сохранённого выбора конкретной дорожки. Раньше сохранялся только язык, из-за чего при
+ * нескольких `rus` после повторного разбора манифеста всегда выбиралась первая дорожка — часто
+ * это forced-субтитры. Старые значения языка остаются поддержанными в [resolveSubtitleOption].
+ */
+internal fun SubtitleOption.preferenceKey(): String =
+    lang?.let { "$SUBTITLE_TRACK_PREFERENCE_PREFIX${it.lowercase()}$SUBTITLE_PREFERENCE_SEPARATOR$label" }
+        ?: PlaybackSettings.SubtitleOff
+
+/** Выбирает точную сохранённую дорожку, а для старой настройки по языку предпочитает не-forced. */
+internal fun resolveSubtitleOption(
+    options: List<SubtitleOption>,
+    preference: String,
+): SubtitleOption {
+    if (preference == PlaybackSettings.SubtitleOff) return options.first()
+
+    val savedTrack = preference.toSavedSubtitleTrack()
+    val preferredLanguage = savedTrack?.language ?: langCode(preference)
+    val exactSavedTrack = savedTrack?.let { saved ->
+        options.firstOrNull { option ->
+            option.lang.equals(saved.language, true) && option.label == saved.label
+        }
+    }
+    return exactSavedTrack ?: options.firstOrNull { option ->
+        option.lang != null && option.label == preference
+    } ?: options.firstOrNull { option ->
+        option.lang.equals(preferredLanguage, true) && !option.isForced
+    } ?: options.firstOrNull { option ->
+        option.lang.equals(preferredLanguage, true)
+    } ?: options.first()
+}
+
+private data class SavedSubtitleTrack(val language: String, val label: String)
+
+private fun String.toSavedSubtitleTrack(): SavedSubtitleTrack? {
+    if (!startsWith(SUBTITLE_TRACK_PREFERENCE_PREFIX)) return null
+    val saved = removePrefix(SUBTITLE_TRACK_PREFERENCE_PREFIX)
+    val separatorIndex = saved.indexOf(SUBTITLE_PREFERENCE_SEPARATOR)
+    if (separatorIndex <= 0 || separatorIndex == saved.lastIndex) return null
+    return SavedSubtitleTrack(
+        language = saved.substring(0, separatorIndex),
+        label = saved.substring(separatorIndex + 1),
+    )
+}
+
+private fun langCode(display: String): String? = when (display.lowercase()) {
+    "русский" -> "rus"
+    "english" -> "eng"
+    else -> null
+}
+
+private const val SUBTITLE_TRACK_PREFERENCE_PREFIX = "track:"
+private const val SUBTITLE_PREFERENCE_SEPARATOR = "|"
 
 /**
  * Аудиодорожка потока. [groupIndex] — индекс аудиогруппы в Media3 `Tracks`: выбор идёт точечным

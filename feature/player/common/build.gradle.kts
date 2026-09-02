@@ -17,4 +17,11 @@ dependencies {
     // ExoPlayer живёт в ScreenModel
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
+
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
 }
