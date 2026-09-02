@@ -18,11 +18,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -38,9 +40,9 @@ import androidx.compose.ui.unit.dp
 import com.filmax.core.designsystem.ShapeFull
 
 /**
- * Разделы нижней навигации. Их четыре, а не пять: «Поиск» уехал внутрь «Каталога» (поле в
- * шапке — тап и так один), «Подборки» стали контентом каталога, а личные данные разделены на
- * «Я смотрю» и «Закладки».
+ * Разделы нижней навигации. «Поиск» уехал внутрь «Каталога» (поле в шапке — тап и так один),
+ * «Подборки» стали контентом каталога, а личные данные разделены на «Я смотрю» и «Закладки».
+ * Настройки остаются отдельным постоянным разделом.
  */
 enum class FilmaxTab(
     val label: String,
@@ -51,6 +53,7 @@ enum class FilmaxTab(
     WATCHING("Я смотрю", Icons.Filled.History, Icons.Outlined.History),
     CATALOG("Каталог", Icons.Filled.GridView, Icons.Outlined.GridView),
     BOOKMARKS("Закладки", Icons.Outlined.Bookmark, Icons.Outlined.BookmarkBorder),
+    SETTINGS("Настройки", Icons.Filled.Settings, Icons.Outlined.Settings),
 }
 
 /**

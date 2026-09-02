@@ -41,6 +41,7 @@ import com.filmax.feature.onboarding.mobile.navigation.OnboardingRoute
 import com.filmax.feature.onboarding.mobile.navigation.onboardingScreen
 import com.filmax.feature.player.mobile.navigation.playerScreen
 import com.filmax.feature.player.mobile.navigation.trailerScreen
+import com.filmax.feature.profile.mobile.navigation.ProfileRoute
 import com.filmax.feature.profile.mobile.navigation.deviceSettingsScreen
 import com.filmax.feature.profile.mobile.navigation.profileScreen
 import com.filmax.feature.search.mobile.navigation.SearchRoute
@@ -59,12 +60,13 @@ private val tabRoots = mapOf(
     FilmaxTab.WATCHING to WatchingRoute::class,
     FilmaxTab.CATALOG to SearchRoute::class,
     FilmaxTab.BOOKMARKS to BookmarksRoute::class,
+    FilmaxTab.SETTINGS to ProfileRoute::class,
 )
 
 /**
  * Телефонный граф.
  *
- * Таб-бар — только на четырёх корнях разделов, как и верхняя навигация на ТВ. Карточка тайтла,
+ * Таб-бар — только на корнях разделов, как и верхняя навигация на ТВ. Карточка тайтла,
  * подборка, фильмография, плеер и трейлер идут поверх него на весь экран.
  *
  * Экраны сюда колбэков не отдают и не получают: куда вести — они говорят [Navigator]-у.
@@ -179,4 +181,5 @@ private val FilmaxTab.destination: Destination
         FilmaxTab.WATCHING -> Destination.Watching
         FilmaxTab.CATALOG -> Destination.Catalog
         FilmaxTab.BOOKMARKS -> Destination.Bookmarks
+        FilmaxTab.SETTINGS -> Destination.Profile
     }

@@ -43,6 +43,7 @@ import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.feature.home.tv.navigation.TvHomeRoute
 import com.filmax.feature.library.tv.navigation.TvBookmarksRoute
 import com.filmax.feature.library.tv.navigation.TvWatchingRoute
+import com.filmax.feature.profile.tv.navigation.TvProfileRoute
 import com.filmax.feature.search.tv.navigation.TvSearchRoute
 import kotlin.reflect.KClass
 
@@ -50,15 +51,16 @@ import kotlin.reflect.KClass
 private data class TvTab(val label: String, val route: Any, val match: (NavDestination?) -> Boolean)
 
 /**
- * Четыре раздела. «Поиск» уехал внутрь «Каталога» (печатать пультом дорого — каталог даёт
+ * Разделы верхней навигации. «Поиск» уехал внутрь «Каталога» (печатать пультом дорого — каталог даёт
  * способ найти фильм вообще без набора текста), «Подборки» стали контентом каталога, а личное
- * содержимое разделено на «Я смотрю» и «Закладки».
+ * содержимое разделено на «Я смотрю» и «Закладки». Настройки остаются отдельным разделом.
  */
 private val TABS = listOf(
     TvTab("Главная", TvHomeRoute) { it?.hasRoute(TvHomeRoute::class) == true },
     TvTab("Я смотрю", TvWatchingRoute) { it?.hasRoute(TvWatchingRoute::class) == true },
     TvTab("Каталог", TvSearchRoute) { it?.hasRoute(TvSearchRoute::class) == true },
     TvTab("Закладки", TvBookmarksRoute) { it?.hasRoute(TvBookmarksRoute::class) == true },
+    TvTab("Настройки", TvProfileRoute) { it?.hasRoute(TvProfileRoute::class) == true },
 )
 
 /** Маршруты, на которых показывается таб-бар. Выводится из [TABS] — один источник правды. */
@@ -67,6 +69,7 @@ val TOP_LEVEL_ROUTES: List<KClass<*>> = listOf(
     TvWatchingRoute::class,
     TvSearchRoute::class,
     TvBookmarksRoute::class,
+    TvProfileRoute::class,
 )
 
 /** Фокус-реквестеры шапки: вход в таб-бар ([navBar]) и переход к контенту ([content]). */
