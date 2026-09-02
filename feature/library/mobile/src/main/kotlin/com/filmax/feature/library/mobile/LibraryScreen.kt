@@ -78,6 +78,7 @@ import com.filmax.core.ui.components.continueMeta
 import com.filmax.core.ui.components.posterMeta
 import com.filmax.core.ui.components.ratingLabel
 import com.filmax.feature.library.common.LibraryEvent
+import com.filmax.feature.library.common.LibrarySection
 import com.filmax.feature.library.common.LibraryScreenModel
 import com.filmax.feature.library.common.LibraryState
 import com.filmax.feature.library.common.OpenBookmarkFolder
@@ -85,18 +86,24 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
 /**
- * Сегменты раздела «Моё» — четыре непересекающихся ответа на вопрос «что у меня есть».
- *
- * Заменяют старые вкладки Библиотеки, которые пересекались: «Избранное» и есть «Буду смотреть»,
- * а «Загрузки» ничего не качали и убраны. Совпадают с сегментами TV-раздела, но живут отдельно:
- * общий `LibraryTab` описывал именно старые вкладки и мобильному экрану больше не нужен.
+ * Подразделы двух личных экранов. «Буду смотреть» и папки — разные виды закладок, а история и
+ * продолжение — разные способы вернуться к просмотру.
  */
-private enum class MineSegment(val label: String) {
+private enum class LibrarySegment(val label: String) {
     CONTINUE("Продолжить"),
-    WATCHLIST("Буду смотреть"),
-    BOOKMARKS("Закладки"),
     HISTORY("История"),
+    BOOKMARKS("Папки"),
+    WATCHLIST("Буду смотреть"),
 }
+
+private val LibrarySection.segments: List<LibrarySegment>
+    get() = when (this) {
+        LibrarySection.WATCHING -> listOf(LibrarySegment.CONTINUE, LibrarySegment.HISTORY)
+        LibrarySection.BOOKMARKS -> listOf(LibrarySegment.BOOKMARKS, LibrarySegment.WATCHLIST)
+    }
+
+private val LibrarySection.initialSegment: LibrarySegment
+    get() = segments.first()
 
 /** Действия сетки одним объектом: навигация экрана + события модели, иначе LongParameterList. */
 private data class MineActions(
@@ -125,11 +132,12 @@ private class BookmarkDialogs {
 }
 
 /**
- * Раздел «Моё» (экран 08 макета). Все карточки — включая «Продолжить» и «Историю» — ведут в
- * карточку тайтла через [onOpenItem]: там и «Продолжить · SxEy», и выбор серий, и описание.
+ * Один из личных экранов. Все карточки — включая «Продолжить» и «Историю» — ведут в карточку
+ * тайтла через [onOpenItem]: там и «Продолжить · SxEy», и выбор серий, и описание.
  */
 @Composable
 fun LibraryScreen(
+    section: LibrarySection,
     modifier: Modifier = Modifier,
     screenModel: LibraryScreenModel = koinViewModel(),
     navigator: Navigator = koinInject(),
@@ -139,11 +147,11 @@ fun LibraryScreen(
     val onOpenItem: (Int) -> Unit = { itemId -> navigator.open(Destination.Details(itemId)) }
     // Единственное действие пустых состояний раздела.
     val onOpenCatalog: () -> Unit = { navigator.open(Destination.Catalog) }
-    var segment by rememberSaveable { mutableStateOf(MineSegment.CONTINUE) }
+    var segment by rememberSaveable(section) { mutableStateOf(section.initialSegment) }
     val dialogs = remember { BookmarkDialogs() }
 
     // Внутри папки системная «назад» возвращает к списку папок, а не выкидывает из раздела.
-    BackHandler(enabled = state.openFolder != null) {
+    BackHandler(enabled = section == LibrarySection.BOOKMARKS && state.openFolder != null) {
         screenModel.dispatch(LibraryEvent.CloseFolder)
     }
 
@@ -160,17 +168,20 @@ fun LibraryScreen(
             .statusBarsPadding(),
     ) {
         MineHeader(
+            section = section,
             segment = segment,
             onSegment = { next ->
                 segment = next
-                // Уход из «Закладок» закрывает открытую папку: иначе возврат в сегмент показал бы
-                // содержимое, которое уже никто не просил.
-                if (state.openFolder != null) screenModel.dispatch(LibraryEvent.CloseFolder)
+                // Уход из папок закрывает открытую папку: иначе возврат показал бы содержимое,
+                // которое уже никто не просил.
+                if (next != LibrarySegment.BOOKMARKS && state.openFolder != null) {
+                    screenModel.dispatch(LibraryEvent.CloseFolder)
+                }
             },
         )
 
         val openFolder = state.openFolder
-        if (segment == MineSegment.BOOKMARKS && openFolder != null) {
+        if (segment == LibrarySegment.BOOKMARKS && openFolder != null) {
             OpenFolderBar(
                 folder = openFolder.folder,
                 onBack = { screenModel.dispatch(LibraryEvent.CloseFolder) },
@@ -201,10 +212,14 @@ fun LibraryScreen(
 
 /** Заголовок и сегменты. Не скроллятся вместе с сеткой: сегмент всегда должен быть виден. */
 @Composable
-private fun MineHeader(segment: MineSegment, onSegment: (MineSegment) -> Unit) {
+private fun MineHeader(
+    section: LibrarySection,
+    segment: LibrarySegment,
+    onSegment: (LibrarySegment) -> Unit,
+) {
     Column {
         Text(
-            "Моё",
+            section.title,
             style = MaterialTheme.typography.displaySmall,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier
@@ -216,7 +231,7 @@ private fun MineHeader(segment: MineSegment, onSegment: (MineSegment) -> Unit) {
             contentPadding = PaddingValues(horizontal = FilmaxMetrics.ScreenPadding),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(MineSegment.entries, key = { it.name }) { entry ->
+            items(section.segments, key = { it.name }) { entry ->
                 MineChip(
                     label = entry.label,
                     selected = entry == segment,
@@ -282,7 +297,7 @@ private fun OpenFolderBar(folder: BookmarkFolder, onBack: () -> Unit) {
 // ── Сетка ─────────────────────────────────────────────────────────────────
 
 @Composable
-private fun MineGrid(state: LibraryState, segment: MineSegment, actions: MineActions) {
+private fun MineGrid(state: LibraryState, segment: LibrarySegment, actions: MineActions) {
     val gridState = rememberLazyGridState()
     val openFolder = state.openFolder
 
@@ -308,10 +323,10 @@ private fun MineGrid(state: LibraryState, segment: MineSegment, actions: MineAct
         contentPadding = GridPadding,
     ) {
         when (segment) {
-            MineSegment.CONTINUE -> continueSegment(state.continuations, actions)
-            MineSegment.WATCHLIST -> watchlistSegment(state, actions)
-            MineSegment.BOOKMARKS -> bookmarksSegment(state, actions)
-            MineSegment.HISTORY -> historySegment(state, actions)
+            LibrarySegment.CONTINUE -> continueSegment(state.continuations, actions)
+            LibrarySegment.WATCHLIST -> watchlistSegment(state, actions)
+            LibrarySegment.BOOKMARKS -> bookmarksSegment(state, actions)
+            LibrarySegment.HISTORY -> historySegment(state, actions)
         }
     }
 }
@@ -818,10 +833,10 @@ private fun LoadingBox(modifier: Modifier = Modifier) {
 // ── Размеры и форматирование ──────────────────────────────────────────────
 
 /** Колонки при ширине кадра 360dp: карточки 16:9 150dp — вдвое, постеры 98dp — втрое. */
-private fun columnsFor(segment: MineSegment, folderOpen: Boolean): Int = when (segment) {
-    MineSegment.CONTINUE, MineSegment.HISTORY -> WIDE_COLUMNS
-    MineSegment.WATCHLIST -> POSTER_COLUMNS
-    MineSegment.BOOKMARKS -> if (folderOpen) POSTER_COLUMNS else FOLDER_COLUMNS
+private fun columnsFor(segment: LibrarySegment, folderOpen: Boolean): Int = when (segment) {
+    LibrarySegment.CONTINUE, LibrarySegment.HISTORY -> WIDE_COLUMNS
+    LibrarySegment.WATCHLIST -> POSTER_COLUMNS
+    LibrarySegment.BOOKMARKS -> if (folderOpen) POSTER_COLUMNS else FOLDER_COLUMNS
 }
 
 private val GridPadding = PaddingValues(

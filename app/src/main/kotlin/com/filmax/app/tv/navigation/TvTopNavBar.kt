@@ -41,8 +41,8 @@ import com.filmax.core.tv.designsystem.TvOnSurface
 import com.filmax.core.tv.designsystem.TvOnSurfaceDim
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.feature.home.tv.navigation.TvHomeRoute
-import com.filmax.feature.library.tv.navigation.TvLibraryRoute
-import com.filmax.feature.profile.tv.navigation.TvProfileRoute
+import com.filmax.feature.library.tv.navigation.TvBookmarksRoute
+import com.filmax.feature.library.tv.navigation.TvWatchingRoute
 import com.filmax.feature.search.tv.navigation.TvSearchRoute
 import kotlin.reflect.KClass
 
@@ -51,24 +51,22 @@ private data class TvTab(val label: String, val route: Any, val match: (NavDesti
 
 /**
  * Четыре раздела. «Поиск» уехал внутрь «Каталога» (печатать пультом дорого — каталог даёт
- * способ найти фильм вообще без набора текста), «Подборки» стали контентом каталога,
- * «Библиотека» переименована в «Моё» — так этот раздел называет весь российский рынок.
- *
- * Маршруты пока прежние: TvSearchRoute отдаёт Каталог, TvLibraryRoute — «Моё».
+ * способ найти фильм вообще без набора текста), «Подборки» стали контентом каталога, а личное
+ * содержимое разделено на «Я смотрю» и «Закладки».
  */
 private val TABS = listOf(
     TvTab("Главная", TvHomeRoute) { it?.hasRoute(TvHomeRoute::class) == true },
+    TvTab("Я смотрю", TvWatchingRoute) { it?.hasRoute(TvWatchingRoute::class) == true },
     TvTab("Каталог", TvSearchRoute) { it?.hasRoute(TvSearchRoute::class) == true },
-    TvTab("Моё", TvLibraryRoute) { it?.hasRoute(TvLibraryRoute::class) == true },
-    TvTab("Профиль", TvProfileRoute) { it?.hasRoute(TvProfileRoute::class) == true },
+    TvTab("Закладки", TvBookmarksRoute) { it?.hasRoute(TvBookmarksRoute::class) == true },
 )
 
 /** Маршруты, на которых показывается таб-бар. Выводится из [TABS] — один источник правды. */
 val TOP_LEVEL_ROUTES: List<KClass<*>> = listOf(
     TvHomeRoute::class,
+    TvWatchingRoute::class,
     TvSearchRoute::class,
-    TvLibraryRoute::class,
-    TvProfileRoute::class,
+    TvBookmarksRoute::class,
 )
 
 /** Фокус-реквестеры шапки: вход в таб-бар ([navBar]) и переход к контенту ([content]). */

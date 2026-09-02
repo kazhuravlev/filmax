@@ -1,22 +1,15 @@
 package com.filmax.feature.library.common
 
 import com.filmax.core.domain.catalog.model.Item
-import com.filmax.core.domain.downloads.model.DownloadedItem
 import com.filmax.core.domain.favorites.model.FavoriteItem
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.model.Continuation
 import com.filmax.core.domain.watching.model.WatchHistory
 
-/**
- * Вкладки мобильной Библиотеки. TV-раздел «Моё» этим перечислением не пользуется: там свои
- * сегменты (см. `MineSegment` в :feature:library:tv), и они не совпадают с телефонными —
- * «Загрузки» на TV не показываем, «Избранное» называется «Буду смотреть».
- */
-enum class LibraryTab(val label: String) {
-    FAVORITES("Избранное"),
-    HISTORY("История"),
-    DOWNLOADS("Загрузки"),
-    LISTS("Списки"),
+/** Два самостоятельных раздела бывшего «Моё». */
+enum class LibrarySection(val title: String) {
+    WATCHING("Я смотрю"),
+    BOOKMARKS("Закладки"),
 }
 
 /**
@@ -36,12 +29,10 @@ data class OpenBookmarkFolder(
 )
 
 data class LibraryState(
-    val tab: LibraryTab = LibraryTab.FAVORITES,
     val favorites: List<FavoriteItem> = emptyList(),
     val history: List<WatchHistory> = emptyList(),
     /** Только реально незавершённые тайтлы; вычисляются по общей continuation-логике. */
     val continuations: List<Continuation> = emptyList(),
-    val downloads: List<DownloadedItem> = emptyList(),
     val lists: List<BookmarkFolder> = emptyList(),
     /** Папка-закладка, в которую провалились; null — показываем список папок. */
     val openFolder: OpenBookmarkFolder? = null,
@@ -56,7 +47,6 @@ data class LibraryState(
 )
 
 sealed interface LibraryEvent {
-    data class TabChange(val tab: LibraryTab) : LibraryEvent
     data class RemoveFromHistory(val itemId: Int) : LibraryEvent
     data object ClearHistory : LibraryEvent
     data class OpenFolder(val folder: BookmarkFolder) : LibraryEvent

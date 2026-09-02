@@ -10,7 +10,8 @@ import com.filmax.feature.collections.common.navigation.CollectionDetailRoute
 import com.filmax.feature.designsystem.navigation.DesignSystemRoute
 import com.filmax.feature.details.common.navigation.DetailsRoute
 import com.filmax.feature.home.mobile.navigation.HomeRoute
-import com.filmax.feature.library.mobile.navigation.LibraryRoute
+import com.filmax.feature.library.mobile.navigation.BookmarksRoute
+import com.filmax.feature.library.mobile.navigation.WatchingRoute
 import com.filmax.feature.onboarding.mobile.navigation.OnboardingRoute
 import com.filmax.feature.player.common.navigation.PlayerRoute
 import com.filmax.feature.player.common.navigation.TrailerRoute
@@ -58,7 +59,7 @@ private fun NavHostController.open(destination: Destination) {
 /**
  * Переход по вкладке — механика multiple back stacks: стек покидаемого раздела сохраняется
  * целиком (`saveState`), стек открываемого — восстанавливается (`restoreState`). Поэтому
- * «Каталог → карточка тайтла → Моё → Каталог» возвращает в карточку, а не на корень раздела.
+ * «Каталог → карточка тайтла → Я смотрю → Каталог» возвращает в карточку, а не на корень раздела.
  *
  * Сохранённый стек кладётся под ключ САМОЙ ГЛУБОКОЙ снятой записи, а достаётся по цели перехода —
  * поэтому и попап, и переход адресуют экраны-корни разделов. С вложенными графами (`popUpTo` до
@@ -100,13 +101,14 @@ private fun NavHostController.makeRoot(destination: Destination) {
 }
 
 /**
- * Адрес → маршрут телефонного графа. `SearchRoute` отдаёт Каталог, `LibraryRoute` — «Моё»:
- * маршруты назывались так до переименования разделов.
+ * Адрес → маршрут телефонного графа. `SearchRoute` отдаёт Каталог, а личные разделы имеют
+ * отдельные маршруты, чтобы сохранять свои стеки независимо.
  */
 private fun Destination.toRoute(): Any = when (this) {
     Destination.Home -> HomeRoute
+    Destination.Watching -> WatchingRoute
     Destination.Catalog -> SearchRoute
-    Destination.Mine -> LibraryRoute
+    Destination.Bookmarks -> BookmarksRoute
     Destination.Profile -> ProfileRoute
     Destination.Onboarding -> OnboardingRoute
     Destination.DeviceSettings -> DeviceSettingsRoute

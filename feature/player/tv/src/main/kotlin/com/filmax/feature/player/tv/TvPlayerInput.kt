@@ -134,17 +134,23 @@ internal class TvPlayerUiState(val player: Player) {
         autoNextVisible = inWindow
     }
 
-    /**
-     * Оверлей уходит сам, только пока идёт воспроизведение и пользователь не в меню: на паузе
-     * и в настройках он остаётся на экране (правило armHide из макета).
-     */
+    /** Оверлей уходит после любого бездействия, в том числе в открытом селекторе. */
     val idleHidesOverlay: Boolean
-        get() = visible && isPlaying && mode == PlayerMode.Transport && submenu == null && !episodesOpen
+        get() = visible
 
     /** Было действие пользователя: оверлей на экран, таймер автоскрытия — с нуля. */
     fun touch() {
         visible = true
         interactionTick++
+    }
+
+    /** Закрывает весь интерфейс одним действием, не оставляя скрытый поповер активным. */
+    fun hideOverlay() {
+        visible = false
+        mode = PlayerMode.Transport
+        submenu = null
+        episodesOpen = false
+        seekLabel = null
     }
 
     /**
@@ -300,35 +306,19 @@ internal class TvPlayerUiState(val player: Player) {
     }
 
     /**
-     * «Назад» закрывает ровно один слой и не более: панель серий/поповер → ряд настроек → выход.
-     * Скрытие оверлея слоем НЕ считается — прятать за ним выход значило бы четыре нажатия вместо
-     * одного. Возвращает false, если закрывать больше нечего (тогда экран выходит из плеера).
+     * «Назад» при открытом интерфейсе всегда сначала скрывает его. Когда интерфейс уже скрыт,
+     * оставляет специальное действие только для плашки автоперехода; иначе возвращает false,
+     * чтобы экран вышел из плеера.
      */
     fun back(): Boolean = when {
+        visible -> {
+            hideOverlay()
+            true
+        }
         // «Назад» при плашке автоперехода — отмена: серия дотечёт до конца и остановится.
         autoNextVisible -> {
             autoNextDismissed = true
             autoNextVisible = false
-            touch()
-            true
-        }
-        episodesOpen -> {
-            episodesOpen = false
-            touch()
-            true
-        }
-        submenu != null -> {
-            submenu = null
-            touch()
-            true
-        }
-        mode == PlayerMode.Settings -> {
-            mode = PlayerMode.Transport
-            touch()
-            true
-        }
-        mode == PlayerMode.Progress -> {
-            mode = PlayerMode.Transport
             touch()
             true
         }
@@ -383,7 +373,7 @@ internal class TvPlayerUiState(val player: Player) {
 internal const val PROGRESS_TICK_MS = 1000L
 
 /** Бездействие, после которого оверлей уходит с кадра. */
-internal const val OVERLAY_AUTO_HIDE_MS = 4200L
+internal const val OVERLAY_AUTO_HIDE_MS = 5_000L
 
 /** Пауза в нажатиях, после которой скраббинг подтверждается seekTo. */
 internal const val SCRUB_COMMIT_TIMEOUT_MS = 700L

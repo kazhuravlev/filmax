@@ -18,9 +18,12 @@ sealed interface Destination {
     sealed interface Tab : Destination
 
     data object Home : Tab
+    data object Watching : Tab
     data object Catalog : Tab
-    data object Mine : Tab
-    data object Profile : Tab
+    data object Bookmarks : Tab
+
+    /** Профиль открывается из Главной и не входит в постоянное меню разделов. */
+    data object Profile : Destination
 
     /** Вход в приложение — корень для неавторизованного пользователя. */
     data object Onboarding : Destination

@@ -212,8 +212,7 @@ private fun PlayerEffects(ui: TvPlayerUiState, screenModel: PlayerScreenModel, m
     LaunchedEffect(ui.interactionTick, ui.idleHidesOverlay) {
         if (ui.idleHidesOverlay) {
             delay(OVERLAY_AUTO_HIDE_MS)
-            ui.visible = false
-            ui.seekLabel = null
+            ui.hideOverlay()
         }
     }
 }

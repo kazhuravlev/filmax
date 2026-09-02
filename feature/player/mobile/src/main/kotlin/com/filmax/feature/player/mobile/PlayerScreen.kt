@@ -3,6 +3,7 @@ package com.filmax.feature.player.mobile
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -114,6 +115,17 @@ fun PlayerScreen(
     var subtitleMenu by remember { mutableStateOf(false) }
     var audioMenu by remember { mutableStateOf(false) }
     var speedMenu by remember { mutableStateOf(false) }
+    var controlsInteractionTick by remember { mutableStateOf(0) }
+
+    fun hideControls() {
+        controlsVisible = false
+        qualityMenu = false
+        subtitleMenu = false
+        audioMenu = false
+        speedMenu = false
+    }
+
+    BackHandler(enabled = controlsVisible) { hideControls() }
 
     // Пока идёт воспроизведение, экран не гаснет (жалоба: гас через 10 минут при живом звуке);
     // на паузе — обычный таймаут системы.
@@ -143,11 +155,11 @@ fun PlayerScreen(
     }
     KeepScreenOn(enabled = playing)
 
-    // Auto-hide controls (но не во время скраббинга — таймер стартует заново после жеста).
-    LaunchedEffect(controlsVisible, isScrubbing) {
+    // Автоскрытие после пяти секунд бездействия; выбор в любом селекторе запускает таймер заново.
+    LaunchedEffect(controlsVisible, isScrubbing, controlsInteractionTick) {
         if (controlsVisible && !isScrubbing) {
             delay(AUTO_HIDE_DELAY_MS)
-            controlsVisible = false
+            hideControls()
         }
     }
     // Track playback progress
@@ -262,7 +274,10 @@ fun PlayerScreen(
                     // Озвучка: показываем только когда есть из чего выбрать (>1 дорожки), как на TV.
                     if (state.audioTracks.size > 1) {
                         Box {
-                            GlassBtn(size = 44.dp, onClick = { audioMenu = true }) {
+                            GlassBtn(size = 44.dp, onClick = {
+                                audioMenu = true
+                                controlsInteractionTick++
+                            }) {
                                 Icon(
                                     Icons.Filled.Audiotrack,
                                     contentDescription = "Озвучка",
@@ -272,7 +287,10 @@ fun PlayerScreen(
                             }
                             DropdownMenu(
                                 expanded = audioMenu,
-                                onDismissRequest = { audioMenu = false },
+                                onDismissRequest = {
+                                    audioMenu = false
+                                    controlsInteractionTick++
+                                },
                             ) {
                                 state.audioTracks.forEach { option ->
                                     val isCurrent = option.label == state.currentAudio
@@ -286,6 +304,7 @@ fun PlayerScreen(
                                         onClick = {
                                             screenModel.dispatch(PlayerEvent.SelectAudio(option.label))
                                             audioMenu = false
+                                            controlsInteractionTick++
                                         },
                                     )
                                 }
@@ -294,7 +313,10 @@ fun PlayerScreen(
                     }
                     if (state.subtitles.size > 1) {
                         Box {
-                            GlassBtn(size = 44.dp, onClick = { subtitleMenu = true }) {
+                            GlassBtn(size = 44.dp, onClick = {
+                                subtitleMenu = true
+                                controlsInteractionTick++
+                            }) {
                                 Icon(
                                     Icons.Filled.ClosedCaption,
                                     contentDescription = "Субтитры",
@@ -304,7 +326,10 @@ fun PlayerScreen(
                             }
                             DropdownMenu(
                                 expanded = subtitleMenu,
-                                onDismissRequest = { subtitleMenu = false },
+                                onDismissRequest = {
+                                    subtitleMenu = false
+                                    controlsInteractionTick++
+                                },
                             ) {
                                 state.subtitles.forEach { option ->
                                     val isCurrent = option.label == state.currentSubtitle
@@ -318,6 +343,7 @@ fun PlayerScreen(
                                         onClick = {
                                             screenModel.dispatch(PlayerEvent.SelectSubtitle(option.label))
                                             subtitleMenu = false
+                                            controlsInteractionTick++
                                         },
                                     )
                                 }
@@ -332,7 +358,10 @@ fun PlayerScreen(
                     horizontalArrangement = Arrangement.spacedBy(32.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    GlassBtn(size = 64.dp, onClick = { screenModel.player.seekBack() }) {
+                    GlassBtn(size = 64.dp, onClick = {
+                        screenModel.player.seekBack()
+                        controlsInteractionTick++
+                    }) {
                         Icon(
                             Icons.Filled.Replay10,
                             contentDescription = "Назад 10 сек",
@@ -350,6 +379,7 @@ fun PlayerScreen(
                             } else {
                                 screenModel.player.play()
                             }
+                            controlsInteractionTick++
                         },
                     ) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -361,7 +391,10 @@ fun PlayerScreen(
                             )
                         }
                     }
-                    GlassBtn(size = 64.dp, onClick = { screenModel.player.seekForward() }) {
+                    GlassBtn(size = 64.dp, onClick = {
+                        screenModel.player.seekForward()
+                        controlsInteractionTick++
+                    }) {
                         Icon(
                             Icons.Filled.Forward10,
                             contentDescription = "Вперёд 10 сек",
@@ -403,11 +436,13 @@ fun PlayerScreen(
                         onValueChange = { value ->
                             isScrubbing = true
                             progress = value
+                            controlsInteractionTick++
                         },
                         onValueChangeFinished = {
                             val duration = screenModel.player.duration
                             if (duration > 0) screenModel.player.seekTo((progress * duration).toLong())
                             isScrubbing = false
+                            controlsInteractionTick++
                         },
                         enabled = durationMs > 0,
                         colors = SliderDefaults.colors(
@@ -441,11 +476,17 @@ fun PlayerScreen(
                             Box {
                                 QualityChip(
                                     text = state.currentQuality ?: "Авто",
-                                    onClick = { qualityMenu = true },
+                                    onClick = {
+                                        qualityMenu = true
+                                        controlsInteractionTick++
+                                    },
                                 )
                                 DropdownMenu(
                                     expanded = qualityMenu,
-                                    onDismissRequest = { qualityMenu = false },
+                                    onDismissRequest = {
+                                        qualityMenu = false
+                                        controlsInteractionTick++
+                                    },
                                 ) {
                                     state.qualities.forEach { q ->
                                         val isCurrent = q.label == state.currentQuality
@@ -459,6 +500,7 @@ fun PlayerScreen(
                                             onClick = {
                                                 screenModel.dispatch(PlayerEvent.SelectQuality(q.label))
                                                 qualityMenu = false
+                                                controlsInteractionTick++
                                             },
                                         )
                                     }
@@ -470,7 +512,10 @@ fun PlayerScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             // Скорость воспроизведения: галочка отмечает текущую (сессионная, дефолт 1.0).
                             Box {
-                                GlassBtn(size = 44.dp, onClick = { speedMenu = true }) {
+                                GlassBtn(size = 44.dp, onClick = {
+                                    speedMenu = true
+                                    controlsInteractionTick++
+                                }) {
                                     Icon(
                                         Icons.Filled.Speed,
                                         contentDescription = "Скорость",
@@ -480,7 +525,10 @@ fun PlayerScreen(
                                 }
                                 DropdownMenu(
                                     expanded = speedMenu,
-                                    onDismissRequest = { speedMenu = false },
+                                    onDismissRequest = {
+                                        speedMenu = false
+                                        controlsInteractionTick++
+                                    },
                                 ) {
                                     PlaybackSpeeds.options.forEach { option ->
                                         val isCurrent = option.value == state.currentSpeed
@@ -505,12 +553,13 @@ fun PlayerScreen(
                                             onClick = {
                                                 screenModel.dispatch(PlayerEvent.SetSpeed(option.value))
                                                 speedMenu = false
+                                                controlsInteractionTick++
                                             },
                                         )
                                     }
                                 }
                             }
-                            GlassBtn(size = 44.dp, onClick = {}) {
+                            GlassBtn(size = 44.dp, onClick = { controlsInteractionTick++ }) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.VolumeUp,
                                     contentDescription = "Громкость",
@@ -520,7 +569,10 @@ fun PlayerScreen(
                             }
                             // «Следующая серия» — только у сериала не на последней серии.
                             playNext?.let { next ->
-                                GlassBtn(size = 44.dp, onClick = next) {
+                                GlassBtn(size = 44.dp, onClick = {
+                                    controlsInteractionTick++
+                                    next()
+                                }) {
                                     Icon(
                                         Icons.Filled.SkipNext,
                                         contentDescription = "Следующая серия",
@@ -529,7 +581,7 @@ fun PlayerScreen(
                                     )
                                 }
                             }
-                            GlassBtn(size = 44.dp, onClick = {}) {
+                            GlassBtn(size = 44.dp, onClick = { controlsInteractionTick++ }) {
                                 Icon(
                                     Icons.Filled.Fullscreen,
                                     contentDescription = "На весь экран",
@@ -545,7 +597,7 @@ fun PlayerScreen(
     }
 }
 
-private const val AUTO_HIDE_DELAY_MS = 4500L
+private const val AUTO_HIDE_DELAY_MS = 5_000L
 private const val PROGRESS_TICK_MS = 1000L
 private val PreviewBarHeight = 28.dp
 

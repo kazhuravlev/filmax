@@ -37,7 +37,8 @@ import com.filmax.feature.details.common.navigation.DetailsRoute
 import com.filmax.feature.details.tv.navigation.tvDetailsScreen
 import com.filmax.feature.home.tv.navigation.TvHomeRoute
 import com.filmax.feature.home.tv.navigation.tvHomeScreen
-import com.filmax.feature.library.tv.navigation.tvLibraryScreen
+import com.filmax.feature.library.tv.navigation.tvBookmarksScreen
+import com.filmax.feature.library.tv.navigation.tvWatchingScreen
 import com.filmax.feature.onboarding.tv.navigation.TvOnboardingRoute
 import com.filmax.feature.onboarding.tv.navigation.tvOnboardingScreen
 import com.filmax.feature.player.common.navigation.PlayerRoute
@@ -174,8 +175,11 @@ private fun NavGraphBuilder.tvDestinations(
     // «Подборки» больше не вкладка — это контент внутри Каталога. Экран содержимого
     // подборки остаётся push-экраном: в него ведёт Каталог.
     tvCollectionDetailScreen(onOpenItem = { navController.navigate(DetailsRoute(it)) })
-    // Все карточки «Моё» ведут в карточку тайтла — играть оттуда: кнопка «Продолжить · SxEy».
-    tvLibraryScreen(
+    // Карточки «Я смотрю» ведут в карточку тайтла — играть оттуда: кнопка «Продолжить · SxEy».
+    tvWatchingScreen(
+        onOpenItem = { navController.navigate(DetailsRoute(it)) },
+    )
+    tvBookmarksScreen(
         onOpenItem = { navController.navigate(DetailsRoute(it)) },
     )
     tvProfileScreen(

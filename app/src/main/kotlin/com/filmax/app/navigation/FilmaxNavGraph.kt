@@ -33,13 +33,14 @@ import com.filmax.feature.designsystem.navigation.designSystemScreen
 import com.filmax.feature.details.mobile.navigation.detailsScreen
 import com.filmax.feature.home.mobile.navigation.HomeRoute
 import com.filmax.feature.home.mobile.navigation.homeScreen
-import com.filmax.feature.library.mobile.navigation.LibraryRoute
-import com.filmax.feature.library.mobile.navigation.libraryScreen
+import com.filmax.feature.library.mobile.navigation.BookmarksRoute
+import com.filmax.feature.library.mobile.navigation.WatchingRoute
+import com.filmax.feature.library.mobile.navigation.bookmarksScreen
+import com.filmax.feature.library.mobile.navigation.watchingScreen
 import com.filmax.feature.onboarding.mobile.navigation.OnboardingRoute
 import com.filmax.feature.onboarding.mobile.navigation.onboardingScreen
 import com.filmax.feature.player.mobile.navigation.playerScreen
 import com.filmax.feature.player.mobile.navigation.trailerScreen
-import com.filmax.feature.profile.mobile.navigation.ProfileRoute
 import com.filmax.feature.profile.mobile.navigation.deviceSettingsScreen
 import com.filmax.feature.profile.mobile.navigation.profileScreen
 import com.filmax.feature.search.mobile.navigation.SearchRoute
@@ -52,12 +53,12 @@ import org.koin.compose.koinInject
 @Serializable
 private object SplashRoute
 
-/** Корни разделов. `SearchRoute` отдаёт Каталог, `LibraryRoute` — «Моё»: имена старше переименования. */
+/** Корни разделов в порядке нижней навигации. */
 private val tabRoots = mapOf(
     FilmaxTab.HOME to HomeRoute::class,
+    FilmaxTab.WATCHING to WatchingRoute::class,
     FilmaxTab.CATALOG to SearchRoute::class,
-    FilmaxTab.MINE to LibraryRoute::class,
-    FilmaxTab.PROFILE to ProfileRoute::class,
+    FilmaxTab.BOOKMARKS to BookmarksRoute::class,
 )
 
 /**
@@ -153,7 +154,8 @@ private fun NavGraphBuilder.filmaxDestinations(onCheckUpdates: () -> Unit) {
     // «Подборки» больше не вкладка — это контент Каталога и ряд на Главной. Экран содержимого
     // подборки остаётся push-экраном: в него ведут они.
     collectionDetailScreen()
-    libraryScreen()
+    watchingScreen()
+    bookmarksScreen()
     profileScreen(
         onCheckUpdates = onCheckUpdates,
         showDesignSystem = BuildConfig.DEBUG,
@@ -174,7 +176,7 @@ private fun NavGraphBuilder.filmaxDestinations(onCheckUpdates: () -> Unit) {
 private val FilmaxTab.destination: Destination
     get() = when (this) {
         FilmaxTab.HOME -> Destination.Home
+        FilmaxTab.WATCHING -> Destination.Watching
         FilmaxTab.CATALOG -> Destination.Catalog
-        FilmaxTab.MINE -> Destination.Mine
-        FilmaxTab.PROFILE -> Destination.Profile
+        FilmaxTab.BOOKMARKS -> Destination.Bookmarks
     }

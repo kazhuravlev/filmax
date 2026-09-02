@@ -2,7 +2,6 @@ package com.filmax.feature.library.common
 
 import com.filmax.core.domain.common.firstErrorMessage
 import com.filmax.core.domain.common.getOrNull
-import com.filmax.core.domain.downloads.DownloadsRepository
 import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.user.model.BookmarkFolder
@@ -12,30 +11,20 @@ import com.filmax.core.presentation.BaseScreenModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
-// Модель раздела «Моё» держит по одному короткому обработчику на каждое MVI-событие (dispatch
-// разветвляется в них). Дробить её на несколько классов ради лимита нельзя: логика закладок,
-// истории и загрузок связана общим состоянием и читается только вместе — отсюда осознанный Suppress.
+// Общая модель двух разделов держит по одному короткому обработчику на каждое MVI-событие.
+// Дробить её на несколько классов ради лимита нельзя: логика закладок и истории связана общим
+// состоянием и читается только вместе — отсюда осознанный Suppress.
 @Suppress("TooManyFunctions")
 class LibraryScreenModel(
     private val watching: WatchingRepository,
     private val continuations: ContinuationResolver,
     private val user: UserRepository,
-    private val downloadsRepo: DownloadsRepository,
     private val favoritesRepo: FavoritesRepository,
 ) : BaseScreenModel<LibraryState, LibrarySideEffect, LibraryEvent>(LibraryState()) {
 
     init {
         onFetchData()
-        observeDownloads()
         observeFavorites()
-    }
-
-    private fun observeDownloads() {
-        screenModelScope {
-            downloadsRepo.downloads.collect { items ->
-                updateState { it.copy(downloads = items) }
-            }
-        }
     }
 
     private fun observeFavorites() {
@@ -48,9 +37,6 @@ class LibraryScreenModel(
 
     override fun dispatch(event: LibraryEvent) {
         when (event) {
-            is LibraryEvent.TabChange -> screenModelScope { _ ->
-                updateState { it.copy(tab = event.tab) }
-            }
             is LibraryEvent.RemoveFromHistory -> removeFromHistory(event.itemId)
             LibraryEvent.ClearHistory -> clearHistory()
             is LibraryEvent.OpenFolder -> openFolder(event.folder)
