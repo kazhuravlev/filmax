@@ -67,8 +67,8 @@ import com.filmax.core.designsystem.ShapeCard
 import com.filmax.core.designsystem.ShapeFull
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.user.model.BookmarkFolder
-import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.Continuation
+import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.navigation.Destination
 import com.filmax.core.navigation.Navigator
 import com.filmax.core.ui.components.FilmaxEmptyState
@@ -85,25 +85,21 @@ import com.filmax.feature.library.common.OpenBookmarkFolder
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
-/**
- * Подразделы двух личных экранов. «Буду смотреть» и папки — разные виды закладок, а история и
- * продолжение — разные способы вернуться к просмотру.
- */
+/** Подразделы «Я смотрю»; в «Закладках» сразу показываются подборки. */
 private enum class LibrarySegment(val label: String) {
     CONTINUE("Продолжить"),
     HISTORY("История"),
-    BOOKMARKS("Папки"),
-    WATCHLIST("Буду смотреть"),
+    BOOKMARKS("Подборки"),
 }
 
 private val LibrarySection.segments: List<LibrarySegment>
     get() = when (this) {
         LibrarySection.WATCHING -> listOf(LibrarySegment.CONTINUE, LibrarySegment.HISTORY)
-        LibrarySection.BOOKMARKS -> listOf(LibrarySegment.BOOKMARKS, LibrarySegment.WATCHLIST)
+        LibrarySection.BOOKMARKS -> emptyList()
     }
 
 private val LibrarySection.initialSegment: LibrarySegment
-    get() = segments.first()
+    get() = if (this == LibrarySection.BOOKMARKS) LibrarySegment.BOOKMARKS else segments.first()
 
 /** Действия сетки одним объектом: навигация экрана + события модели, иначе LongParameterList. */
 private data class MineActions(
@@ -111,11 +107,11 @@ private data class MineActions(
     val onOpenCatalog: () -> Unit,
     val onOpenFolder: (BookmarkFolder) -> Unit,
     val onLoadMoreFolderItems: () -> Unit,
-    /** Открыть диалог создания папки. */
+    /** Открыть диалог создания подборки. */
     val onNewFolder: () -> Unit,
-    /** Попросить подтверждение удаления папки (жест — долгое нажатие на плитку). */
+    /** Попросить подтверждение удаления подборки (жест — долгое нажатие на плитку). */
     val onDeleteFolder: (BookmarkFolder) -> Unit,
-    /** Попросить подтверждение, что тайтл убирают из открытой папки. */
+    /** Попросить подтверждение, что тайтл убирают из открытой подборки. */
     val onRemoveItem: (Item) -> Unit,
 )
 
@@ -150,7 +146,7 @@ fun LibraryScreen(
     var segment by rememberSaveable(section) { mutableStateOf(section.initialSegment) }
     val dialogs = remember { BookmarkDialogs() }
 
-    // Внутри папки системная «назад» возвращает к списку папок, а не выкидывает из раздела.
+    // Внутри подборки системная «назад» возвращает к списку подборок, а не выкидывает из раздела.
     BackHandler(enabled = section == LibrarySection.BOOKMARKS && state.openFolder != null) {
         screenModel.dispatch(LibraryEvent.CloseFolder)
     }
@@ -172,7 +168,7 @@ fun LibraryScreen(
             segment = segment,
             onSegment = { next ->
                 segment = next
-                // Уход из папок закрывает открытую папку: иначе возврат показал бы содержимое,
+                // Уход из подборок закрывает открытую подборку: иначе возврат показал бы содержимое,
                 // которое уже никто не просил.
                 if (next != LibrarySegment.BOOKMARKS && state.openFolder != null) {
                     screenModel.dispatch(LibraryEvent.CloseFolder)
@@ -210,29 +206,17 @@ fun LibraryScreen(
 
 // ── Шапка ─────────────────────────────────────────────────────────────────
 
-/** Заголовок «Закладок» и сегменты. В «Я смотрю» название уже видно в нижнем меню. */
+/** Сегменты «Я смотрю». У «Закладок» нет ни заголовка, ни селектора — только сетка подборок. */
 @Composable
 private fun MineHeader(
     section: LibrarySection,
     segment: LibrarySegment,
     onSegment: (LibrarySegment) -> Unit,
 ) {
+    if (section == LibrarySection.BOOKMARKS) return
     Column {
-        if (section == LibrarySection.BOOKMARKS) {
-            Text(
-                section.title,
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier
-                    .padding(horizontal = FilmaxMetrics.ScreenPadding)
-                    .padding(top = 6.dp),
-            )
-        }
         LazyRow(
-            modifier = Modifier.padding(
-                top = if (section == LibrarySection.BOOKMARKS) 16.dp else 6.dp,
-                bottom = 14.dp,
-            ),
+            modifier = Modifier.padding(top = 6.dp, bottom = 14.dp),
             contentPadding = PaddingValues(horizontal = FilmaxMetrics.ScreenPadding),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -272,7 +256,7 @@ private fun MineChip(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** Строка открытой папки: где мы и чем отсюда выйти — жестом «назад» или тапом по этой строке. */
+/** Строка открытой подборки: где мы и чем отсюда выйти — жестом «назад» или тапом по этой строке. */
 @Composable
 private fun OpenFolderBar(folder: BookmarkFolder, onBack: () -> Unit) {
     Row(
@@ -285,7 +269,7 @@ private fun OpenFolderBar(folder: BookmarkFolder, onBack: () -> Unit) {
     ) {
         Icon(
             Icons.AutoMirrored.Filled.ArrowBack,
-            contentDescription = "К списку папок",
+            contentDescription = "К списку подборок",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp),
         )
@@ -306,7 +290,7 @@ private fun MineGrid(state: LibraryState, segment: LibrarySegment, actions: Mine
     val gridState = rememberLazyGridState()
     val openFolder = state.openFolder
 
-    // Догрузка следующей страницы папки: страниц у kino.watch может быть много, а счётчик на
+    // Догрузка следующей страницы подборки: страниц у kino.watch может быть много, а счётчик на
     // плитке обещает всё содержимое — значит, до конца должно доскроллиться.
     val loadMore by remember {
         derivedStateOf {
@@ -329,7 +313,6 @@ private fun MineGrid(state: LibraryState, segment: LibrarySegment, actions: Mine
     ) {
         when (segment) {
             LibrarySegment.CONTINUE -> continueSegment(state.continuations, actions)
-            LibrarySegment.WATCHLIST -> watchlistSegment(state, actions)
             LibrarySegment.BOOKMARKS -> bookmarksSegment(state, actions)
             LibrarySegment.HISTORY -> historySegment(state, actions)
         }
@@ -354,47 +337,19 @@ private fun LazyGridScope.continueSegment(continuations: List<Continuation>, act
     }
 }
 
-/**
- * «Буду смотреть» — отложенное. Один список: локальное избранное и есть кэш серверного
- * watchlist (сервер отдаёт только тоггл и флаг на самом тайтле, списком — никогда).
- */
-private fun LazyGridScope.watchlistSegment(state: LibraryState, actions: MineActions) {
-    if (state.favorites.isEmpty()) {
-        emptyItem(
-            MineEmptySpec(
-                icon = Icons.Filled.Add,
-                title = "Список пуст",
-                hint = "Добавляйте тайтлы кнопкой «Буду смотреть»",
-                onOpenCatalog = actions.onOpenCatalog,
-            ),
-        )
-        return
-    }
-    items(state.favorites, key = { it.id }) { favorite ->
-        FilmaxPosterCard(
-            title = favorite.title,
-            posterUrl = favorite.posterSmall,
-            onClick = { actions.onOpenItem(favorite.id) },
-            width = FilmaxMetrics.GridPosterWidth,
-            height = FilmaxMetrics.GridPosterHeight,
-            meta = posterMeta(type = null, year = favorite.year),
-        )
-    }
-}
-
-/** «Закладки» — серверные папки: список папок либо содержимое открытой, в этом же экране. */
+/** «Закладки» — серверные подборки: список подборок либо содержимое открытой, в этом же экране. */
 private fun LazyGridScope.bookmarksSegment(state: LibraryState, actions: MineActions) {
     val openFolder = state.openFolder
     when {
         openFolder != null -> folderItems(openFolder, actions)
 
-        // Папок нет — сразу зовём создать: это единственное осмысленное действие на пустом экране.
+        // Подборок нет — сразу зовём создать: это единственное осмысленное действие на пустом экране.
         state.lists.isEmpty() -> emptyItem(
             MineEmptySpec(
                 icon = Icons.Filled.Folder,
-                title = "Папок нет",
-                hint = "Создайте папку и собирайте в неё то, к чему вернётесь",
-                actionLabel = "Новая папка",
+                title = "Подборок нет",
+                hint = "Создайте подборку и собирайте в неё то, к чему вернётесь",
+                actionLabel = "Новая подборка",
                 onAction = actions.onNewFolder,
             ),
         )
@@ -422,16 +377,16 @@ private fun LazyGridScope.folderItems(openFolder: OpenBookmarkFolder, actions: M
         openFolder.items.isEmpty() && openFolder.error != null -> emptyItem(
             MineEmptySpec(
                 icon = Icons.Filled.CloudOff,
-                title = "Папка не открылась",
-                hint = "Вернитесь к списку папок и откройте её ещё раз",
+                title = "Подборка не открылась",
+                hint = "Вернитесь к списку подборок и откройте её ещё раз",
             ),
         )
 
         openFolder.items.isEmpty() -> emptyItem(
             MineEmptySpec(
                 icon = Icons.Filled.Folder,
-                title = "Папка пуста",
-                hint = "Тайтлы, добавленные в эту папку, появятся здесь",
+                title = "Подборка пуста",
+                hint = "Тайтлы, добавленные в эту подборку, появятся здесь",
             ),
         )
 
@@ -489,7 +444,7 @@ private fun ProgressCard(entry: WatchHistory, onOpenItem: (Int) -> Unit) {
 }
 
 /**
- * Плитка папки-закладки. Тап открывает содержимое (грузит [LibraryScreenModel]), долгое нажатие —
+ * Плитка подборки. Тап открывает содержимое (грузит [LibraryScreenModel]), долгое нажатие —
  * запрос на удаление: отдельной кнопки на плитке нет, чтобы не зашумлять сетку.
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -528,7 +483,7 @@ private fun FolderTile(folder: BookmarkFolder, onClick: () -> Unit, onLongClick:
     }
 }
 
-/** Плитка «＋ Новая папка» — последняя ячейка сетки папок и вход в диалог создания. */
+/** Плитка «＋ Новая подборка» — последняя ячейка сетки и вход в диалог создания. */
 @Composable
 private fun NewFolderTile(onClick: () -> Unit) {
     Column(
@@ -550,7 +505,7 @@ private fun NewFolderTile(onClick: () -> Unit) {
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Новая папка",
+            "Новая подборка",
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -558,7 +513,7 @@ private fun NewFolderTile(onClick: () -> Unit) {
 }
 
 /**
- * Карточка тайтла внутри папки. Поверх постера — маленький крестик «убрать»: у [FilmaxPosterCard]
+ * Карточка тайтла внутри подборки. Поверх постера — маленький крестик «убрать»: у [FilmaxPosterCard]
  * нет долгого нажатия, а явная иконка заметнее жеста. Крестик слева, чтобы не спорить с пилюлей
  * рейтинга справа.
  */
@@ -583,7 +538,7 @@ private fun FolderItemCard(item: Item, onOpen: () -> Unit, onRemove: () -> Unit)
     }
 }
 
-/** Круглый крестик поверх постера: убирает тайтл из папки (по подтверждению). */
+/** Круглый крестик поверх постера: убирает тайтл из подборки (по подтверждению). */
 @Composable
 private fun RemoveBadge(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
@@ -596,7 +551,7 @@ private fun RemoveBadge(onClick: () -> Unit, modifier: Modifier = Modifier) {
     ) {
         Icon(
             Icons.Filled.Close,
-            contentDescription = "Убрать из папки",
+            contentDescription = "Убрать из подборки",
             tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.size(14.dp),
         )
@@ -607,7 +562,7 @@ private fun RemoveBadge(onClick: () -> Unit, modifier: Modifier = Modifier) {
 
 /**
  * Содержимое пустого сегмента. «Открыть каталог» — там, где каталог и есть ответ; [onAction] с
- * [actionLabel] — главное действие сегмента (для «Закладок» это «Новая папка»).
+ * [actionLabel] — главное действие сегмента (для «Закладок» это «Новая подборка»).
  */
 private data class MineEmptySpec(
     val icon: ImageVector,
@@ -646,7 +601,7 @@ private fun MineEmpty(spec: MineEmptySpec) {
     }
 }
 
-/** Главная кнопка сегмента: единственная белая заливка на пустом экране (создать папку). */
+/** Главная кнопка сегмента: единственная белая заливка на пустом экране (создать подборку). */
 @Composable
 private fun PrimaryActionButton(label: String, onClick: () -> Unit) {
     Box(
@@ -706,7 +661,7 @@ private fun BookmarkDialogHost(
     }
     dialogs.folderToDelete?.let { folder ->
         ConfirmActionDialog(
-            title = "Удалить папку?",
+            title = "Удалить подборку?",
             message = "«${folder.title}» и её список исчезнут. Сами тайтлы останутся в каталоге.",
             confirmLabel = "Удалить",
             onConfirm = {
@@ -718,8 +673,8 @@ private fun BookmarkDialogHost(
     }
     dialogs.itemToRemove?.let { item ->
         ConfirmActionDialog(
-            title = "Убрать из папки?",
-            message = "«${item.title}» исчезнет из этой папки, но останется в каталоге.",
+            title = "Убрать из подборки?",
+            message = "«${item.title}» исчезнет из этой подборки, но останется в каталоге.",
             confirmLabel = "Убрать",
             onConfirm = {
                 // openFolderId непустой, пока папка открыта; на всякий случай не шлём событие без него.
@@ -733,7 +688,7 @@ private fun BookmarkDialogHost(
     }
 }
 
-/** Диалог ввода имени новой папки. Поле получает фокус сразу — клавиатура открывается без лишнего тапа. */
+/** Диалог ввода имени новой подборки. Поле получает фокус сразу — клавиатура открывается без лишнего тапа. */
 @Composable
 private fun CreateFolderDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
@@ -747,7 +702,7 @@ private fun CreateFolderDialog(onConfirm: (String) -> Unit, onDismiss: () -> Uni
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
-        title = { Text("Новая папка", style = MaterialTheme.typography.titleLarge) },
+        title = { Text("Новая подборка", style = MaterialTheme.typography.titleLarge) },
         text = {
             FolderNameField(value = name, onValueChange = { name = it }, focusRequester = focusRequester)
         },
@@ -756,7 +711,7 @@ private fun CreateFolderDialog(onConfirm: (String) -> Unit, onDismiss: () -> Uni
     )
 }
 
-/** Поле имени папки в стиле поиска: pill-контейнер с [BasicTextField] и плейсхолдером. */
+/** Поле имени подборки в стиле поиска: pill-контейнер с [BasicTextField] и плейсхолдером. */
 @Composable
 private fun FolderNameField(
     value: String,
@@ -775,7 +730,7 @@ private fun FolderNameField(
         Box(Modifier.weight(1f)) {
             if (value.isEmpty()) {
                 Text(
-                    "Название папки",
+                    "Название подборки",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -839,7 +794,6 @@ private fun LoadingBox(modifier: Modifier = Modifier) {
 /** Колонки при ширине кадра 360dp: карточки 16:9 150dp — вдвое, постеры 98dp — втрое. */
 private fun columnsFor(segment: LibrarySegment, folderOpen: Boolean): Int = when (segment) {
     LibrarySegment.CONTINUE, LibrarySegment.HISTORY -> WIDE_COLUMNS
-    LibrarySegment.WATCHLIST -> POSTER_COLUMNS
     LibrarySegment.BOOKMARKS -> if (folderOpen) POSTER_COLUMNS else FOLDER_COLUMNS
 }
 

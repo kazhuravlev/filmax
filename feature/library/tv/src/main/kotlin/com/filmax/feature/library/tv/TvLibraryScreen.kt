@@ -56,8 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.user.model.BookmarkFolder
-import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.Continuation
+import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchProgress
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvAccent
@@ -86,25 +86,21 @@ import com.filmax.feature.library.common.LibraryState
 import com.filmax.feature.library.common.OpenBookmarkFolder
 import org.koin.androidx.compose.koinViewModel
 
-/**
- * Подразделы двух личных экранов. «Буду смотреть» и папки — разные виды закладок, а история и
- * продолжение — разные способы вернуться к просмотру.
- */
+/** Подразделы «Я смотрю»; в «Закладках» сразу показываются подборки. */
 private enum class LibrarySegment(val label: String) {
     CONTINUE("Продолжить"),
     HISTORY("История"),
-    BOOKMARKS("Папки"),
-    WATCHLIST("Буду смотреть"),
+    BOOKMARKS("Подборки"),
 }
 
 private val LibrarySection.segments: List<LibrarySegment>
     get() = when (this) {
         LibrarySection.WATCHING -> listOf(LibrarySegment.CONTINUE, LibrarySegment.HISTORY)
-        LibrarySection.BOOKMARKS -> listOf(LibrarySegment.BOOKMARKS, LibrarySegment.WATCHLIST)
+        LibrarySection.BOOKMARKS -> emptyList()
     }
 
 private val LibrarySection.initialSegment: LibrarySegment
-    get() = segments.first()
+    get() = if (this == LibrarySection.BOOKMARKS) LibrarySegment.BOOKMARKS else segments.first()
 
 /** Действия раздела одним объектом — как TvHomeActions на главной. */
 private data class TvLibraryActions(
@@ -114,7 +110,7 @@ private data class TvLibraryActions(
 )
 
 /**
- * UI-состояние закладок на TV: активный диалог и «режим удаления» открытой папки. Пульт не знает
+ * UI-состояние закладок на TV: активный диалог и «режим удаления» открытой подборки. Пульт не знает
  * ни долгих нажатий, ни свайпов, поэтому и создание, и удаление вынесены в явные фокусируемые
  * элементы; это состояние их связывает. Живёт в [TvLibraryScreen], меняется плитками и диалогами.
  */
@@ -124,7 +120,7 @@ private class TvBookmarkUi {
     var folderToDelete by mutableStateOf<BookmarkFolder?>(null)
     var itemToRemove by mutableStateOf<Item?>(null)
 
-    /** В режиме удаления клик по карточке убирает тайтл из папки, а не открывает его. */
+    /** В режиме удаления клик по карточке убирает тайтл из подборки, а не открывает его. */
     var removeMode by mutableStateOf(false)
 }
 
@@ -143,10 +139,10 @@ fun TvLibraryScreen(
     var segment by rememberSaveable(section) { mutableStateOf(section.initialSegment) }
     val ui = remember { TvBookmarkUi() }
 
-    // Смена или закрытие папки сбрасывает режим удаления: он относится к конкретной открытой папке.
+    // Смена или закрытие подборки сбрасывает режим удаления: он относится к конкретной открытой подборке.
     LaunchedEffect(state.openFolder?.folder?.id) { ui.removeMode = false }
 
-    // Внутри папки «Назад» возвращает к списку папок, а не выкидывает из раздела.
+    // Внутри подборки «Назад» возвращает к списку подборок, а не выкидывает из раздела.
     BackHandler(enabled = section == LibrarySection.BOOKMARKS && state.openFolder != null) {
         screenModel.dispatch(LibraryEvent.CloseFolder)
     }
@@ -169,7 +165,7 @@ fun TvLibraryScreen(
             ui = ui,
             onSegment = { next ->
                 segment = next
-                // Уход из папок закрывает открытую папку: иначе возврат показал бы содержимое,
+                // Уход из подборок закрывает открытую подборку: иначе возврат показал бы содержимое,
                 // которое уже никто не просил.
                 if (next != LibrarySegment.BOOKMARKS && state.openFolder != null) {
                     screenModel.dispatch(LibraryEvent.CloseFolder)
@@ -195,8 +191,7 @@ fun TvLibraryScreen(
 }
 
 /**
- * Шапка раздела: у «Закладок» есть заголовок, у «Я смотрю» остаются только сегменты — название
- * уже видно в меню. Шапка не скроллится вместе с сеткой, чтобы контент не налезал на таб-бар.
+ * Шапка «Я смотрю». В «Закладках» остаётся только панель открытой подборки.
  */
 @Composable
 private fun MineHeader(
@@ -206,6 +201,22 @@ private fun MineHeader(
     ui: TvBookmarkUi,
     onSegment: (LibrarySegment) -> Unit,
 ) {
+    if (section == LibrarySection.BOOKMARKS) {
+        state.openFolder?.let { folder ->
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = TvMetrics.SafeHorizontal,
+                        end = TvMetrics.SafeHorizontal,
+                        top = TvMetrics.ContentTop,
+                    ),
+            ) {
+                OpenFolderBar(folder = folder.folder, ui = ui)
+            }
+        }
+        return
+    }
     Column(
         Modifier
             .fillMaxWidth()
@@ -215,10 +226,6 @@ private fun MineHeader(
                 top = TvMetrics.ContentTop,
             ),
     ) {
-        if (section == LibrarySection.BOOKMARKS) {
-            Text(section.title, style = MaterialTheme.typography.headlineMedium, color = TvOnSurface)
-            Spacer(Modifier.height(16.dp))
-        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             section.segments.forEach { entry ->
                 TvChip(
@@ -230,20 +237,13 @@ private fun MineHeader(
         }
         Spacer(Modifier.height(14.dp))
         HorizontalDivider(thickness = 1.dp, color = TvOutlineVariant)
-
-        val openFolder = state.openFolder
-        when {
-            segment == LibrarySegment.BOOKMARKS && openFolder != null ->
-                OpenFolderBar(folder = openFolder.folder, ui = ui)
-            else -> Unit
-        }
     }
 }
 
 /**
- * Панель открытой папки: заголовок и действия над папкой. Оба действия — фокусируемые кнопки, а
- * не жесты: пультом до них доезжают вверх от сетки. «Убрать тайтлы» переводит папку в режим
- * удаления (клик по карточке убирает её), «Удалить папку» просит подтверждение. «Назад» — к списку.
+ * Панель открытой подборки: заголовок и действия над ней. Оба действия — фокусируемые кнопки, а
+ * не жесты: пультом до них доезжают вверх от сетки. «Убрать тайтлы» переводит подборку в режим
+ * удаления (клик по карточке убирает её), «Удалить подборку» просит подтверждение. «Назад» — к списку.
  */
 @Composable
 private fun OpenFolderBar(folder: BookmarkFolder, ui: TvBookmarkUi) {
@@ -266,7 +266,7 @@ private fun OpenFolderBar(folder: BookmarkFolder, ui: TvBookmarkUi) {
             onClick = { ui.removeMode = !ui.removeMode },
         )
         TvButton(
-            text = "Удалить папку",
+            text = "Удалить подборку",
             onClick = { ui.folderToDelete = folder },
             primary = false,
         )
@@ -285,7 +285,7 @@ private fun MineGrid(
     val focus = rememberTvScreenFocus()
     val openFolder = state.openFolder
 
-    // Догрузка следующей страницы папки: страниц у kino.watch может быть много, а счётчик на
+    // Догрузка следующей страницы подборки: страниц у kino.watch может быть много, а счётчик на
     // плитке обещает всё содержимое — значит, до конца должно доскроллиться.
     val loadMore by remember {
         derivedStateOf {
@@ -298,7 +298,7 @@ private fun MineGrid(
         if (loadMore && openFolder != null) actions.onLoadMoreFolderItems()
     }
 
-    // Сегмент и открытая папка меняют содержимое сетки целиком: плитка, на которой стоял
+    // Сегмент и открытая подборка меняют содержимое сетки целиком: плитка, на которой стоял
     // фокус, уходит из композиции, и без сброса фокус повис бы — пульт перестал бы отвечать.
     LaunchedEffect(segment, openFolder?.folder?.id) { focus.focusOn() }
 
@@ -312,7 +312,6 @@ private fun MineGrid(
     ) {
         when (segment) {
             LibrarySegment.CONTINUE -> continueSegment(state.continuations, actions.onOpenItem, focus)
-            LibrarySegment.WATCHLIST -> watchlistSegment(state, actions.onOpenItem, focus)
             LibrarySegment.BOOKMARKS -> bookmarksSegment(state, ui, actions, focus)
             LibrarySegment.HISTORY -> historySegment(state, actions.onOpenItem, focus)
         }
@@ -345,38 +344,7 @@ private fun LazyGridScope.continueSegment(
     }
 }
 
-/**
- * «Буду смотреть» — отложенное. Один список: локальное избранное и есть кэш серверного
- * watchlist (сервер отдаёт только тоггл и флаг на самом тайтле, списком — никогда).
- */
-private fun LazyGridScope.watchlistSegment(
-    state: LibraryState,
-    onOpenItem: (Int) -> Unit,
-    focus: TvScreenFocus,
-) {
-    if (state.favorites.isEmpty()) {
-        emptyItem(
-            icon = Icons.Filled.Add,
-            title = "Список пуст",
-            hint = "Добавляйте тайтлы кнопкой «Буду смотреть»",
-        )
-        return
-    }
-    items(state.favorites, key = { it.id }) { item ->
-        TvPosterCard(
-            title = item.title,
-            meta = posterMeta(type = null, year = item.year),
-            posterUrl = item.posterSmall,
-            onClick = { onOpenItem(item.id) },
-            modifier = focus.item("watchlist:${item.id}"),
-            posterContent = { url, posterModifier ->
-                TvPoster(url, item.title, posterModifier, TvMetrics.PosterShape)
-            },
-        )
-    }
-}
-
-/** «Закладки» — серверные папки: список папок либо содержимое открытой. */
+/** «Закладки» — серверные подборки: список подборок либо содержимое открытой. */
 private fun LazyGridScope.bookmarksSegment(
     state: LibraryState,
     ui: TvBookmarkUi,
@@ -420,14 +388,14 @@ private fun LazyGridScope.folderItems(
         // Ошибку от пустой папки отличаем: «пусто» и «не загрузилось» требуют разных действий.
         openFolder.items.isEmpty() && openFolder.error != null -> emptyItem(
             icon = Icons.Filled.CloudOff,
-            title = "Папка не открылась",
+            title = "Подборка не открылась",
             hint = "Нажмите «Назад» и откройте её ещё раз",
         )
 
         openFolder.items.isEmpty() -> emptyItem(
             icon = Icons.Filled.Folder,
-            title = "Папка пуста",
-            hint = "Тайтлы, добавленные в эту папку, появятся здесь",
+            title = "Подборка пуста",
+            hint = "Тайтлы, добавленные в эту подборку, появятся здесь",
         )
 
         else -> folderPosters(openFolder = openFolder, ui = ui, onOpenItem = onOpenItem, focus = focus)
@@ -538,7 +506,7 @@ private fun ProgressCard(
     )
 }
 
-/** Плитка папки-закладки. Фокусируется и открывается — содержимое грузит [LibraryScreenModel]. */
+/** Плитка подборки. Фокусируется и открывается — содержимое грузит [LibraryScreenModel]. */
 @Composable
 private fun FolderTile(folder: BookmarkFolder, onClick: () -> Unit) {
     val count = folder.count
@@ -578,7 +546,7 @@ private fun FolderTile(folder: BookmarkFolder, onClick: () -> Unit) {
     }
 }
 
-/** Плитка «＋ Новая папка» — первая ячейка сетки папок, вход в диалог создания. */
+/** Плитка «＋ Новая подборка» — первая ячейка сетки, вход в диалог создания. */
 @Composable
 private fun NewFolderTile(onClick: () -> Unit) {
     TvFocusCard(
@@ -602,12 +570,12 @@ private fun NewFolderTile(onClick: () -> Unit) {
                 modifier = Modifier.size(28.dp),
             )
             Spacer(Modifier.height(8.dp))
-            Text("Новая папка", style = MaterialTheme.typography.titleMedium, color = TvOnSurface)
+            Text("Новая подборка", style = MaterialTheme.typography.titleMedium, color = TvOnSurface)
         }
     }
 }
 
-/** Пустое состояние закладок: подсказка и фокусируемая кнопка создания папки. */
+/** Пустое состояние закладок: подсказка и фокусируемая кнопка создания подборки. */
 @Composable
 private fun BookmarksEmpty(onNewFolder: () -> Unit) {
     val createFocus = remember { FocusRequester() }
@@ -625,14 +593,14 @@ private fun BookmarksEmpty(onNewFolder: () -> Unit) {
             tint = TvSurfaceContainerHighest,
             modifier = Modifier.size(36.dp),
         )
-        Text("Папок нет", style = MaterialTheme.typography.titleLarge, color = TvOnSurface)
+        Text("Подборок нет", style = MaterialTheme.typography.titleLarge, color = TvOnSurface)
         Text(
-            "Создайте папку и собирайте в неё тайтлы",
+            "Создайте подборку и собирайте в неё тайтлы",
             style = MaterialTheme.typography.bodyLarge,
             color = TvOnSurfaceVariant,
         )
         TvButton(
-            text = "Новая папка",
+            text = "Новая подборка",
             onClick = onNewFolder,
             leadingIcon = Icons.Filled.Add,
             focusRequester = createFocus,
@@ -640,7 +608,7 @@ private fun BookmarksEmpty(onNewFolder: () -> Unit) {
     }
 }
 
-/** Постер тайтла в папке. В режиме удаления поверх — крестик: маркер, что клик уберёт тайтл. */
+/** Постер тайтла в подборке. В режиме удаления поверх — крестик: маркер, что клик уберёт тайтл. */
 @Composable
 private fun FolderPoster(url: String, title: String, modifier: Modifier, removeMode: Boolean) {
     Box(modifier) {
@@ -702,7 +670,7 @@ private fun TvBookmarkDialogHost(
     }
     ui.folderToDelete?.let { folder ->
         TvConfirmDialog(
-            title = "Удалить папку?",
+            title = "Удалить подборку?",
             message = "«${folder.title}» и её список исчезнут. Тайтлы останутся в каталоге.",
             confirmLabel = "Удалить",
             onConfirm = {
@@ -714,8 +682,8 @@ private fun TvBookmarkDialogHost(
     }
     ui.itemToRemove?.let { item ->
         TvConfirmDialog(
-            title = "Убрать из папки?",
-            message = "«${item.title}» исчезнет из папки, но останется в каталоге.",
+            title = "Убрать из подборки?",
+            message = "«${item.title}» исчезнет из подборки, но останется в каталоге.",
             confirmLabel = "Убрать",
             onConfirm = {
                 // openFolderId непустой, пока папка открыта; без него событие не шлём.
@@ -730,7 +698,7 @@ private fun TvBookmarkDialogHost(
 }
 
 /**
- * Диалог создания папки. Поле берёт фокус сразу — по нажатию OK открывается системная экранная
+ * Диалог создания подборки. Поле берёт фокус сразу — по нажатию OK открывается системная экранная
  * клавиатура телевизора (ввод пультом). Пустое имя модель игнорирует, поэтому кнопку не блокируем.
  */
 @Composable
@@ -746,7 +714,7 @@ private fun TvCreateFolderDialog(onConfirm: (String) -> Unit, onDismiss: () -> U
                 .background(TvSurfaceContainer)
                 .padding(28.dp),
         ) {
-            Text("Новая папка", style = MaterialTheme.typography.titleLarge, color = TvOnSurface)
+            Text("Новая подборка", style = MaterialTheme.typography.titleLarge, color = TvOnSurface)
             Spacer(Modifier.height(6.dp))
             Text(
                 "Введите название пультом",
@@ -764,7 +732,7 @@ private fun TvCreateFolderDialog(onConfirm: (String) -> Unit, onDismiss: () -> U
     }
 }
 
-/** Поле имени папки: тёмная плашка с [BasicTextField] и плейсхолдером; системный IME вводит текст. */
+/** Поле имени подборки: тёмная плашка с [BasicTextField] и плейсхолдером; системный IME вводит текст. */
 @Composable
 private fun TvFolderNameField(
     value: String,
@@ -780,7 +748,7 @@ private fun TvFolderNameField(
     ) {
         if (value.isEmpty()) {
             Text(
-                "Название папки",
+                "Название подборки",
                 style = MaterialTheme.typography.bodyLarge,
                 color = TvOnSurfaceVariant,
             )
@@ -844,7 +812,6 @@ private fun LoadingBox(modifier: Modifier = Modifier) {
 /** Колонки сетки при ширине макета 960dp: постеры 190dp — вчетверо, карточки 16:9 250dp — втрое. */
 private fun columnsFor(segment: LibrarySegment, folderOpen: Boolean): Int = when (segment) {
     LibrarySegment.CONTINUE, LibrarySegment.HISTORY -> WIDE_COLUMNS
-    LibrarySegment.WATCHLIST -> POSTER_COLUMNS
     LibrarySegment.BOOKMARKS -> if (folderOpen) POSTER_COLUMNS else FOLDER_COLUMNS
 }
 
