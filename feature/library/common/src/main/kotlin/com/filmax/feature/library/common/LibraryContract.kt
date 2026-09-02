@@ -36,12 +36,6 @@ data class LibraryState(
     val lists: List<BookmarkFolder> = emptyList(),
     /** Папка-закладка, в которую провалились; null — показываем список папок. */
     val openFolder: OpenBookmarkFolder? = null,
-    /**
-     * Скрыть историю просмотров на экране. Телевизор — общий экран в доме, и «что я смотрел»
-     * там видно всем. Флаг живёт только пока жив процесс: постоянного хранилища настроек в
-     * домене нет, поэтому UI честно говорит, что скрытие — до перезапуска.
-     */
-    val historyHidden: Boolean = false,
     val loading: Boolean = true,
     val error: String? = null,
 )
@@ -52,7 +46,6 @@ sealed interface LibraryEvent {
     data class OpenFolder(val folder: BookmarkFolder) : LibraryEvent
     data object CloseFolder : LibraryEvent
     data object LoadMoreFolderItems : LibraryEvent
-    data object ToggleHistoryHidden : LibraryEvent
 
     /** Создать новую папку-закладку с этим названием. */
     data class CreateFolder(val title: String) : LibraryEvent

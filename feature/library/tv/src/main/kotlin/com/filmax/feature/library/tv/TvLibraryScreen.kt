@@ -29,7 +29,6 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayCircleOutline
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -176,7 +175,6 @@ fun TvLibraryScreen(
                     screenModel.dispatch(LibraryEvent.CloseFolder)
                 }
             },
-            onToggleHistoryHidden = { screenModel.dispatch(LibraryEvent.ToggleHistoryHidden) },
         )
 
         if (state.loading) {
@@ -197,8 +195,8 @@ fun TvLibraryScreen(
 }
 
 /**
- * Шапка раздела: заголовок, сегменты и подстрока текущего сегмента. Не скроллится вместе с
- * сеткой — таб-бар в скаффолде прозрачный, и уезжающий под него контент налезал бы на вкладки.
+ * Шапка раздела: у «Закладок» есть заголовок, у «Я смотрю» остаются только сегменты — название
+ * уже видно в меню. Шапка не скроллится вместе с сеткой, чтобы контент не налезал на таб-бар.
  */
 @Composable
 private fun MineHeader(
@@ -207,7 +205,6 @@ private fun MineHeader(
     segment: LibrarySegment,
     ui: TvBookmarkUi,
     onSegment: (LibrarySegment) -> Unit,
-    onToggleHistoryHidden: () -> Unit,
 ) {
     Column(
         Modifier
@@ -218,8 +215,10 @@ private fun MineHeader(
                 top = TvMetrics.ContentTop,
             ),
     ) {
-        Text(section.title, style = MaterialTheme.typography.headlineMedium, color = TvOnSurface)
-        Spacer(Modifier.height(16.dp))
+        if (section == LibrarySection.BOOKMARKS) {
+            Text(section.title, style = MaterialTheme.typography.headlineMedium, color = TvOnSurface)
+            Spacer(Modifier.height(16.dp))
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             section.segments.forEach { entry ->
                 TvChip(
@@ -236,28 +235,8 @@ private fun MineHeader(
         when {
             segment == LibrarySegment.BOOKMARKS && openFolder != null ->
                 OpenFolderBar(folder = openFolder.folder, ui = ui)
-            segment == LibrarySegment.HISTORY -> HistoryPrivacyChip(
-                hidden = state.historyHidden,
-                onToggle = onToggleHistoryHidden,
-            )
             else -> Unit
         }
-    }
-}
-
-/**
- * Чип приватности истории. Телевизор смотрит вся семья, и «что я смотрел» на нём публично —
- * чип убирает список с экрана. Скрытие живёт до перезапуска приложения (хранить флаг негде),
- * и пустое состояние сегмента об этом честно говорит.
- */
-@Composable
-private fun HistoryPrivacyChip(hidden: Boolean, onToggle: () -> Unit) {
-    Row(Modifier.padding(top = 18.dp)) {
-        TvChip(
-            label = if (hidden) "Показать историю" else "Скрыть историю",
-            selected = hidden,
-            onClick = onToggle,
-        )
     }
 }
 
@@ -492,14 +471,6 @@ private fun LazyGridScope.historySegment(
     onOpenItem: (Int) -> Unit,
     focus: TvScreenFocus,
 ) {
-    if (state.historyHidden) {
-        emptyItem(
-            icon = Icons.Filled.VisibilityOff,
-            title = "История скрыта",
-            hint = "Вернётся по тому же чипу или после перезапуска приложения",
-        )
-        return
-    }
     if (state.history.isEmpty()) {
         emptyItem(
             icon = Icons.Filled.History,

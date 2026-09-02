@@ -210,7 +210,7 @@ fun LibraryScreen(
 
 // ── Шапка ─────────────────────────────────────────────────────────────────
 
-/** Заголовок и сегменты. Не скроллятся вместе с сеткой: сегмент всегда должен быть виден. */
+/** Заголовок «Закладок» и сегменты. В «Я смотрю» название уже видно в нижнем меню. */
 @Composable
 private fun MineHeader(
     section: LibrarySection,
@@ -218,16 +218,21 @@ private fun MineHeader(
     onSegment: (LibrarySegment) -> Unit,
 ) {
     Column {
-        Text(
-            section.title,
-            style = MaterialTheme.typography.displaySmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier
-                .padding(horizontal = FilmaxMetrics.ScreenPadding)
-                .padding(top = 6.dp),
-        )
+        if (section == LibrarySection.BOOKMARKS) {
+            Text(
+                section.title,
+                style = MaterialTheme.typography.displaySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .padding(horizontal = FilmaxMetrics.ScreenPadding)
+                    .padding(top = 6.dp),
+            )
+        }
         LazyRow(
-            modifier = Modifier.padding(top = 16.dp, bottom = 14.dp),
+            modifier = Modifier.padding(
+                top = if (section == LibrarySection.BOOKMARKS) 16.dp else 6.dp,
+                bottom = 14.dp,
+            ),
             contentPadding = PaddingValues(horizontal = FilmaxMetrics.ScreenPadding),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -446,9 +451,8 @@ private fun LazyGridScope.folderItems(openFolder: OpenBookmarkFolder, actions: M
 }
 
 /**
- * «История» — всё просмотренное, целиком. Чипа «Скрыть историю» здесь нет намеренно: он живёт
- * на TV, потому что телевизор смотрит вся семья и список «что я смотрел» на нём публичен.
- * Телефон личный и заперт кодом — прятать историю от самого себя не от кого.
+ * «История» — всё просмотренное, целиком. Отдельного режима скрытия больше нет ни на телефоне,
+ * ни на TV.
  */
 private fun LazyGridScope.historySegment(state: LibraryState, actions: MineActions) {
     if (state.history.isEmpty()) {
