@@ -1,15 +1,20 @@
 package com.filmax.feature.search.tv
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,7 +22,12 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,7 +40,9 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -39,6 +51,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.catalog.CatalogFilters
@@ -63,6 +80,8 @@ import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
+import com.filmax.core.ui.components.VoiceListeningDialog
+import com.filmax.core.ui.components.rememberInAppVoiceSearch
 import com.filmax.feature.search.common.SearchEvent
 import com.filmax.feature.search.common.SearchScreenModel
 import com.filmax.feature.search.common.SearchState
@@ -70,6 +89,7 @@ import com.filmax.feature.search.common.SortOptions
 import com.filmax.feature.search.common.TypeOptions
 import com.filmax.feature.search.common.itemTypeLabel
 import com.filmax.feature.search.common.sortLabel
+import kotlinx.coroutines.flow.drop
 import org.koin.androidx.compose.koinViewModel
 
 /** Сетка постеров: 4×190dp + 3×18dp зазора ровно ложатся в 844dp между safe area. */
@@ -78,13 +98,20 @@ private const val GRID_COLUMNS = 4
 /** За сколько хвостовых рядов сетки до конца просить следующую страницу витрины. */
 private const val LOAD_MORE_TAIL = 3
 
-/** Ключ фокуса строки поиска: сюда фокус возвращается после закрытия клавиатуры. */
+/** Ключ фокуса строки поиска — стартовая цель экрана и точка возврата. */
 private const val SEARCH_KEY = "search"
+
+/** Высота строки поиска: одна на кнопку и на поле ввода, чтобы шапка не прыгала. */
+private val SearchBarHeight = 56.dp
 
 /**
  * TV-Каталог (экран «Каталог» макета) — витрина, а не строка поиска: сетка постеров живёт по
- * фильтрам тип/жанр/сортировка и наполнена ещё до того, как зритель набрал первую букву. Текст
- * набирают в оверлее [TvKeyboardOverlay], и только когда без него не обойтись.
+ * фильтрам тип/жанр/сортировка и наполнена ещё до того, как зритель набрал первую букву.
+ *
+ * Текст набирают системной клавиатурой телевизора: строка поиска — обычное поле ввода, и по
+ * «ОК» на нём открывается привычная системная клавиатура с раскладками, историей и голосовым
+ * вводом платформы. Выдачу показывает сама сетка: `visibleItems` переключается на результаты
+ * по мере набора запроса.
  *
  * Поверх общего [SearchScreenModel] — тот же debounce-поиск, что и на телефоне.
  */
@@ -95,54 +122,45 @@ fun TvCatalogScreen(
     screenModel: SearchScreenModel = koinViewModel(),
 ) {
     val state by screenModel.collectAsState()
-    var keyboardOpen by remember { mutableStateOf(false) }
-    val focus = rememberTvScreenFocus()
+    val focus = rememberTvScreenFocus(startAt = SEARCH_KEY)
     val listState = rememberLazyListState()
+
+    val voice = rememberInAppVoiceSearch { spoken ->
+        screenModel.dispatch(SearchEvent.SubmitQuery(spoken))
+    }
+    VoiceListeningDialog(voice)
 
     // Витрину и жанры тянем только здесь: телефонный поиск с тем же ScreenModel показывает
     // подсказки, и выдача каталога ему не нужна.
     LaunchedEffect(Unit) { screenModel.dispatch(SearchEvent.LoadCatalog) }
 
     Box(modifier.fillMaxSize().background(TvSurface)) {
-        if (keyboardOpen) {
-            TvKeyboardOverlay(
-                state = state,
-                actions = TvKeyboardActions(
-                    onQuery = { screenModel.dispatch(SearchEvent.QueryChange(it)) },
-                    onSubmit = { screenModel.dispatch(SearchEvent.SubmitQuery(it)) },
-                    onOpenItem = onOpenItem,
-                    onClose = {
-                        // Клавиатура снимает каталог из композиции целиком (иначе D-pad уходил бы
-                        // сквозь оверлей на карточки под ним). Фокус возвращаем на строку поиска
-                        // — она заберёт его, когда ленивый список снова её разложит.
-                        keyboardOpen = false
-                        focus.focusOn(SEARCH_KEY)
-                    },
-                ),
-            )
-        } else {
-            CatalogContent(
-                state = state,
-                listState = listState,
-                focus = focus,
-                actions = CatalogActions(
-                    onOpenItem = onOpenItem,
-                    onOpenKeyboard = { keyboardOpen = true },
-                    onFilter = { screenModel.dispatch(SearchEvent.FilterChange(it)) },
-                    onSort = { screenModel.dispatch(SearchEvent.SortChange(it)) },
-                    onGenre = { screenModel.dispatch(SearchEvent.GenreChange(it)) },
-                    onApplyFilters = { screenModel.dispatch(SearchEvent.ApplyFilters(it)) },
-                ),
-                onLoadMore = { screenModel.dispatch(SearchEvent.LoadMoreCatalog) },
-            )
-        }
+        CatalogContent(
+            state = state,
+            listState = listState,
+            focus = focus,
+            actions = CatalogActions(
+                onOpenItem = onOpenItem,
+                onQuery = { screenModel.dispatch(SearchEvent.QueryChange(it)) },
+                onVoice = voice::start,
+                onEditingFinished = { focus.focusOn(SEARCH_KEY) },
+                onFilter = { screenModel.dispatch(SearchEvent.FilterChange(it)) },
+                onSort = { screenModel.dispatch(SearchEvent.SortChange(it)) },
+                onGenre = { screenModel.dispatch(SearchEvent.GenreChange(it)) },
+                onApplyFilters = { screenModel.dispatch(SearchEvent.ApplyFilters(it)) },
+            ),
+            onLoadMore = { screenModel.dispatch(SearchEvent.LoadMoreCatalog) },
+        )
     }
 }
 
 /** Действия каталога одним объектом — как TvHomeActions на главной. */
 private data class CatalogActions(
     val onOpenItem: (Int) -> Unit,
-    val onOpenKeyboard: () -> Unit,
+    val onQuery: (String) -> Unit,
+    val onVoice: () -> Unit,
+    /** Ввод закончен: фокус возвращаем на строку поиска, уже снова кнопку. */
+    val onEditingFinished: () -> Unit,
     val onFilter: (ItemType?) -> Unit,
     val onSort: (SortOption) -> Unit,
     val onGenre: (Int?) -> Unit,
@@ -244,8 +262,10 @@ private fun CatalogHeader(
     Column(modifier) {
         CatalogSearchBar(
             query = state.query,
+            onQuery = actions.onQuery,
+            onVoice = actions.onVoice,
+            onEditingFinished = actions.onEditingFinished,
             modifier = searchModifier,
-            onClick = actions.onOpenKeyboard,
         )
         Spacer(Modifier.height(16.dp))
         // Явная связь «вниз»: ряд типов → первый жанр. Спатиальный поиск здесь ненадёжен:
@@ -276,43 +296,167 @@ private fun CatalogHeader(
     }
 }
 
-/** Строка поиска. Это кнопка, а не поле: набор текста живёт в оверлее клавиатуры. */
+/** Строка поиска с системной клавиатурой и отдельной кнопкой голосового ввода. */
 @Composable
 private fun CatalogSearchBar(
     query: String,
+    onQuery: (String) -> Unit,
+    onVoice: () -> Unit,
+    onEditingFinished: () -> Unit,
     modifier: Modifier,
-    onClick: () -> Unit,
 ) {
+    // В навигации строка — кнопка: пульт свободно ходит по экрану, а клавиатура не всплывает.
+    // По «ОК» она становится настоящим полем ввода и открывает системную клавиатуру телевизора.
+    var editing by rememberSaveable { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = TvMetrics.SafeHorizontal),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val barModifier = modifier.weight(1f).height(SearchBarHeight)
+        if (editing) {
+            SearchInput(
+                query = query,
+                onQuery = onQuery,
+                onDone = {
+                    editing = false
+                    onEditingFinished()
+                },
+                modifier = barModifier,
+            )
+        } else {
+            SearchButton(query = query, onClick = { editing = true }, modifier = barModifier)
+        }
+        VoiceSearchButton(onVoice)
+    }
+}
+
+/** Строка в состоянии навигации: показывает запрос и по «ОК» уступает место полю ввода. */
+@Composable
+private fun SearchButton(query: String, onClick: () -> Unit, modifier: Modifier) {
     TvFocusCard(
         onClick = onClick,
         shape = TvMetrics.PanelShape,
-        // Строка поиска — не чип-ряд: остаётся в safe-области собственным отступом.
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = TvMetrics.SafeHorizontal)
-            .height(56.dp),
+        modifier = modifier,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(TvMetrics.PanelShape)
-                .background(TvSurfaceContainer)
-                .padding(horizontal = 22.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Icon(
-                Icons.Filled.Search,
-                contentDescription = null,
-                tint = TvOnSurfaceDim,
-                modifier = Modifier.size(20.dp),
-            )
+        SearchBarSurface {
             Text(
                 text = query.ifEmpty { "Название фильма или сериала" },
                 style = MaterialTheme.typography.titleMedium,
                 color = if (query.isEmpty()) TvOnSurfaceDim else TvOnSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
+ * Настоящее поле ввода, за которым открывается системная клавиатура. «Назад» закрывает её, а
+ * состояние `isImeVisible` возвращает строку в режим навигации, не выводя зрителя из каталога.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SearchInput(
+    query: String,
+    onQuery: (String) -> Unit,
+    onDone: () -> Unit,
+    modifier: Modifier,
+) {
+    val fieldState = rememberTextFieldState(query)
+    val fieldFocus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // Первое событие фокуса бывает ещё до запроса; иначе строка закрылась бы в тот же кадр.
+    var hadFocus by remember { mutableStateOf(false) }
+
+    LaunchedEffect(fieldState) {
+        snapshotFlow { fieldState.text.toString() }.drop(1).collect(onQuery)
+    }
+    LaunchedEffect(Unit) { fieldFocus.requestFocus() }
+
+    // «Назад» получает сама IME. Закрытие клавиатуры — надёжный признак завершения ввода.
+    val keyboardVisible = WindowInsets.isImeVisible
+    var keyboardWasVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(keyboardVisible) {
+        if (keyboardVisible) keyboardWasVisible = true else if (keyboardWasVisible) onDone()
+    }
+
+    SearchBarSurface(modifier = modifier, focused = true) {
+        BasicTextField(
+            state = fieldState,
+            lineLimits = TextFieldLineLimits.SingleLine,
+            textStyle = MaterialTheme.typography.titleMedium.copy(color = TvOnSurface),
+            cursorBrush = SolidColor(TvOnSurface),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            onKeyboardAction = {
+                keyboard?.hide()
+                onDone()
+            },
+            modifier = Modifier
+                .weight(1f)
+                .focusRequester(fieldFocus)
+                .onFocusChanged {
+                    if (it.isFocused) hadFocus = true else if (hadFocus) onDone()
+                },
+        )
+    }
+}
+
+/** Общая поверхность строки поиска: подложка, иконка и рамка фокуса для двух состояний. */
+@Composable
+private fun SearchBarSurface(
+    modifier: Modifier = Modifier,
+    focused: Boolean = false,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(TvMetrics.PanelShape)
+            .background(TvSurfaceContainer)
+            .border(
+                width = if (focused) TvMetrics.FocusBorderWidth else 0.dp,
+                color = if (focused) TvOnSurface else Color.Transparent,
+                shape = TvMetrics.PanelShape,
+            )
+            .padding(horizontal = 22.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        content = {
+            Icon(
+                Icons.Filled.Search,
+                contentDescription = null,
+                tint = TvOnSurfaceDim,
+                modifier = Modifier.size(20.dp),
+            )
+            content()
+        },
+    )
+}
+
+/** Кнопка голосового поиска остаётся отдельной целью фокуса рядом со строкой. */
+@Composable
+private fun VoiceSearchButton(onVoice: () -> Unit) {
+    TvFocusCard(
+        onClick = onVoice,
+        shape = TvMetrics.PanelShape,
+        modifier = Modifier.size(56.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(TvMetrics.PanelShape)
+                .background(TvSurfaceContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Filled.Mic,
+                contentDescription = "Голосовой поиск",
+                tint = TvOnSurface,
+                modifier = Modifier.size(24.dp),
             )
         }
     }
