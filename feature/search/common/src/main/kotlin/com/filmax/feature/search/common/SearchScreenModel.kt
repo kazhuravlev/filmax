@@ -34,11 +34,46 @@ private val BrowseTypes = listOf(ItemType.MOVIE, ItemType.SERIES, ItemType.DOCUM
 
 /**
  * Чип «Аниме»: типа «anime» у kino.watch НЕТ — аниме это ЖАНР (id 25) поверх фильмов и
- * сериалов. Поэтому фильтр ANIME разворачивается в movie+serial с жанром [ANIME_GENRE_ID];
- * выбранный в ряду жанр на это время игнорируется — параметр `genre` в API один.
+ * сериалов. Поэтому фильтр ANIME разворачивается в movie+serial с жанром [ANIME_GENRE_ID].
+ * При дополнительном жанре пересечение завершается локально: параметр `genre` в API один.
  */
 private const val ANIME_GENRE_ID = 25
 private val AnimeTypes = listOf(ItemType.MOVIE, ItemType.SERIES)
+
+/**
+ * Снимок фильтров для одного запроса витрины. Он не даёт позднему ответу старого запроса
+ * (например, «ужасы») перезаписать новый («сериалы + ужасы»).
+ */
+private data class CatalogRequest(
+    val filter: ItemType?,
+    val selectedGenreId: Int?,
+    val filters: CatalogFilters,
+    val sort: SortOption,
+) {
+    val activeTypes: List<ItemType>
+        get() = when (filter) {
+            null -> BrowseTypes
+            ItemType.ANIME -> AnimeTypes
+            else -> listOf(filter)
+        }
+
+    /** API принимает только один genre: для аниме это технический жанр аниме. */
+    val apiGenreId: Int?
+        get() = if (filter == ItemType.ANIME) ANIME_GENRE_ID else selectedGenreId
+
+    /** API не умеет передать «аниме + ещё один жанр», поэтому пересечение завершаем локально. */
+    fun narrow(items: List<Item>): List<Item> =
+        if (filter == ItemType.ANIME && selectedGenreId != null) {
+            items.filter { item -> item.genres.any { it.id == selectedGenreId } }
+        } else {
+            items
+        }
+}
+
+private data class CatalogPage(
+    val items: List<Item>,
+    val exhaustedTypes: Set<ItemType>,
+)
 
 /**
  * Типы жанров, которые показываем в каталоге. `api/v1/genres` отдаёт одним списком жанры всех
@@ -176,21 +211,30 @@ class SearchScreenModel(
 
     private suspend fun loadCatalog() {
         if (!state.catalogEnabled) return
+        val request = state.catalogRequest()
         updateState { it.copy(loading = true, catalogLoadingMore = false, catalogEndReached = false) }
-        catalogPage = 0
-        exhaustedTypes = emptySet()
-        when (val first = fetchCatalogPage(1)) {
-            is RequestResult.Success -> updateState {
-                it.copy(
-                    loading = false,
-                    catalogItems = sortLocally(first.data.distinctById(), it.sort),
-                    catalogEndReached = activeTypes.all { type -> type in exhaustedTypes },
-                    error = null,
-                )
+        when (val first = fetchCatalogPage(request, page = 1, exhausted = emptySet())) {
+            is RequestResult.Success -> {
+                if (state.matches(request)) {
+                    catalogPage = 1
+                    exhaustedTypes = first.data.exhaustedTypes
+                    updateState {
+                        it.copy(
+                            loading = false,
+                            catalogItems = sortLocally(first.data.items.distinctById(), request.sort),
+                            catalogEndReached = request.activeTypes.all { it in first.data.exhaustedTypes },
+                            error = null,
+                        )
+                    }
+                }
             }
 
-            is RequestResult.Error -> updateState {
-                it.copy(loading = false, catalogItems = emptyList(), error = first.message)
+            is RequestResult.Error -> {
+                if (state.matches(request)) {
+                    updateState {
+                        it.copy(loading = false, catalogItems = emptyList(), error = first.message)
+                    }
+                }
             }
         }
     }
@@ -204,24 +248,33 @@ class SearchScreenModel(
         val current = state
         val busy = current.loading || current.catalogLoadingMore || current.catalogEndReached
         if (!current.catalogEnabled || busy || current.query.length >= MIN_QUERY_LENGTH) return
+        val request = current.catalogRequest()
+        val page = catalogPage + 1
+        val exhausted = exhaustedTypes
         screenModelScope { _ ->
             updateState { it.copy(catalogLoadingMore = true) }
-            when (val next = fetchCatalogPage(catalogPage + 1)) {
-                is RequestResult.Success -> updateState { s ->
-                    val seen = s.catalogItems.mapTo(HashSet()) { it.id }
-                    // filter гасит id, уже стоящие в сетке; distinctById — дубли внутри самой
-                    // страницы (склейка типов) и гонку с параллельным reload по фильтру/сортировке:
-                    // без этого две карточки с одним id роняют LazyGrid по неуникальному ключу.
-                    val merged = (s.catalogItems + next.data.filter { it.id !in seen }).distinctById()
-                    s.copy(
-                        catalogLoadingMore = false,
-                        catalogItems = sortLocally(merged, s.sort),
-                        catalogEndReached = activeTypes.all { type -> type in exhaustedTypes },
-                    )
+            when (val next = fetchCatalogPage(request, page, exhausted)) {
+                is RequestResult.Success -> {
+                    if (!state.matches(request)) return@screenModelScope
+                    catalogPage = page
+                    exhaustedTypes = next.data.exhaustedTypes
+                    updateState { s ->
+                        val seen = s.catalogItems.mapTo(HashSet()) { it.id }
+                        // filter гасит id, уже стоящие в сетке; distinctById — дубли внутри самой
+                        // страницы (склейка типов): без этого две карточки с одним id роняют LazyGrid.
+                        val merged = (s.catalogItems + next.data.items.filter { it.id !in seen }).distinctById()
+                        s.copy(
+                            catalogLoadingMore = false,
+                            catalogItems = sortLocally(merged, request.sort),
+                            catalogEndReached = request.activeTypes.all { it in next.data.exhaustedTypes },
+                        )
+                    }
                 }
 
                 // Тихий фейл: показанную витрину не рушим, следующий подход к хвосту повторит.
-                is RequestResult.Error -> updateState { it.copy(catalogLoadingMore = false) }
+                is RequestResult.Error -> if (state.matches(request)) {
+                    updateState { it.copy(catalogLoadingMore = false) }
+                }
             }
         }
     }
@@ -231,15 +284,16 @@ class SearchScreenModel(
      * кончившиеся типы и двигает [catalogPage]. Ошибка — только когда не ответил НИ один тип:
      * частичная выдача лучше пустой сетки.
      */
-    private suspend fun fetchCatalogPage(page: Int): RequestResult<List<Item>> {
-        val genreId = if (state.filter == ItemType.ANIME) ANIME_GENRE_ID else state.selectedGenreId
-        val sort = state.sort
-        val filters = state.filters
-        val types = activeTypes.filterNot { it in exhaustedTypes }
-        if (types.isEmpty()) return RequestResult.Success(emptyList())
+    private suspend fun fetchCatalogPage(
+        request: CatalogRequest,
+        page: Int,
+        exhausted: Set<ItemType>,
+    ): RequestResult<CatalogPage> {
+        val types = request.activeTypes.filterNot { it in exhausted }
+        if (types.isEmpty()) return RequestResult.Success(CatalogPage(emptyList(), exhausted))
         val results = coroutineScope {
             types.map { type ->
-                async { type to catalog.getItems(type, genreId, filters, sort, page) }
+                async { type to catalog.getItems(type, request.apiGenreId, request.filters, request.sort, page) }
             }.awaitAll()
         }
         val succeeded = results.mapNotNull { (type, result) ->
@@ -251,21 +305,27 @@ class SearchScreenModel(
             }
             RequestResult.Error(message)
         } else {
-            catalogPage = page
-            exhaustedTypes = exhaustedTypes + succeeded
+            val nextExhausted = exhausted + succeeded
                 .filter { (_, itemPage) -> itemPage.items.isEmpty() || !itemPage.pagination.hasNextPage }
                 .map { (type, _) -> type }
-            RequestResult.Success(interleave(succeeded.map { (_, itemPage) -> itemPage.items }))
+            RequestResult.Success(
+                CatalogPage(
+                    items = request.narrow(interleave(succeeded.map { (_, itemPage) -> itemPage.items })),
+                    exhaustedTypes = nextExhausted,
+                ),
+            )
         }
     }
-
-    private val activeTypes: List<ItemType>
-        get() = when (val filter = state.filter) {
-            null -> BrowseTypes
-            ItemType.ANIME -> AnimeTypes
-            else -> listOf(filter)
-        }
 }
+
+private fun SearchState.catalogRequest(): CatalogRequest = CatalogRequest(
+    filter = filter,
+    selectedGenreId = selectedGenreId,
+    filters = filters,
+    sort = sort,
+)
+
+private fun SearchState.matches(request: CatalogRequest): Boolean = catalogRequest() == request
 
 /**
  * Жанр, диапазонные фильтры и сортировка поверх выдачи поиска: сам `search` ничего из этого не
