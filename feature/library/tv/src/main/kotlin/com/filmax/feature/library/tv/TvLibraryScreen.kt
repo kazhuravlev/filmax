@@ -72,6 +72,7 @@ import com.filmax.core.tv.designsystem.TvOnSurface
 import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvOutlineVariant
 import com.filmax.core.tv.designsystem.TvPosterCard
+import com.filmax.core.tv.designsystem.TvPosterGrid
 import com.filmax.core.tv.designsystem.TvRatingPill
 import com.filmax.core.tv.designsystem.TvScreenFocus
 import com.filmax.core.tv.designsystem.TvSurface
@@ -84,8 +85,8 @@ import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.feature.library.common.BookmarkFolderPreview
 import com.filmax.feature.library.common.LibraryEvent
-import com.filmax.feature.library.common.LibrarySection
 import com.filmax.feature.library.common.LibraryScreenModel
+import com.filmax.feature.library.common.LibrarySection
 import com.filmax.feature.library.common.LibraryState
 import com.filmax.feature.library.common.OpenBookmarkFolder
 import org.koin.androidx.compose.koinViewModel
@@ -309,18 +310,27 @@ private fun MineGrid(
     // фокус, уходит из композиции, и без сброса фокус повис бы — пульт перестал бы отвечать.
     LaunchedEffect(segment, openFolder?.folder?.id) { focus.focusOn() }
 
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(columnsFor(segment, openFolder != null)),
-        state = gridState,
-        modifier = Modifier.fillMaxSize().then(focus.containerModifier),
-        horizontalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
-        verticalArrangement = Arrangement.spacedBy(TvMetrics.RowGap),
-        contentPadding = GridPadding,
-    ) {
-        when (segment) {
-            LibrarySegment.CONTINUE -> continueSegment(state.continuations, actions.onOpenItem, focus)
-            LibrarySegment.BOOKMARKS -> bookmarksSegment(state, ui, actions, focus)
-            LibrarySegment.HISTORY -> historySegment(state, actions.onOpenItem, focus)
+    if (openFolder != null) {
+        TvPosterGrid(
+            state = gridState,
+            modifier = Modifier.fillMaxSize().then(focus.containerModifier),
+        ) {
+            folderItems(openFolder, ui, actions.onOpenItem, focus)
+        }
+    } else {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(columnsFor(segment)),
+            state = gridState,
+            modifier = Modifier.fillMaxSize().then(focus.containerModifier),
+            horizontalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
+            verticalArrangement = Arrangement.spacedBy(TvMetrics.RowGap),
+            contentPadding = GridPadding,
+        ) {
+            when (segment) {
+                LibrarySegment.CONTINUE -> continueSegment(state.continuations, actions.onOpenItem, focus)
+                LibrarySegment.BOOKMARKS -> bookmarksSegment(state, ui, actions, focus)
+                LibrarySegment.HISTORY -> historySegment(state, actions.onOpenItem, focus)
+            }
         }
     }
 }
@@ -921,10 +931,10 @@ private fun LoadingBox(modifier: Modifier = Modifier) {
     }
 }
 
-/** Колонки сетки при ширине макета 960dp: постеры 190dp — вчетверо, компактные 150dp — впятеро. */
-private fun columnsFor(segment: LibrarySegment, folderOpen: Boolean): Int = when (segment) {
+/** Колонки не открытых подборок: компактные постеры — впятеро, папки — втроём. */
+private fun columnsFor(segment: LibrarySegment): Int = when (segment) {
     LibrarySegment.CONTINUE, LibrarySegment.HISTORY -> LIBRARY_POSTER_COLUMNS
-    LibrarySegment.BOOKMARKS -> if (folderOpen) POSTER_COLUMNS else FOLDER_COLUMNS
+    LibrarySegment.BOOKMARKS -> FOLDER_COLUMNS
 }
 
 /**
@@ -948,7 +958,6 @@ private const val FOLDER_PREVIEW_COLUMNS = 7
 /** Ширина диалогов закладок: у́же экрана, чтобы читаться с дивана и не растягивать кнопки. */
 private val DialogMaxWidth = 420.dp
 
-private const val POSTER_COLUMNS = 4
 private const val LIBRARY_POSTER_COLUMNS = 5
 private const val FOLDER_COLUMNS = 3
 

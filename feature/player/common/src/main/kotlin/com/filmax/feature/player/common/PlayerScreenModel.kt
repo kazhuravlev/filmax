@@ -55,6 +55,7 @@ class PlayerScreenModel(
 
     /** Аудиогруппы последнего onTracksChanged — по ним selectAudio делает точечный override. */
     private var audioGroups: List<Tracks.Group> = emptyList()
+
     /** Текстовые группы последнего onTracksChanged — по ним selectSubtitle выбирает HLS-дорожку. */
     private var textGroups: List<Tracks.Group> = emptyList()
 
@@ -375,6 +376,11 @@ class PlayerScreenModel(
      *
      * Троттлинг по позиции: пока не отъехали от последней отправки дальше [PROGRESS_STEP_SECONDS],
      * не дёргаем сервер — тик плеера идёт раз в секунду, а это на порядок чаще, чем нужно.
+     *
+     * Первую отправку дополнительно держим до [MIN_SECONDS_BEFORE_FIRST_SAVE]: `lastSentSeconds`
+     * стартует с `null`, и без этого порога троттлинг никак не срабатывает на самом первом тике —
+     * случайный OK на постере/серии с мгновенным выходом из плеера всё равно успевал бы записать
+     * позицию на сервер и title навсегда оседал в «Продолжить», хотя его никто не смотрел.
      */
     private fun saveProgress(positionMs: Long) {
         val item = state.item
@@ -382,7 +388,12 @@ class PlayerScreenModel(
         if (item == null || track == null) return
         val seconds = (positionMs / MILLIS_IN_SECOND).toInt()
         val sent = lastSentSeconds
-        if (sent != null && abs(seconds - sent) < PROGRESS_STEP_SECONDS) return
+        val tooEarly = if (sent == null) {
+            seconds < MIN_SECONDS_BEFORE_FIRST_SAVE
+        } else {
+            abs(seconds - sent) < PROGRESS_STEP_SECONDS
+        }
+        if (tooEarly) return
         lastSentSeconds = seconds
         screenModelScope {
             // Сериалы прогресс пишут по сезону+эпизоду, фильмы — по одному видео.
@@ -412,6 +423,9 @@ class PlayerScreenModel(
 
         /** Порог отправки прогресса: реже, чем тик плеера (1 с), но чаще, чем теряется место. */
         const val PROGRESS_STEP_SECONDS = 5
+
+        /** Сколько реально проигранных секунд нужно набрать до первой записи прогресса на сервер. */
+        const val MIN_SECONDS_BEFORE_FIRST_SAVE = 15
 
         fun langCode(display: String): String? = when (display.lowercase()) {
             "русский" -> "rus"

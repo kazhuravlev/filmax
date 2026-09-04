@@ -65,11 +65,15 @@ private fun String.toSavedSubtitleTrack(): SavedSubtitleTrack? {
     if (!startsWith(SUBTITLE_TRACK_PREFERENCE_PREFIX)) return null
     val saved = removePrefix(SUBTITLE_TRACK_PREFERENCE_PREFIX)
     val separatorIndex = saved.indexOf(SUBTITLE_PREFERENCE_SEPARATOR)
-    if (separatorIndex <= 0 || separatorIndex == saved.lastIndex) return null
-    return SavedSubtitleTrack(
-        language = saved.substring(0, separatorIndex),
-        label = saved.substring(separatorIndex + 1),
-    )
+    val hasValidSeparator = separatorIndex > 0 && separatorIndex != saved.lastIndex
+    return if (hasValidSeparator) {
+        SavedSubtitleTrack(
+            language = saved.substring(0, separatorIndex),
+            label = saved.substring(separatorIndex + 1),
+        )
+    } else {
+        null
+    }
 }
 
 private fun langCode(display: String): String? = when (display.lowercase()) {

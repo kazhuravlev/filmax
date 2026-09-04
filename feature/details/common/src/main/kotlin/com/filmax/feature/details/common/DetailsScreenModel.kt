@@ -42,6 +42,7 @@ class DetailsScreenModel(
         when (event) {
             DetailsEvent.ToggleFav -> toggleFav()
             DetailsEvent.ToggleDownload -> toggleDownload()
+            DetailsEvent.ToggleWatching -> toggleWatching()
             is DetailsEvent.AddToFolder -> addToFolder(event.folderId)
             is DetailsEvent.CreateFolderAndAdd -> createFolderAndAdd(event.title)
         }
@@ -113,6 +114,12 @@ class DetailsScreenModel(
             favorites.toggle(item.toFavoriteItem())
             watching.toggleWatchlist(route.itemId)
         }
+    }
+
+    /** «Я смотрю»: отдельная от watchlist пометка тайтла (см. [DetailsEvent.ToggleWatching]). */
+    private fun toggleWatching() {
+        val item = state.item ?: return
+        screenModelScope { watching.toggleWatched(item.id) }
     }
 
     private fun toggleDownload() {

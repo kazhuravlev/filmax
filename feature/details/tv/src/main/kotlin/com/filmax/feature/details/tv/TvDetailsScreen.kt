@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -185,6 +186,7 @@ fun TvDetailsScreen(
                         nav.onPlay(item.id, season, videoId, resumePositionSeconds)
                     },
                     onToggleFav = { screenModel.dispatch(DetailsEvent.ToggleFav) },
+                    onToggleWatching = { screenModel.dispatch(DetailsEvent.ToggleWatching) },
                     onOpenItem = nav.onOpenItem,
                     onOpenPerson = nav.onOpenPerson,
                     onPlayTrailer = nav.onPlayTrailer,
@@ -214,6 +216,8 @@ private data class DetailsActions(
     /** [season] ≤ 0 — фильм/сезон неизвестен; номер видео уникален только внутри сезона. */
     val onPlay: (season: Int, videoId: Int, resumePositionSeconds: Int) -> Unit,
     val onToggleFav: () -> Unit,
+    /** «Я смотрю» — отдельная от «Буду смотреть» пометка, без читаемого состояния (см. DetailsEvent). */
+    val onToggleWatching: () -> Unit,
     val onOpenItem: (Int) -> Unit,
     val onOpenPerson: (name: String, isDirector: Boolean) -> Unit,
     val onPlayTrailer: (url: String, title: String) -> Unit,
@@ -308,6 +312,7 @@ private fun DetailsContent(
                         },
                         onToggleFav = actions.onToggleFav,
                         onOpenFolderPicker = { folderPicker.pickerOpen = true },
+                        onToggleWatching = actions.onToggleWatching,
                         onHeroFocusChanged = onHeroFocusChanged,
                         onTrailer = trailerUrl?.let { ::playTrailer },
                     ),
@@ -428,6 +433,8 @@ private data class HeroPlayback(
     val onToggleFav: () -> Unit,
     /** Открыть выбор подборки — кнопка-шеврон рядом с «Буду смотреть». */
     val onOpenFolderPicker: () -> Unit,
+    /** «Я смотрю» — отдельная пометка тайтла, см. [DetailsActions.onToggleWatching]. */
+    val onToggleWatching: () -> Unit,
     /** Фокус зашёл на кнопки hero или ушёл с них — экран переключает стейт полотна. */
     val onHeroFocusChanged: (Boolean) -> Unit,
     /** null — у тайтла нет играбельного трейлера, кнопки нет. */
@@ -542,6 +549,14 @@ private fun HeroButtons(
             )
             TvFolderPickerButton(onClick = playback.onOpenFolderPicker)
         }
+        // Отдельная от «Буду смотреть» пометка (см. DetailsEvent.ToggleWatching): у неё нет
+        // читаемого состояния тайтла целиком, поэтому кнопка — одноразовое действие, не тумблер.
+        TvButton(
+            text = "Я смотрю",
+            onClick = playback.onToggleWatching,
+            primary = false,
+            leadingIcon = Icons.Filled.Visibility,
+        )
         playback.onTrailer?.let { onTrailer ->
             TvButton(
                 text = "Трейлер",

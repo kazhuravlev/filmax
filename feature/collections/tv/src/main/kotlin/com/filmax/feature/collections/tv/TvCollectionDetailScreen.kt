@@ -1,14 +1,10 @@
 package com.filmax.feature.collections.tv
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +20,7 @@ import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.tv.designsystem.TvMetrics
 import com.filmax.core.tv.designsystem.TvPosterCard
+import com.filmax.core.tv.designsystem.TvPosterGrid
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
@@ -72,21 +69,8 @@ fun TvCollectionDetailScreen(
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
 
-            // Колонки считаются от ширины карточки, а не задаются числом: карточка на ТВ одна на
-            // всё приложение и имеет фиксированный размер, а фиксированное число колонок
-            // растягивало ячейки и рвало ритм сетки.
-            else -> LazyVerticalGrid(
-                columns = GridCells.FixedSize(TvMetrics.PosterWidth),
+            else -> TvPosterGrid(
                 modifier = focus.containerModifier,
-                horizontalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
-                verticalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
-                // Запас сверху/снизу под рамку фокуса крайних карточек — иначе клип сетки её срезает.
-                contentPadding = PaddingValues(
-                    start = TvMetrics.SafeHorizontal,
-                    end = TvMetrics.SafeHorizontal,
-                    top = TvMetrics.FocusInset,
-                    bottom = TvMetrics.SafeVertical + TvMetrics.FocusInset,
-                ),
             ) {
                 items(state.items, key = { item -> item.id }) { item ->
                     CollectionPoster(
