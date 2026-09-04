@@ -64,6 +64,7 @@ import com.filmax.core.domain.catalog.SortOption
 import com.filmax.core.domain.catalog.model.Genre
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
+import com.filmax.core.tv.designsystem.RefreshOnTopNavReselect
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvChip
 import com.filmax.core.tv.designsystem.TvFocusCard
@@ -122,6 +123,7 @@ fun TvCatalogScreen(
     screenModel: SearchScreenModel = koinViewModel(),
 ) {
     val state by screenModel.collectAsState()
+    RefreshOnTopNavReselect { screenModel.dispatch(SearchEvent.Refresh) }
     val focus = rememberTvScreenFocus(startAt = SEARCH_KEY)
     val listState = rememberLazyListState()
 

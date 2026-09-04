@@ -34,7 +34,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CreateNewFolder
@@ -67,6 +66,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -83,6 +83,7 @@ import com.filmax.core.tv.designsystem.TvAccent
 import com.filmax.core.tv.designsystem.TvButton
 import com.filmax.core.tv.designsystem.TvCardSize
 import com.filmax.core.tv.designsystem.TvChip
+import com.filmax.core.tv.designsystem.TvError
 import com.filmax.core.tv.designsystem.TvFocusCard
 import com.filmax.core.tv.designsystem.TvMetaRow
 import com.filmax.core.tv.designsystem.TvMetrics
@@ -178,19 +179,18 @@ fun TvDetailsScreen(
                 item = item,
                 similar = state.similar,
                 cast = state.cast,
-                isFav = state.isFav,
                 continuation = state.continuation,
                 bookmarkFolders = state.bookmarkFolders,
+                folderMemberships = state.folderMemberships,
                 actions = DetailsActions(
                     onPlay = { season, videoId, resumePositionSeconds ->
                         nav.onPlay(item.id, season, videoId, resumePositionSeconds)
                     },
-                    onToggleFav = { screenModel.dispatch(DetailsEvent.ToggleFav) },
                     onToggleWatching = { screenModel.dispatch(DetailsEvent.ToggleWatching) },
                     onOpenItem = nav.onOpenItem,
                     onOpenPerson = nav.onOpenPerson,
                     onPlayTrailer = nav.onPlayTrailer,
-                    onAddToFolder = { folderId -> screenModel.dispatch(DetailsEvent.AddToFolder(folderId)) },
+                    onToggleFolder = { folder -> screenModel.dispatch(DetailsEvent.ToggleFolder(folder)) },
                     onCreateFolder = { title -> screenModel.dispatch(DetailsEvent.CreateFolderAndAdd(title)) },
                 ),
             )
@@ -215,14 +215,13 @@ data class TvDetailsNav(
 private data class DetailsActions(
     /** [season] ≤ 0 — фильм/сезон неизвестен; номер видео уникален только внутри сезона. */
     val onPlay: (season: Int, videoId: Int, resumePositionSeconds: Int) -> Unit,
-    val onToggleFav: () -> Unit,
-    /** «Я смотрю» — отдельная от «Буду смотреть» пометка, без читаемого состояния (см. DetailsEvent). */
+    /** «Я смотрю» — отдельная от подборок пометка, без читаемого состояния (см. DetailsEvent). */
     val onToggleWatching: () -> Unit,
     val onOpenItem: (Int) -> Unit,
     val onOpenPerson: (name: String, isDirector: Boolean) -> Unit,
     val onPlayTrailer: (url: String, title: String) -> Unit,
-    /** Добавить тайтл в конкретную подборку — отдельно от «Буду смотреть». */
-    val onAddToFolder: (folderId: Int) -> Unit,
+    /** Добавить тайтл в подборку или убрать из неё — состояние решает сам экран. */
+    val onToggleFolder: (BookmarkFolder) -> Unit,
     /** Создать подборку и сразу занести в неё тайтл — из того же диалога выбора. */
     val onCreateFolder: (title: String) -> Unit,
 )
@@ -236,9 +235,9 @@ private fun DetailsContent(
     item: Item,
     similar: List<Item>,
     cast: List<CastMember>,
-    isFav: Boolean,
     continuation: Continuation?,
     bookmarkFolders: List<BookmarkFolder>,
+    folderMemberships: Set<Int>,
     actions: DetailsActions,
 ) {
     val folderPicker = remember { TvFolderPickerUi() }
@@ -288,7 +287,7 @@ private fun DetailsContent(
                 DetailsHero(
                     item = item,
                     series = series,
-                    isFav = isFav,
+                    hasAnyFolder = folderMemberships.isNotEmpty(),
                     playback = HeroPlayback(
                         playModifier = focus.item(HERO_PLAY_KEY),
                         // Фильм играется целиком (videoId = -1), сериал — конкретной серией. Сериал
@@ -310,7 +309,6 @@ private fun DetailsContent(
                                 }
                             }
                         },
-                        onToggleFav = actions.onToggleFav,
                         onOpenFolderPicker = { folderPicker.pickerOpen = true },
                         onToggleWatching = actions.onToggleWatching,
                         onHeroFocusChanged = onHeroFocusChanged,
@@ -330,7 +328,8 @@ private fun DetailsContent(
     TvFolderPickerHost(
         ui = folderPicker,
         folders = bookmarkFolders,
-        onSelectFolder = { folder -> actions.onAddToFolder(folder.id) },
+        memberships = folderMemberships,
+        onSelectFolder = { folder -> actions.onToggleFolder(folder) },
         onCreateFolder = { title -> actions.onCreateFolder(title) },
     )
 }
@@ -430,8 +429,7 @@ private fun LazyListScope.detailsSections(
 private data class HeroPlayback(
     val playModifier: Modifier,
     val onPlay: () -> Unit,
-    val onToggleFav: () -> Unit,
-    /** Открыть выбор подборки — кнопка-шеврон рядом с «Буду смотреть». */
+    /** Открыть диалог выбора подборки — единственная кнопка «Добавить в подборку» / «В подборках». */
     val onOpenFolderPicker: () -> Unit,
     /** «Я смотрю» — отдельная пометка тайтла, см. [DetailsActions.onToggleWatching]. */
     val onToggleWatching: () -> Unit,
@@ -452,7 +450,7 @@ private data class HeroPlayback(
 private fun DetailsHero(
     item: Item,
     series: SeriesData?,
-    isFav: Boolean,
+    hasAnyFolder: Boolean,
     playback: HeroPlayback,
 ) {
     Box(
@@ -488,7 +486,7 @@ private fun DetailsHero(
             )
             RatingsRow(rating = item.rating, modifier = Modifier.padding(top = 9.dp))
             HeroButtons(
-                isFav = isFav,
+                hasAnyFolder = hasAnyFolder,
                 resume = series?.resume,
                 playback = playback,
                 modifier = Modifier.padding(top = 18.dp),
@@ -522,7 +520,7 @@ private fun heroScrims(): List<Brush> = remember {
 
 @Composable
 private fun HeroButtons(
-    isFav: Boolean,
+    hasAnyFolder: Boolean,
     resume: MediaTrack?,
     playback: HeroPlayback,
     modifier: Modifier = Modifier,
@@ -538,19 +536,18 @@ private fun HeroButtons(
             leadingIcon = Icons.Filled.PlayArrow,
             modifier = playback.playModifier,
         )
-        // «Буду смотреть» — быстрое действие в один клик; шеврон рядом — выбор ЛЮБОЙ другой
-        // подборки, отдельным диалогом. Сгруппированы узким зазором — читаются одной кнопкой.
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-            TvButton(
-                text = if (isFav) "В списке" else "Буду смотреть",
-                onClick = playback.onToggleFav,
-                primary = false,
-                leadingIcon = if (isFav) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-            )
-            TvFolderPickerButton(onClick = playback.onOpenFolderPicker)
-        }
-        // Отдельная от «Буду смотреть» пометка (см. DetailsEvent.ToggleWatching): у неё нет
-        // читаемого состояния тайтла целиком, поэтому кнопка — одноразовое действие, не тумблер.
+        // Единственная кнопка подборок: тайтл либо нигде не сохранён, либо уже в одной или
+        // нескольких (включая «Буду смотреть» — для сервера это обычная подборка). Красная
+        // заливка иконки — сигнал «уже добавлено», клик всегда открывает диалог выбора.
+        TvButton(
+            text = if (hasAnyFolder) "В подборках" else "Добавить в подборку",
+            onClick = playback.onOpenFolderPicker,
+            primary = false,
+            leadingIcon = if (hasAnyFolder) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+            leadingIconTint = if (hasAnyFolder) TvError else null,
+        )
+        // Отдельная от подборок пометка (см. DetailsEvent.ToggleWatching): у неё нет читаемого
+        // состояния тайтла целиком, поэтому кнопка — одноразовое действие, не тумблер.
         TvButton(
             text = "Я смотрю",
             onClick = playback.onToggleWatching,
@@ -567,33 +564,6 @@ private fun HeroButtons(
         }
     }
 }
-
-/** Кнопка-шеврон рядом с «Буду смотреть»: открывает выбор конкретной подборки. */
-@Composable
-private fun TvFolderPickerButton(onClick: () -> Unit) {
-    TvFocusCard(
-        onClick = onClick,
-        shape = TvMetrics.ButtonShape,
-        modifier = Modifier.size(FolderPickerButtonSize),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(TvMetrics.ButtonShape)
-                .background(TvSurfaceContainerHigh),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Filled.ArrowDropDown,
-                contentDescription = "Выбрать подборку",
-                tint = TvOnSurface,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-    }
-}
-
-private val FolderPickerButtonSize = 44.dp
 
 /**
  * КП и IMDb показываем РАЗДЕЛЬНО: `rating.external` усредняет их, а расхождение оценок — это
@@ -922,7 +892,7 @@ private fun EpisodeThumb(url: String, episode: MediaTrack, isResume: Boolean, mo
 
 // ─────────────────────────── Выбор подборки ──────────────────────────────
 
-/** Стейт диалогов выбора подборки: живёт в [DetailsContent], меняется кнопкой-шевроном и диалогами. */
+/** Стейт диалогов выбора подборки: живёт в [DetailsContent], меняется кнопкой подборок и диалогами. */
 @Stable
 private class TvFolderPickerUi {
     var pickerOpen by mutableStateOf(false)
@@ -934,12 +904,14 @@ private class TvFolderPickerUi {
 private fun TvFolderPickerHost(
     ui: TvFolderPickerUi,
     folders: List<BookmarkFolder>,
+    memberships: Set<Int>,
     onSelectFolder: (BookmarkFolder) -> Unit,
     onCreateFolder: (String) -> Unit,
 ) {
     if (ui.pickerOpen) {
         TvFolderPickerDialog(
             folders = folders,
+            memberships = memberships,
             onSelectFolder = { folder ->
                 onSelectFolder(folder)
                 ui.pickerOpen = false
@@ -963,13 +935,15 @@ private fun TvFolderPickerHost(
 }
 
 /**
- * Список подборок для добавления тайтла. «Буду смотреть» сюда не входит — она добавляется
- * основной кнопкой в один клик, этот диалог — про любую ДРУГУЮ подборку. «Новая подборка»
- * всегда последней строкой, даже если подборок ещё нет вовсе.
+ * Список ВСЕХ подборок пользователя, включая «Буду смотреть» — единая точка выбора, куда
+ * добавить тайтл или откуда его убрать. Уже содержащие тайтл подборки отмечены красной залитой
+ * иконкой закладки, остальные — белым контуром. «Новая подборка» всегда последней строкой, даже
+ * если подборок ещё нет вовсе.
  */
 @Composable
 private fun TvFolderPickerDialog(
     folders: List<BookmarkFolder>,
+    memberships: Set<Int>,
     onSelectFolder: (BookmarkFolder) -> Unit,
     onNewFolder: () -> Unit,
     onDismiss: () -> Unit,
@@ -988,10 +962,12 @@ private fun TvFolderPickerDialog(
             Spacer(Modifier.height(18.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 folders.forEachIndexed { index, folder ->
+                    val inFolder = folder.id in memberships
                     TvFolderPickerRow(
                         title = folder.title,
                         subtitle = bookmarkCountLabel(folder.count),
-                        icon = Icons.Filled.Bookmark,
+                        icon = if (inFolder) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                        iconTint = if (inFolder) TvError else TvOnSurface,
                         focusRequester = if (index == 0) firstRowFocus else null,
                         onClick = { onSelectFolder(folder) },
                     )
@@ -1000,6 +976,7 @@ private fun TvFolderPickerDialog(
                     title = "Новая подборка",
                     subtitle = null,
                     icon = Icons.Filled.CreateNewFolder,
+                    iconTint = TvOnSurface,
                     focusRequester = if (folders.isEmpty()) firstRowFocus else null,
                     onClick = onNewFolder,
                 )
@@ -1008,12 +985,13 @@ private fun TvFolderPickerDialog(
     }
 }
 
-/** Строка диалога: иконка, название подборки, счётчик тайтлов (для новой подборки — без него). */
+/** Строка диалога: иконка (белый контур — не добавлено, красная заливка — уже в подборке), название, счётчик. */
 @Composable
 private fun TvFolderPickerRow(
     title: String,
     subtitle: String?,
     icon: ImageVector,
+    iconTint: Color,
     focusRequester: FocusRequester?,
     onClick: () -> Unit,
 ) {
@@ -1032,7 +1010,7 @@ private fun TvFolderPickerRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(icon, contentDescription = null, tint = TvOnSurface, modifier = Modifier.size(20.dp))
+            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     title,

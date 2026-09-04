@@ -38,6 +38,7 @@ import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.watching.model.Continuation
+import com.filmax.core.tv.designsystem.RefreshOnTopNavReselect
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvAccent
 import com.filmax.core.tv.designsystem.TvButton
@@ -83,6 +84,7 @@ fun TvHomeScreen(
     screenModel: HomeScreenModel = koinViewModel(),
 ) {
     val state by screenModel.collectAsState()
+    RefreshOnTopNavReselect { screenModel.dispatch(HomeEvent.Load) }
     val offline by screenModel.collectOfflineBannerAsState()
     val appError by screenModel.collectErrorAsState()
 

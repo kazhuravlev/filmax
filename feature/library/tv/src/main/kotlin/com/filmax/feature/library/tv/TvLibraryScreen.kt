@@ -61,6 +61,7 @@ import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.model.Continuation
 import com.filmax.core.domain.watching.model.WatchHistory
+import com.filmax.core.tv.designsystem.RefreshOnTopNavReselect
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvAccent
 import com.filmax.core.tv.designsystem.TvButton
@@ -142,6 +143,7 @@ fun TvLibraryScreen(
     screenModel: LibraryScreenModel = koinViewModel(),
 ) {
     val state by screenModel.collectAsState()
+    RefreshOnTopNavReselect { screenModel.dispatch(LibraryEvent.Refresh(section)) }
     var segment by rememberSaveable(section) { mutableStateOf(section.initialSegment) }
     val ui = remember { TvBookmarkUi() }
 

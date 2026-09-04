@@ -50,6 +50,12 @@ import kotlin.reflect.KClass
 /** Вкладка верхнего таб-бара: ярлык + маршрут + проверка активности. */
 private data class TvTab(val label: String, val route: Any, val match: (NavDestination?) -> Boolean)
 
+/** Действия таб-бара объединены, чтобы его Compose API оставался компактным. */
+internal data class TvTopNavBarActions(
+    val onSelectTab: (route: Any) -> Unit,
+    val onReselectActiveTab: () -> Unit,
+)
+
 /**
  * Разделы верхней навигации. «Поиск» уехал внутрь «Каталога» (печатать пультом дорого — каталог даёт
  * способ найти фильм вообще без набора текста), а личное содержимое разделено на «Я смотрю» и
@@ -89,7 +95,7 @@ internal data class TvTopNavBarFocus(
 @Composable
 internal fun TvTopNavBar(
     currentDestination: NavDestination?,
-    onSelectTab: (route: Any) -> Unit,
+    actions: TvTopNavBarActions,
     focus: TvTopNavBarFocus,
     initials: String,
     modifier: Modifier = Modifier,
@@ -118,7 +124,8 @@ internal fun TvTopNavBar(
             contentFocus = focus.content,
             // Раздел открывается сразу по фокусу, без задержек и без OK: на пульте лишнее
             // нажатие на каждый переход — половина всей навигации по приложению.
-            onTabFocused = { index -> if (index != activeIndex) onSelectTab(TABS[index].route) },
+            onTabFocused = { index -> if (index != activeIndex) actions.onSelectTab(TABS[index].route) },
+            onActiveTabClick = actions.onReselectActiveTab,
         )
         Spacer(Modifier.weight(1f))
         TvAvatar(initials = initials)
@@ -146,15 +153,18 @@ private fun TvNavTabs(
     tabFocusRequesters: List<FocusRequester>,
     contentFocus: FocusRequester,
     onTabFocused: (index: Int) -> Unit,
+    onActiveTabClick: () -> Unit,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         TABS.forEachIndexed { index, tab ->
             NavTab(
                 label = tab.label,
                 active = index == activeIndex,
-                // Переключение разделов — по фокусу, мгновенно. OK на вкладке не делает ничего:
-                // клика в этом флоу нет. Зайти в контент раздела — «вниз» (focusProperties.down).
-                onClick = {},
+                // Переключение разделов остаётся мгновенным по фокусу. OK по уже активной
+                // вкладке обновляет её данные; «вниз» переводит фокус в контент.
+                onClick = {
+                    if (index == activeIndex) onActiveTabClick() else onTabFocused(index)
+                },
                 modifier = Modifier
                     .focusRequester(tabFocusRequesters[index])
                     .onFocusChanged { if (it.isFocused) onTabFocused(index) }

@@ -128,6 +128,7 @@ class SearchScreenModel(
             }
 
             SearchEvent.LoadCatalog -> onLoadCatalog()
+            SearchEvent.Refresh -> screenModelScope { _ -> reload() }
             SearchEvent.LoadMoreCatalog -> onLoadMoreCatalog()
         }
     }

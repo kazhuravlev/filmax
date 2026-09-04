@@ -16,27 +16,30 @@ data class DetailsState(
      * недоступны (нет ключа TMDB, нет совпадения по IMDb, сбой): экран падает на строку `item.cast`.
      */
     val cast: List<CastMember> = emptyList(),
-    val isFav: Boolean = false,
     val isDownloaded: Boolean = false,
-    /** Подборки пользователя — для выбора, куда добавить тайтл, кроме «Буду смотреть». */
+    /** Все подборки пользователя, включая «Буду смотреть» — единый список для диалога выбора. */
     val bookmarkFolders: List<BookmarkFolder> = emptyList(),
+    /** Id подборок из [bookmarkFolders], в которые уже добавлен текущий тайтл. */
+    val folderMemberships: Set<Int> = emptySet(),
     val error: String? = null,
 )
 
 sealed interface DetailsEvent {
-    data object ToggleFav : DetailsEvent
     data object ToggleDownload : DetailsEvent
 
     /**
-     * Отметить тайтл как «Я смотрю» — отдельная от «Буду смотреть» и от подборок серверная
-     * пометка (`watching/toggle`). У неё нет читаемого состояния «включено/выключено» на уровне
-     * тайтла (сервер отдаёт статус только по конкретной серии), поэтому это одноразовое
-     * действие, а не переключатель.
+     * Отметить тайтл как «Я смотрю» — отдельная от подборок серверная пометка (`watching/toggle`).
+     * У неё нет читаемого состояния «включено/выключено» на уровне тайтла (сервер отдаёт статус
+     * только по конкретной серии), поэтому это одноразовое действие, а не переключатель.
      */
     data object ToggleWatching : DetailsEvent
 
-    /** Добавить текущий тайтл в существующую подборку. */
-    data class AddToFolder(val folderId: Int) : DetailsEvent
+    /**
+     * Добавить тайтл в подборку, если его там ещё нет, иначе убрать — состояние читается из
+     * [DetailsState.folderMemberships]. Один и тот же диалог одинаково работает и для «Буду
+     * смотреть», и для любой пользовательской подборки.
+     */
+    data class ToggleFolder(val folder: BookmarkFolder) : DetailsEvent
 
     /** Создать новую подборку и сразу добавить в неё текущий тайтл. */
     data class CreateFolderAndAdd(val title: String) : DetailsEvent

@@ -1,6 +1,7 @@
 package com.filmax.feature.library.common
 
 import com.filmax.core.domain.catalog.model.ItemPage
+import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.firstErrorMessage
 import com.filmax.core.domain.common.getOrNull
 import com.filmax.core.domain.favorites.FavoritesRepository
@@ -38,6 +39,7 @@ class LibraryScreenModel(
 
     override fun dispatch(event: LibraryEvent) {
         when (event) {
+            is LibraryEvent.Refresh -> refresh(event.section)
             is LibraryEvent.RemoveFromHistory -> removeFromHistory(event.itemId)
             LibraryEvent.ClearHistory -> clearHistory()
             is LibraryEvent.OpenFolder -> openFolder(event.folder)
@@ -48,6 +50,88 @@ class LibraryScreenModel(
             is LibraryEvent.DeleteFolder -> deleteFolder(event.folderId)
             is LibraryEvent.RemoveItemFromFolder ->
                 removeItemFromFolder(event.itemId, event.folderId)
+        }
+    }
+
+    private fun refresh(section: LibrarySection) {
+        when (section) {
+            LibrarySection.WATCHING -> refreshWatching()
+            LibrarySection.BOOKMARKS -> refreshBookmarks()
+        }
+    }
+
+    private fun refreshWatching() {
+        screenModelScope {
+            updateState { it.copy(loading = true, error = null) }
+            val history = watching.getHistory()
+            val resolvedContinuations = history.getOrNull()
+                ?.let { continuations.resolve(it) }
+                ?.filter { it.isActualContinuation }
+                .orEmpty()
+            updateState {
+                it.copy(
+                    loading = false,
+                    history = history.getOrNull().orEmpty(),
+                    continuations = resolvedContinuations,
+                    error = firstErrorMessage(history),
+                )
+            }
+        }
+    }
+
+    private fun refreshBookmarks() {
+        val openedFolder = state.openFolder?.folder
+        screenModelScope {
+            updateState { current ->
+                current.copy(
+                    loading = openedFolder == null,
+                    error = null,
+                    folderPreviews = emptyMap(),
+                    loadingFolderPreviews = emptySet(),
+                    openFolder = current.openFolder?.copy(
+                        loading = true,
+                        loadingMore = false,
+                        error = null,
+                    ),
+                )
+            }
+            val foldersResult = user.getBookmarkFolders()
+            val itemsResult = openedFolder?.let { user.getBookmarkItems(it.id) }
+            applyRefreshedBookmarks(openedFolder, foldersResult, itemsResult)
+        }
+    }
+
+    private suspend fun applyRefreshedBookmarks(
+        openedFolder: BookmarkFolder?,
+        foldersResult: RequestResult<List<BookmarkFolder>>,
+        itemsResult: RequestResult<ItemPage>?,
+    ) {
+        val folders = foldersResult.getOrNull()
+        val refreshedPage = itemsResult?.getOrNull()
+        val error = if (itemsResult == null) {
+            firstErrorMessage(foldersResult)
+        } else {
+            firstErrorMessage(foldersResult, itemsResult)
+        }
+        updateState { current ->
+            val refreshedFolder = openedFolder?.let { opened ->
+                folders?.firstOrNull { it.id == opened.id } ?: opened.takeIf { folders == null }
+            }
+            val refreshedOpen = refreshedFolder?.let { folder ->
+                refreshedPage?.toFolderPreview()?.toOpenFolder(folder)
+                    ?: current.openFolder?.copy(folder = folder, loading = false, error = error)
+            }
+            current.copy(
+                loading = false,
+                lists = folders ?: current.lists,
+                folderPreviews = if (refreshedFolder != null && refreshedPage != null) {
+                    mapOf(refreshedFolder.id to refreshedPage.toFolderPreview())
+                } else {
+                    emptyMap()
+                },
+                openFolder = refreshedOpen,
+                error = error,
+            )
         }
     }
 
@@ -95,7 +179,14 @@ class LibraryScreenModel(
         }
     }
 
-    /** Открывает подборку и грузит первую страницу её содержимого. */
+    /**
+     * Открывает подборку и грузит первую страницу её содержимого.
+     *
+     * Кэшированное превью (если есть) используем только как мгновенную картинку вместо пустого
+     * экрана на время запроса — не как повод пропустить запрос вовсе. Подборку могли изменить
+     * с другого экрана (например, добавить тайтл из деталей), поэтому при каждом реальном
+     * открытии подборки список пересобираем с сервера заново.
+     */
     private fun openFolder(folder: BookmarkFolder) {
         val preview = state.folderPreviews[folder.id]
         val previewLoading = folder.id in state.loadingFolderPreviews
@@ -103,16 +194,11 @@ class LibraryScreenModel(
             updateState { current ->
                 current.copy(
                     openFolder = preview?.toOpenFolder(folder) ?: OpenBookmarkFolder(folder = folder),
-                    loadingFolderPreviews = if (preview == null) {
-                        current.loadingFolderPreviews + folder.id
-                    } else {
-                        current.loadingFolderPreviews
-                    },
+                    loadingFolderPreviews = current.loadingFolderPreviews + folder.id,
                 )
             }
-            // Видимая плитка могла уже начать загрузку превью. Ждём тот же запрос,
-            // чтобы не получить две разные страницы и не задублировать сетевой вызов.
-            if (preview != null || previewLoading) return@screenModelScope
+            // В полёте уже может быть тот же запрос — от видимой плитки. Ждём его, а не дублируем.
+            if (previewLoading) return@screenModelScope
             val result = user.getBookmarkItems(folder.id)
             val itemPage = result.getOrNull()
             updateState { current ->
@@ -143,7 +229,9 @@ class LibraryScreenModel(
         if (folder.count == 0 ||
             folder.id in state.folderPreviews ||
             folder.id in state.loadingFolderPreviews
-        ) return
+        ) {
+            return
+        }
 
         screenModelScope { _ ->
             updateState { current ->
@@ -248,9 +336,8 @@ class LibraryScreenModel(
                 current.copy(
                     openFolder = open.copy(items = open.items.filter { it.id != itemId }),
                     folderPreviews = if (preview != null) {
-                        current.folderPreviews + (
-                            folderId to preview.copy(items = preview.items.filter { it.id != itemId })
-                        )
+                        val trimmed = preview.copy(items = preview.items.filter { it.id != itemId })
+                        current.folderPreviews + (folderId to trimmed)
                     } else {
                         current.folderPreviews
                     },

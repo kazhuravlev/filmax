@@ -10,8 +10,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -40,6 +40,7 @@ import com.filmax.app.navigation.RootScreenModel
 import com.filmax.app.navigation.navFadeIn
 import com.filmax.app.navigation.navFadeOut
 import com.filmax.core.tv.designsystem.LocalTvNavBarFocused
+import com.filmax.core.tv.designsystem.LocalTvRefreshRequests
 import com.filmax.core.tv.designsystem.LocalTvScrollToTop
 import com.filmax.core.tv.designsystem.TvMetrics
 import com.filmax.core.tv.designsystem.TvOnSurface
@@ -64,12 +65,16 @@ import com.filmax.feature.search.common.navigation.FilmographyRoute
 import com.filmax.feature.search.tv.navigation.tvFilmographyScreen
 import com.filmax.feature.search.tv.navigation.tvSearchScreen
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.serialization.Serializable
 import org.koin.androidx.compose.koinViewModel
 
 @Serializable
 private object TvSplashRoute
 
+// Корневой composable намеренно оркестрирует auth, back, focus, tab navigation и общие
+// CompositionLocal-сигналы в одном месте: разносить связанное состояние по владельцам рискованнее.
+@Suppress("LongMethod")
 @Composable
 fun FilmaxTvNavGraph(
     onCheckUpdates: () -> Unit,
@@ -124,6 +129,10 @@ fun FilmaxTvNavGraph(
     // через LocalTvScrollToTop и скроллят свой контейнер вверх, чтобы он не «застревал» внизу.
     var scrollToTopSignal by remember { mutableIntStateOf(0) }
 
+    // Без replay: обновляется только экран, который сейчас жив и выбран. При последующем
+    // переходе на другую вкладку старый клик не должен запускать у неё лишний запрос.
+    val refreshRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+
     // Переход по вкладкам: единственный экземпляр + сохранение/восстановление состояния.
     // Попап — до TvHomeRoute, реального корня вкладок: стартовый destination графа — сплэш,
     // которого после логина нет в стеке (popUpTo{inclusive}), и попап по нему молча не
@@ -145,6 +154,7 @@ fun FilmaxTvNavGraph(
         CompositionLocalProvider(
             LocalTvScrollToTop provides scrollToTopSignal,
             LocalTvNavBarFocused provides navBarFocused,
+            LocalTvRefreshRequests provides refreshRequests,
         ) {
             NavHost(
                 navController = navController,
@@ -166,7 +176,10 @@ fun FilmaxTvNavGraph(
         if (showTopBar) {
             TvTopNavBar(
                 currentDestination = currentDest,
-                onSelectTab = { navigateTab(it) },
+                actions = TvTopNavBarActions(
+                    onSelectTab = { navigateTab(it) },
+                    onReselectActiveTab = { refreshRequests.tryEmit(Unit) },
+                ),
                 focus = TvTopNavBarFocus(navBar = navBarFocus, content = contentFocus),
                 initials = rootState.initials,
                 // Любой заход фокуса в шапку (с контента или стартовый) — повод увести контент вверх.

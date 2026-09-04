@@ -54,6 +54,8 @@ data class LibraryState(
 )
 
 sealed interface LibraryEvent {
+    /** Повторный выбор активной вкладки: перечитать данные только её раздела. */
+    data class Refresh(val section: LibrarySection) : LibraryEvent
     data class RemoveFromHistory(val itemId: Int) : LibraryEvent
     data object ClearHistory : LibraryEvent
     data class OpenFolder(val folder: BookmarkFolder) : LibraryEvent

@@ -35,6 +35,7 @@ import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
+import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 
@@ -52,6 +53,8 @@ fun TvButton(
     modifier: Modifier = Modifier,
     primary: Boolean = true,
     leadingIcon: ImageVector? = null,
+    /** null — иконка красится в контентный цвет кнопки, как обычно (моно-акцент проекта). */
+    leadingIconTint: Color? = null,
     focusRequester: FocusRequester? = null,
 ) {
     val colors = if (primary) {
@@ -89,7 +92,12 @@ fun TvButton(
             horizontalArrangement = Arrangement.spacedBy(9.dp),
         ) {
             if (leadingIcon != null) {
-                Icon(leadingIcon, contentDescription = null, modifier = Modifier.size(20.dp))
+                Icon(
+                    leadingIcon,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = leadingIconTint ?: LocalContentColor.current,
+                )
             }
             Text(
                 text,

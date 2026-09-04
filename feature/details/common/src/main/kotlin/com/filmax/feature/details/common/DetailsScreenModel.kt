@@ -11,10 +11,14 @@ import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.favorites.model.toFavoriteItem
 import com.filmax.core.domain.person.CastRepository
 import com.filmax.core.domain.user.UserRepository
+import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.domain.watching.model.calculateContinuation
 import com.filmax.core.presentation.BaseScreenModel
 import com.filmax.feature.details.common.navigation.DetailsRoute
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 // Экран деталей сводит воспроизведение, избранное, загрузки и подборки в одной модели —
 // дробить её ради лимитов нельзя: состояние и обработчики читаются только вместе.
@@ -31,19 +35,23 @@ class DetailsScreenModel(
 
     private val route = savedStateHandle.toRoute<DetailsRoute>()
 
+    /** Кэш реактивного флага «Буду смотреть» — не требует скана страниц, в отличие от прочих подборок. */
+    private var isFav = false
+
+    /** Id обычных подборок (без «Буду смотреть»), в которых найден тайтл — см. [scanMemberships]. */
+    private var scannedMemberships: Set<Int> = emptySet()
+
     init {
         onFetchData()
         observeDownloadState()
         observeFavoriteState()
-        loadBookmarkFolders()
     }
 
     override fun dispatch(event: DetailsEvent) {
         when (event) {
-            DetailsEvent.ToggleFav -> toggleFav()
             DetailsEvent.ToggleDownload -> toggleDownload()
             DetailsEvent.ToggleWatching -> toggleWatching()
-            is DetailsEvent.AddToFolder -> addToFolder(event.folderId)
+            is DetailsEvent.ToggleFolder -> toggleFolder(event.folder)
             is DetailsEvent.CreateFolderAndAdd -> createFolderAndAdd(event.title)
         }
     }
@@ -68,6 +76,9 @@ class DetailsScreenModel(
                         favorites.add(itemResult.data.toFavoriteItem())
                     }
                     loadCast(itemResult.data.imdbId)
+                    // Подборки грузим только теперь: скан принадлежности (см. scanMemberships)
+                    // читает state.item, который до этого момента ещё null.
+                    reloadBookmarkFolders()
                 }
 
                 is RequestResult.Error -> {
@@ -102,17 +113,9 @@ class DetailsScreenModel(
     private fun observeFavoriteState() {
         screenModelScope {
             favorites.isFavorite(route.itemId).collect { favorite ->
-                updateState { it.copy(isFav = favorite) }
+                isFav = favorite
+                updateFolderMemberships()
             }
-        }
-    }
-
-    private fun toggleFav() {
-        val item = state.item ?: return
-        screenModelScope {
-            // Локальный кэш — источник состояния сердечка; сервер синхронизируем best-effort.
-            favorites.toggle(item.toFavoriteItem())
-            watching.toggleWatchlist(route.itemId)
         }
     }
 
@@ -141,24 +144,31 @@ class DetailsScreenModel(
         }
     }
 
-    private fun loadBookmarkFolders() {
-        screenModelScope { reloadBookmarkFolders() }
-    }
-
     /**
-     * Добавляет тайтл в выбранную подборку — независимо от «Буду смотреть».
-     *
-     * Сервер не проверяет уникальность в `bookmarks/{id}`: повторный клик по той же подборке
-     * создавал бы там второй экземпляр тайтла. Проверяем несколько первых страниц перед
-     * добавлением — тот же компромисс глубины сканирования, что и в
-     * `FavoritesRepositoryImpl.refresh` ([FOLDER_SCAN_MAX_PAGES]), не полный обход ради клика.
+     * Добавляет или убирает тайтл из подборки — один и тот же диалог для «Буду смотреть» и для
+     * любой другой подборки. «Буду смотреть» распознаём по названию (как и [FavoritesRepository]
+     * внутри себя) и ведём через него же, чтобы не разъезжались локальный кэш и `in_watchlist` на
+     * сервере. Остальные подборки — напрямую через [UserRepository].
      */
-    private fun addToFolder(folderId: Int) {
+    private fun toggleFolder(folder: BookmarkFolder) {
         val item = state.item ?: return
-        screenModelScope {
-            if (!folderContainsItem(folderId, item.id)) {
-                user.addToBookmark(item.id, folderId)
+        if (folder.title == FAVORITES_FOLDER_TITLE) {
+            screenModelScope {
+                favorites.toggle(item.toFavoriteItem())
+                watching.toggleWatchlist(route.itemId)
             }
+            return
+        }
+        val alreadyIn = folder.id in scannedMemberships
+        screenModelScope {
+            if (alreadyIn) {
+                user.removeFromBookmark(item.id, folder.id)
+                scannedMemberships = scannedMemberships - folder.id
+            } else {
+                user.addToBookmark(item.id, folder.id)
+                scannedMemberships = scannedMemberships + folder.id
+            }
+            updateFolderMemberships()
             reloadBookmarkFolders()
         }
     }
@@ -172,6 +182,8 @@ class DetailsScreenModel(
             // Свежесозданная подборка пуста — проверять уникальность здесь нечего.
             val created = user.createBookmarkFolder(trimmed).getOrNull() ?: return@screenModelScope
             user.addToBookmark(item.id, created.id)
+            scannedMemberships = scannedMemberships + created.id
+            updateFolderMemberships()
             reloadBookmarkFolders()
         }
     }
@@ -192,10 +204,33 @@ class DetailsScreenModel(
     private suspend fun reloadBookmarkFolders() {
         val folders = user.getBookmarkFolders().getOrNull() ?: return
         updateState { it.copy(bookmarkFolders = folders) }
+        scanMemberships(folders)
+    }
+
+    /**
+     * Принадлежность «Буду смотреть» уже известна реактивно ([isFav]) — сканируем только
+     * остальные подборки, по одной странице на каждую параллельно (см. [folderContainsItem]).
+     */
+    private suspend fun scanMemberships(folders: List<BookmarkFolder>) {
+        val item = state.item ?: return
+        val toScan = folders.filter { it.title != FAVORITES_FOLDER_TITLE }
+        scannedMemberships = coroutineScope {
+            toScan.map { folder -> async { folder.id to folderContainsItem(folder.id, item.id) } }.awaitAll()
+        }.filter { it.second }.map { it.first }.toSet()
+        updateFolderMemberships()
+    }
+
+    private suspend fun updateFolderMemberships() {
+        val favoritesFolderId = state.bookmarkFolders.firstOrNull { it.title == FAVORITES_FOLDER_TITLE }?.id
+        val memberships = scannedMemberships + listOfNotNull(favoritesFolderId.takeIf { isFav })
+        updateState { it.copy(folderMemberships = memberships) }
     }
 
     private companion object {
         /** Глубина сканирования подборки на дубликат перед добавлением — см. [folderContainsItem]. */
         const val FOLDER_SCAN_MAX_PAGES = 10
+
+        /** То же название, что и [FavoritesRepository] использует для поиска/создания своей подборки. */
+        const val FAVORITES_FOLDER_TITLE = "Буду смотреть"
     }
 }

@@ -72,6 +72,9 @@ sealed interface SearchEvent {
     /** Экран-витрина заявляет о себе: подтянуть жанры, страны и выдачу по текущим фильтрам. */
     data object LoadCatalog : SearchEvent
 
+    /** Повторный выбор активной вкладки: заново запросить текущую выдачу с сервера. */
+    data object Refresh : SearchEvent
+
     /** Догрузить следующую страницу витрины (триггерится при подходе скролла к концу сетки). */
     data object LoadMoreCatalog : SearchEvent
 }
