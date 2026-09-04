@@ -145,11 +145,20 @@ class DetailsScreenModel(
         screenModelScope { reloadBookmarkFolders() }
     }
 
-    /** Добавляет тайтл в выбранную подборку — независимо от «Буду смотреть». */
+    /**
+     * Добавляет тайтл в выбранную подборку — независимо от «Буду смотреть».
+     *
+     * Сервер не проверяет уникальность в `bookmarks/{id}`: повторный клик по той же подборке
+     * создавал бы там второй экземпляр тайтла. Проверяем несколько первых страниц перед
+     * добавлением — тот же компромисс глубины сканирования, что и в
+     * `FavoritesRepositoryImpl.refresh` ([FOLDER_SCAN_MAX_PAGES]), не полный обход ради клика.
+     */
     private fun addToFolder(folderId: Int) {
         val item = state.item ?: return
         screenModelScope {
-            user.addToBookmark(item.id, folderId)
+            if (!folderContainsItem(folderId, item.id)) {
+                user.addToBookmark(item.id, folderId)
+            }
             reloadBookmarkFolders()
         }
     }
@@ -160,14 +169,33 @@ class DetailsScreenModel(
         if (trimmed.isEmpty()) return
         val item = state.item ?: return
         screenModelScope {
+            // Свежесозданная подборка пуста — проверять уникальность здесь нечего.
             val created = user.createBookmarkFolder(trimmed).getOrNull() ?: return@screenModelScope
             user.addToBookmark(item.id, created.id)
             reloadBookmarkFolders()
         }
     }
 
+    private suspend fun folderContainsItem(folderId: Int, itemId: Int): Boolean {
+        var page = 1
+        var found = false
+        var hasMore = true
+        while (!found && hasMore && page <= FOLDER_SCAN_MAX_PAGES) {
+            val result = user.getBookmarkItems(folderId, page).getOrNull()
+            found = result?.items?.any { it.id == itemId } == true
+            hasMore = result?.pagination?.hasNextPage == true
+            page++
+        }
+        return found
+    }
+
     private suspend fun reloadBookmarkFolders() {
         val folders = user.getBookmarkFolders().getOrNull() ?: return
         updateState { it.copy(bookmarkFolders = folders) }
+    }
+
+    private companion object {
+        /** Глубина сканирования подборки на дубликат перед добавлением — см. [folderContainsItem]. */
+        const val FOLDER_SCAN_MAX_PAGES = 10
     }
 }
