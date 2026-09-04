@@ -56,6 +56,10 @@ object TvMetrics {
     val PosterWidth = 190.dp
     val PosterHeight = 285.dp
 
+    /** Постер 2:3 уменьшенный — «Я смотрю»: 5 в ряд вместо 4, та же пропорция 2:3. */
+    val CompactPosterWidth = 150.dp
+    val CompactPosterHeight = 225.dp
+
     /** Карточка 16:9 с прогрессом — «продолжить смотреть», история. */
     val ContinueWidth = 250.dp
     val ContinueHeight = 141.dp

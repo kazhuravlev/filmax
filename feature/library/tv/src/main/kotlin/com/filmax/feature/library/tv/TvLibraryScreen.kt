@@ -58,18 +58,18 @@ import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.model.Continuation
 import com.filmax.core.domain.watching.model.WatchHistory
-import com.filmax.core.domain.watching.model.WatchProgress
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvAccent
 import com.filmax.core.tv.designsystem.TvButton
 import com.filmax.core.tv.designsystem.TvChip
+import com.filmax.core.tv.designsystem.TvCountBadge
 import com.filmax.core.tv.designsystem.TvFocusCard
 import com.filmax.core.tv.designsystem.TvMetrics
 import com.filmax.core.tv.designsystem.TvOnSurface
 import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvOutlineVariant
 import com.filmax.core.tv.designsystem.TvPosterCard
-import com.filmax.core.tv.designsystem.TvProgressCard
+import com.filmax.core.tv.designsystem.TvRatingPill
 import com.filmax.core.tv.designsystem.TvScreenFocus
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
@@ -489,23 +489,26 @@ private fun ContinueWatchingCard(
     onOpenItem: (Int) -> Unit,
 ) {
     val unwatchedCount = continuation.item.tracklist.count { it.watchStatus != 1 }
+    val rating = ratingLabel(continuation.item.rating.external)
     TvPosterCard(
         title = continuation.title,
         meta = posterMeta(type = null, year = continuation.item.year),
         posterUrl = continuation.item.posters.medium.ifBlank { continuation.item.posters.small },
         onClick = { onOpenItem(continuation.itemId) },
         modifier = focus.item(returnKey),
-        rating = ratingLabel(continuation.item.rating.external),
+        width = TvMetrics.CompactPosterWidth,
+        height = TvMetrics.CompactPosterHeight,
+        // Рейтинг рисуем сами, вместе со счётчиком серий в одном ряду — иначе оба badge'а
+        // встали бы в один и тот же угол карточки и легли друг на друга.
         posterContent = { url, posterModifier ->
             Box(posterModifier) {
                 TvPoster(url, continuation.title, Modifier.fillMaxSize(), TvMetrics.PosterShape)
-                if (unwatchedCount > 0) {
-                    TvUnwatchedBadge(
-                        count = unwatchedCount,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp),
-                    )
+                Row(
+                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (rating != null) TvRatingPill(rating = rating)
+                    if (unwatchedCount > 0) TvCountBadge(count = unwatchedCount)
                 }
             }
         },
@@ -525,6 +528,8 @@ private fun HistoryWatchingCard(
         posterUrl = entry.posterSmall.orEmpty(),
         onClick = { onOpenItem(entry.itemId) },
         modifier = focus.item(returnKey),
+        width = TvMetrics.CompactPosterWidth,
+        height = TvMetrics.CompactPosterHeight,
         posterContent = { url, posterModifier ->
             TvPoster(url, entry.title, posterModifier, TvMetrics.PosterShape)
         },
@@ -673,24 +678,6 @@ private fun TvPoster(url: String, title: String, modifier: Modifier, shape: Shap
         shape = shape,
         accentColor = TvSurfaceContainerHighest,
     )
-}
-
-/** Счётчик непросмотренных серий в углу постера на TV. */
-@Composable
-private fun TvUnwatchedBadge(count: Int, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(TvAccent),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            count.toString(),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onPrimary,
-        )
-    }
 }
 
 // ── Диалоги закладок ──────────────────────────────────────────────────────
@@ -852,24 +839,10 @@ private fun LoadingBox(modifier: Modifier = Modifier) {
     }
 }
 
-/** Колонки сетки при ширине макета 960dp: постеры 190dp — вчетверо, карточки 16:9 250dp — втрое. */
+/** Колонки сетки при ширине макета 960dp: постеры 190dp — вчетверо, компактные 150dp — впятеро. */
 private fun columnsFor(segment: LibrarySegment, folderOpen: Boolean): Int = when (segment) {
-    LibrarySegment.CONTINUE, LibrarySegment.HISTORY -> WIDE_COLUMNS
+    LibrarySegment.CONTINUE, LibrarySegment.HISTORY -> LIBRARY_POSTER_COLUMNS
     LibrarySegment.BOOKMARKS -> if (folderOpen) POSTER_COLUMNS else FOLDER_COLUMNS
-}
-
-/** Мета карточки 16:9: сезон и остаток — то, ради чего на неё вообще смотрят. */
-private fun progressMeta(progress: WatchProgress?): String? {
-    if (progress == null) return null
-    val remaining = (progress.durationSeconds ?: 0) - (progress.timeSeconds ?: 0)
-    val parts = buildList {
-        progress.season?.let { season -> add("Сезон $season") }
-        when {
-            remaining >= SECONDS_IN_MINUTE -> add("Осталось ${remaining / SECONDS_IN_MINUTE} мин")
-            progress.fraction > 0f -> add("Просмотрено")
-        }
-    }
-    return parts.joinToString(" · ").ifBlank { null }
 }
 
 /**
@@ -890,14 +863,8 @@ private val FolderTileHeight = 130.dp
 private val DialogMaxWidth = 420.dp
 
 private const val POSTER_COLUMNS = 4
-private const val WIDE_COLUMNS = 3
+private const val LIBRARY_POSTER_COLUMNS = 5
 private const val FOLDER_COLUMNS = 3
-
-/** Фильм — единственный трек, эпизод выбирать не из чего: PlayerRoute.videoId = -1. */
-
-/** Доля просмотра, при которой тайтл считается начатым, но не досмотренным. */
-
-private const val SECONDS_IN_MINUTE = 60
 
 /** За сколько карточек до конца сетки просить следующую страницу папки (примерно ряд). */
 private const val LOAD_MORE_TAIL = 4

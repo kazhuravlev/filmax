@@ -2,14 +2,21 @@ package com.filmax.core.tv.designsystem
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +30,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -57,6 +65,8 @@ fun TvPosterCard(
     posterUrl: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    width: Dp = TvMetrics.PosterWidth,
+    height: Dp = TvMetrics.PosterHeight,
     rating: String? = null,
     focusRequester: FocusRequester? = null,
     posterContent: @Composable (url: String, modifier: Modifier) -> Unit,
@@ -66,7 +76,7 @@ fun TvPosterCard(
 
     Column(
         modifier = modifier
-            .width(TvMetrics.PosterWidth)
+            .width(width)
             .onFocusChanged { focused = it.hasFocus }
             .alpha(dim),
     ) {
@@ -74,7 +84,7 @@ fun TvPosterCard(
             onClick = onClick,
             shape = TvMetrics.PosterShape,
             focusRequester = focusRequester,
-            modifier = Modifier.size(width = TvMetrics.PosterWidth, height = TvMetrics.PosterHeight),
+            modifier = Modifier.size(width = width, height = height),
         ) {
             Box(Modifier.fillMaxSize().clip(TvMetrics.PosterShape)) {
                 posterContent(posterUrl, Modifier.fillMaxSize())
@@ -159,20 +169,56 @@ fun TvProgressBar(progress: Float, modifier: Modifier = Modifier) {
 
 /**
  * Пилюля рейтинга поверх постера. Полупрозрачная тёмная подложка вместо цветной: в монохроме
- * оценку не кодируем цветом — число говорит само.
+ * оценку не кодируем цветом — число говорит само. Звезда рядом с числом — иначе голая цифра
+ * в углу постера читается непонятно чем: рейтингом, годом, счётчиком.
  */
 @Composable
 fun TvRatingPill(rating: String, modifier: Modifier = Modifier) {
-    Box(
+    Row(
         modifier
             .clip(TvMetrics.PosterShape)
             .background(TvSurface.copy(alpha = 0.72f))
             .padding(horizontal = 9.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
+        Icon(
+            Icons.Filled.Star,
+            contentDescription = null,
+            tint = TvOnSurface,
+            modifier = Modifier.size(11.dp),
+        )
         Text(
             rating,
             style = MaterialTheme.typography.labelSmall,
             color = TvOnSurface,
+        )
+    }
+}
+
+/**
+ * Круглый бейдж-счётчик поверх постера — количество непросмотренных серий. Единственное
+ * цветное пятно интерфейса, наравне с ошибками ([TvError]): число, которое должно бросаться
+ * в глаза раньше, чем зритель успеет прочитать постер.
+ *
+ * Ставится РЯДОМ с [TvRatingPill] в одном ряду, а не поверх неё — иначе рейтинг и счётчик
+ * серий накладываются друг на друга и оба становятся нечитаемыми.
+ */
+@Composable
+fun TvCountBadge(count: Int, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .heightIn(min = 20.dp)
+            .clip(CircleShape)
+            .background(TvError)
+            .padding(horizontal = 7.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            count.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = TvSurface,
+            fontWeight = FontWeight.Bold,
         )
     }
 }
