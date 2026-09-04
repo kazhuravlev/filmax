@@ -271,6 +271,18 @@ fun posterMeta(type: String?, year: Int): String? {
 }
 
 /**
+ * Мета единой сетки тайтлов (каталог, подборка, «Продолжить», «История») — `год · жанр`,
+ * пропуская пустые части. Порядок обратный [posterMeta]: в этой сетке год важнее типа.
+ */
+fun gridPosterMeta(year: Int, genre: String?): String? {
+    val parts = buildList {
+        if (year > 0) add(year.toString())
+        if (!genre.isNullOrBlank()) add(genre)
+    }
+    return parts.joinToString(" · ").ifBlank { null }
+}
+
+/**
  * Оценка для пилюли и меты: в домене это строка вида «8.312», на экране нужен один знак.
  *
  * Ноль — это «оценки нет», а не «ноль баллов»: kino.watch отдаёт `0` для тайтлов без рейтинга,

@@ -92,6 +92,8 @@ private fun CollectionPoster(item: Item, modifier: Modifier, onClick: () -> Unit
         meta = posterMeta(item.type.label(), item.year),
         posterUrl = item.posters.medium.ifEmpty { item.posters.big },
         onClick = onClick,
+        width = TvMetrics.CompactPosterWidth,
+        height = TvMetrics.CompactPosterHeight,
         rating = ratingLabel(item.rating.external),
         modifier = modifier,
     ) { url, posterModifier ->

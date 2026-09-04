@@ -80,7 +80,7 @@ import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
-import com.filmax.core.tv.designsystem.posterMeta
+import com.filmax.core.tv.designsystem.gridPosterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
@@ -442,7 +442,7 @@ private fun LazyGridScope.folderPosters(
     items(openFolder.items, key = { it.id }) { item ->
         TvPosterCard(
             title = item.title,
-            meta = posterMeta(type = item.genres.firstOrNull()?.title, year = item.year),
+            meta = gridPosterMeta(year = item.year, genre = item.genres.firstOrNull()?.title),
             posterUrl = item.posters.medium.ifBlank { item.posters.small },
             // В режиме удаления карточка убирает тайтл (по подтверждению), иначе открывает детали.
             onClick = {
@@ -453,6 +453,8 @@ private fun LazyGridScope.folderPosters(
                 }
             },
             modifier = focus.item("folder:${item.id}"),
+            width = TvMetrics.CompactPosterWidth,
+            height = TvMetrics.CompactPosterHeight,
             rating = ratingLabel(item.rating.external),
             posterContent = { url, posterModifier ->
                 FolderPoster(url, item.title, posterModifier, removeMode = ui.removeMode)
@@ -481,6 +483,7 @@ private fun LazyGridScope.historySegment(
     items(state.history, key = { it.itemId }) { entry ->
         HistoryWatchingCard(
             entry = entry,
+            item = state.historyItems[entry.itemId],
             returnKey = "history:${entry.itemId}",
             focus = focus,
             onOpenItem = onOpenItem,
@@ -525,7 +528,10 @@ private fun ContinueWatchingCard(
     val rating = ratingLabel(continuation.item.rating.external)
     TvPosterCard(
         title = continuation.title,
-        meta = posterMeta(type = null, year = continuation.item.year),
+        meta = gridPosterMeta(
+            year = continuation.item.year,
+            genre = continuation.item.genres.firstOrNull()?.title,
+        ),
         posterUrl = continuation.item.posters.medium.ifBlank { continuation.item.posters.small },
         onClick = { onOpenItem(continuation.itemId) },
         modifier = focus.item(returnKey),
@@ -551,18 +557,22 @@ private fun ContinueWatchingCard(
 @Composable
 private fun HistoryWatchingCard(
     entry: WatchHistory,
+    item: Item?,
     returnKey: String,
     focus: TvScreenFocus,
     onOpenItem: (Int) -> Unit,
 ) {
     TvPosterCard(
         title = entry.title,
-        meta = null,
-        posterUrl = entry.posterSmall.orEmpty(),
+        // item — null, когда детали тайтла не доехали (см. LibraryState.historyItems): карточка
+        // остаётся кликабельной, просто без меты и рейтинга, а не пропадает из истории целиком.
+        meta = item?.let { gridPosterMeta(year = it.year, genre = it.genres.firstOrNull()?.title) },
+        posterUrl = item?.posters?.medium?.ifBlank { item.posters.small } ?: entry.posterSmall.orEmpty(),
         onClick = { onOpenItem(entry.itemId) },
         modifier = focus.item(returnKey),
         width = TvMetrics.CompactPosterWidth,
         height = TvMetrics.CompactPosterHeight,
+        rating = item?.let { ratingLabel(it.rating.external) },
         posterContent = { url, posterModifier ->
             TvPoster(url, entry.title, posterModifier, TvMetrics.PosterShape)
         },

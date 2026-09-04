@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -17,11 +16,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
@@ -73,11 +73,12 @@ import com.filmax.core.tv.designsystem.TvOnSurface
 import com.filmax.core.tv.designsystem.TvOnSurfaceDim
 import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvPosterCard
+import com.filmax.core.tv.designsystem.TvPosterGrid
 import com.filmax.core.tv.designsystem.TvScreenFocus
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
-import com.filmax.core.tv.designsystem.posterMeta
+import com.filmax.core.tv.designsystem.gridPosterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
@@ -88,13 +89,9 @@ import com.filmax.feature.search.common.SearchScreenModel
 import com.filmax.feature.search.common.SearchState
 import com.filmax.feature.search.common.SortOptions
 import com.filmax.feature.search.common.TypeOptions
-import com.filmax.feature.search.common.itemTypeLabel
 import com.filmax.feature.search.common.sortLabel
 import kotlinx.coroutines.flow.drop
 import org.koin.androidx.compose.koinViewModel
-
-/** Сетка постеров: 4×190dp + 3×18dp зазора ровно ложатся в 844dp между safe area. */
-private const val GRID_COLUMNS = 4
 
 /** За сколько хвостовых рядов сетки до конца просить следующую страницу витрины. */
 private const val LOAD_MORE_TAIL = 3
@@ -125,7 +122,7 @@ fun TvCatalogScreen(
     val state by screenModel.collectAsState()
     RefreshOnTopNavReselect { screenModel.dispatch(SearchEvent.Refresh) }
     val focus = rememberTvScreenFocus(startAt = SEARCH_KEY)
-    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
 
     val voice = rememberInAppVoiceSearch { spoken ->
         screenModel.dispatch(SearchEvent.SubmitQuery(spoken))
@@ -139,7 +136,7 @@ fun TvCatalogScreen(
     Box(modifier.fillMaxSize().background(TvSurface)) {
         CatalogContent(
             state = state,
-            listState = listState,
+            gridState = gridState,
             focus = focus,
             actions = CatalogActions(
                 onOpenItem = onOpenItem,
@@ -172,41 +169,35 @@ private data class CatalogActions(
 @Composable
 private fun CatalogContent(
     state: SearchState,
-    listState: LazyListState,
+    gridState: LazyGridState,
     focus: TvScreenFocus,
     actions: CatalogActions,
     onLoadMore: () -> Unit,
 ) {
-    ScrollToTopOnNavFocus(listState)
+    ScrollToTopOnNavFocus(gridState)
     val gridItems = state.visibleItems
-    // Постеры бьём на ряды по GRID_COLUMNS и кладём в ОБЩИЙ LazyColumn вместе с шапкой — так
-    // скроллится ВЕСЬ экран (шапка уезжает вверх), а не только сетка под фиксированной шапкой,
-    // которая занимала пол-экрана. Фокус ходит одним списком: «вниз» из чипов идёт в постеры,
-    // «вверх» с первого ряда прокручивает шапку обратно и уходит на таб-бар (как на Главной).
-    val rows = remember(gridItems) { gridItems.chunked(GRID_COLUMNS) }
 
     // Догрузка витрины: фокус/скролл в LOAD_MORE_TAIL хвостовых рядах — просим следующую
     // страницу. derivedStateOf пересчитывается без рекомпозиции, дёргает её только смена
     // «пора/не пора»; повторные вызовы гасит идемпотентность модели.
     val loadMore by remember {
         derivedStateOf {
-            val info = listState.layoutInfo
+            val info = gridState.layoutInfo
             val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
             info.totalItemsCount > 0 && lastVisible >= info.totalItemsCount - LOAD_MORE_TAIL
         }
     }
     LaunchedEffect(loadMore) { if (loadMore) onLoadMore() }
 
-    LazyColumn(
-        state = listState,
+    // Единая сетка каталога/подборки/«Продолжить»/«Истории» — шапка занимает её первую строку
+    // целиком (span на все колонки) и уезжает вверх при скролле вместе с постерами, а не висит
+    // отдельной панелью над сеткой. «Вниз» из чипов уходит в постеры, «вверх» с первого ряда —
+    // на таб-бар, тем же пространственным поиском, что и раньше внутри LazyColumn.
+    TvPosterGrid(
+        state = gridState,
         modifier = Modifier.fillMaxSize().then(focus.containerModifier),
-        contentPadding = PaddingValues(
-            top = TvMetrics.ContentTop,
-            bottom = TvMetrics.SafeVertical + TvMetrics.FocusInset,
-        ),
-        verticalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
     ) {
-        item(key = "header") {
+        item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
             CatalogHeader(
                 state = state,
                 searchModifier = focus.item(SEARCH_KEY),
@@ -215,13 +206,17 @@ private fun CatalogContent(
             )
         }
         if (gridItems.isEmpty() && !state.loading) {
-            item(key = "empty") { CatalogEmpty() }
+            item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { CatalogEmpty() }
         }
-        itemsIndexed(rows, key = { index, _ -> "row-$index" }) { _, row ->
-            CatalogPosterRow(row = row, onOpenItem = actions.onOpenItem, focus = focus)
+        items(gridItems, key = { it.id }) { item ->
+            CatalogPoster(
+                item = item,
+                modifier = focus.item("grid:${item.id}"),
+                onClick = { actions.onOpenItem(item.id) },
+            )
         }
         if (state.catalogLoadingMore) {
-            item(key = "loading_more") { CatalogLoadingMore() }
+            item(key = "loading_more", span = { GridItemSpan(maxLineSpan) }) { CatalogLoadingMore() }
         }
     }
 }
@@ -234,26 +229,6 @@ private fun CatalogLoadingMore() {
     }
 }
 
-/**
- * Ряд сетки: до [GRID_COLUMNS] постеров фиксированной ширины с шагом CardGap, по левому краю
- * safe area. Хвостовые пустые ячейки не добираем — последний ряд просто короче.
- */
-@Composable
-private fun CatalogPosterRow(row: List<Item>, onOpenItem: (Int) -> Unit, focus: TvScreenFocus) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = TvMetrics.SafeHorizontal),
-        horizontalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),
-    ) {
-        row.forEach { item ->
-            CatalogPoster(
-                item = item,
-                modifier = focus.item("grid:${item.id}"),
-                onClick = { onOpenItem(item.id) },
-            )
-        }
-    }
-}
-
 @Composable
 private fun CatalogHeader(
     state: SearchState,
@@ -261,7 +236,10 @@ private fun CatalogHeader(
     actions: CatalogActions,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier) {
+    // Отступ сверху резервирует место под таб-бар — тот рисуется отдельным оверлеем и своё
+    // место в раскладке не занимает (тот же приём, что и в разделе «Я смотрю»). Горизонтальный
+    // safe area детям шапки уже не нужен: его теперь даёт contentPadding самой TvPosterGrid.
+    Column(modifier.padding(top = TvMetrics.ContentTop)) {
         CatalogSearchBar(
             query = state.query,
             onQuery = actions.onQuery,
@@ -293,7 +271,6 @@ private fun CatalogHeader(
             text = catalogSummary(state),
             style = MaterialTheme.typography.bodySmall,
             color = TvOnSurfaceDim,
-            modifier = Modifier.padding(horizontal = TvMetrics.SafeHorizontal),
         )
     }
 }
@@ -312,9 +289,7 @@ private fun CatalogSearchBar(
     var editing by rememberSaveable { mutableStateOf(false) }
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = TvMetrics.SafeHorizontal),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -483,10 +458,10 @@ private fun CatalogTypeRow(
     val chipModifier = Modifier.focusProperties { downFocus?.let { down = it } }
     // Горизонтальный скролл, а не Row: тип + сортировка + «Фильтры» не влезали в safe area, и
     // последний чип клипился. Разделители-палочки убраны — от них между группами зиял большой
-    // отступ; теперь шаг между всеми чипами одинаковый. offset/contentPadding — как у ряда жанров.
+    // отступ; теперь шаг между всеми чипами одинаковый. Горизонтальный safe area уже даёт
+    // TvPosterGrid — свой contentPadding здесь не нужен, иначе отступ задвоился бы.
     LazyRow(
         modifier = Modifier.fillMaxWidth().focusRestorer(firstTypeChipFocus),
-        contentPadding = PaddingValues(horizontal = TvMetrics.SafeHorizontal),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -547,10 +522,8 @@ private fun CatalogGenreRow(
     firstChipFocus: FocusRequester,
 ) {
     LazyRow(
-        // От края до края: viewport на всю ширину, а первый/последний чип держит на линии safe area
-        // contentPadding. Так чипы скроллятся к самым краям экрана, а не обрываются на safe-границе.
+        // Горизонтальный safe area уже даёт TvPosterGrid — свой contentPadding здесь не нужен.
         modifier = Modifier.fillMaxWidth().focusRestorer(firstChipFocus),
-        contentPadding = PaddingValues(horizontal = TvMetrics.SafeHorizontal),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         itemsIndexed(genres, key = { _, genre -> genre.id }) { index, genre ->
@@ -591,10 +564,12 @@ private fun CatalogEmpty() {
 private fun CatalogPoster(item: Item, modifier: Modifier, onClick: () -> Unit) {
     TvPosterCard(
         title = item.title,
-        meta = posterMeta(itemTypeLabel(item.type), item.year),
+        meta = gridPosterMeta(year = item.year, genre = item.genres.firstOrNull()?.title),
         posterUrl = item.posters.medium.ifEmpty { item.posters.big },
         onClick = onClick,
         modifier = modifier,
+        width = TvMetrics.CompactPosterWidth,
+        height = TvMetrics.CompactPosterHeight,
         rating = formatRating(item.rating.external),
     ) { url, posterModifier ->
         PosterImage(

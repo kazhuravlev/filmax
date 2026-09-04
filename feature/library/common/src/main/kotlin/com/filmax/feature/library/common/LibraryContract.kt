@@ -40,6 +40,12 @@ data class OpenBookmarkFolder(
 data class LibraryState(
     val favorites: List<FavoriteItem> = emptyList(),
     val history: List<WatchHistory> = emptyList(),
+    /**
+     * Полный тайтл (год, жанры, рейтинг) для карточек «Истории» — по itemId, побочный продукт
+     * того же резолва, что считает [continuations]. Записи, для которых детали не доехали,
+     * в карте отсутствуют — карточка просто не покажет мету и рейтинг.
+     */
+    val historyItems: Map<Int, Item> = emptyMap(),
     /** Только реально незавершённые тайтлы; вычисляются по общей continuation-логике. */
     val continuations: List<Continuation> = emptyList(),
     val lists: List<BookmarkFolder> = emptyList(),

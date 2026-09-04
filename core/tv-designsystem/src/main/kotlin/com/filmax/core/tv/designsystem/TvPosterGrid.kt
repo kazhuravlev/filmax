@@ -11,11 +11,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
 /**
- * Единая сетка полноразмерных TV-постеров.
+ * Единая сетка постеров — каталог, подборка, «Продолжить», «История»: везде одна и та же
+ * сетка, чтобы не разъезжался ни размер карточки, ни ритм колонок между экранами.
  *
- * Число колонок следует из ширины карточки и доступного места: так ритм сетки не меняется
- * между экранами и на широком TV помещаются те же пять постеров. Нижний safe-area сохраняет
- * подпись последнего ряда и рамку сфокусированной карточки внутри экрана.
+ * Число колонок следует из ширины карточки ([TvMetrics.CompactPosterWidth]) и доступного
+ * места: при безопасной ширине экрана это ровно пять постеров в ряд. Карточки внутри обязаны
+ * использовать тот же размер — иначе колонки и сами карточки разъедутся. Нижний safe-area
+ * сохраняет подпись последнего ряда и рамку сфокусированной карточки внутри экрана.
  */
 @Composable
 fun TvPosterGrid(
@@ -24,7 +26,7 @@ fun TvPosterGrid(
     content: LazyGridScope.() -> Unit,
 ) {
     LazyVerticalGrid(
-        columns = GridCells.FixedSize(TvMetrics.PosterWidth),
+        columns = GridCells.FixedSize(TvMetrics.CompactPosterWidth),
         state = state,
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(TvMetrics.CardGap),

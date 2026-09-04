@@ -1,5 +1,6 @@
 package com.filmax.feature.library.common
 
+import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemPage
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.firstErrorMessage
@@ -8,7 +9,9 @@ import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.WatchingRepository
+import com.filmax.core.domain.watching.model.Continuation
 import com.filmax.core.domain.watching.model.ContinuationResolver
+import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.presentation.BaseScreenModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -64,20 +67,37 @@ class LibraryScreenModel(
         screenModelScope {
             updateState { it.copy(loading = true, error = null) }
             val history = watching.getHistory()
-            val resolvedContinuations = history.getOrNull()
-                ?.let { continuations.resolve(it) }
-                ?.filter { it.isActualContinuation }
-                .orEmpty()
+            val resolved = history.getOrNull()?.let { resolveWatching(it) }
             updateState {
                 it.copy(
                     loading = false,
                     history = history.getOrNull().orEmpty(),
-                    continuations = resolvedContinuations,
+                    continuations = resolved?.continuations.orEmpty(),
+                    historyItems = resolved?.historyItems.orEmpty(),
                     error = firstErrorMessage(history),
                 )
             }
         }
     }
+
+    /**
+     * Резолвит continuation ОДИН раз на всю историю и переиспользует результат дважды:
+     * реально незавершённые — для «Продолжить», а полный тайтл (год/жанр/рейтинг) КАЖДОЙ
+     * записи — для карточек «Истории». Второй сетевой проход по каталогу ради одних и тех
+     * же тайтлов был бы чистым расточительством.
+     */
+    private suspend fun resolveWatching(history: List<WatchHistory>): ResolvedWatching {
+        val resolved = continuations.resolve(history)
+        return ResolvedWatching(
+            continuations = resolved.filter { it.isActualContinuation },
+            historyItems = resolved.associate { it.itemId to it.item },
+        )
+    }
+
+    private data class ResolvedWatching(
+        val continuations: List<Continuation>,
+        val historyItems: Map<Int, Item>,
+    )
 
     private fun refreshBookmarks() {
         val openedFolder = state.openFolder?.folder
@@ -142,15 +162,13 @@ class LibraryScreenModel(
                 val listsDeferred = async { user.getBookmarkFolders() }
                 val history = historyDeferred.await()
                 val lists = listsDeferred.await()
-                val resolvedContinuations = history.getOrNull()
-                    ?.let { continuations.resolve(it) }
-                    ?.filter { it.isActualContinuation }
-                    .orEmpty()
+                val resolved = history.getOrNull()?.let { resolveWatching(it) }
                 updateState {
                     it.copy(
                         loading = false,
                         history = history.getOrNull().orEmpty(),
-                        continuations = resolvedContinuations,
+                        continuations = resolved?.continuations.orEmpty(),
+                        historyItems = resolved?.historyItems.orEmpty(),
                         lists = lists.getOrNull().orEmpty(),
                         error = firstErrorMessage(history, lists),
                     )
