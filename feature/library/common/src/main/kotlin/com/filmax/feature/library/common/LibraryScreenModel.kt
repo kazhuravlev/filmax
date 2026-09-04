@@ -105,7 +105,9 @@ class LibraryScreenModel(
                 if (open.folder.id != folder.id) return@updateState current
                 current.copy(
                     openFolder = open.copy(
-                        items = itemPage?.items.orEmpty(),
+                        // distinctBy — та же страховка, что и в loadMoreFolderItems: дубликат id
+                        // в первой же странице уронил бы LazyGrid по key.
+                        items = itemPage?.items.orEmpty().distinctBy { it.id },
                         page = FIRST_PAGE,
                         loading = false,
                         endReached = itemPage?.pagination?.hasNextPage != true,
