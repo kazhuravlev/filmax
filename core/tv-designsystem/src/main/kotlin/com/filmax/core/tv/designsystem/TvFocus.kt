@@ -109,7 +109,10 @@ class TvScreenFocus internal constructor(
             .focusRequester(requester)
             .onFocusChanged { if (it.isFocused) lastFocused.value = key }
             .onPlaced {
-                if (!done && key == returnTo) {
+                // Та же защита, что и в containerModifier: пока фокус в таб-баре, экран его не
+                // подхватывает — иначе стартовый элемент (строка поиска, кнопка «Смотреть»)
+                // перетягивал бы фокус с вкладки уже при первой композиции контента.
+                if (!done && key == returnTo && !navBarFocused.value) {
                     done = true
                     requester.requestFocus()
                 }
