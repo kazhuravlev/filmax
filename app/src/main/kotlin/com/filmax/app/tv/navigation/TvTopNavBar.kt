@@ -52,14 +52,14 @@ private data class TvTab(val label: String, val route: Any, val match: (NavDesti
 
 /**
  * Разделы верхней навигации. «Поиск» уехал внутрь «Каталога» (печатать пультом дорого — каталог даёт
- * способ найти фильм вообще без набора текста), «Подборки» стали контентом каталога, а личное
- * содержимое разделено на «Я смотрю» и «Закладки». Настройки остаются отдельным разделом.
+ * способ найти фильм вообще без набора текста), а личное содержимое разделено на «Я смотрю» и
+ * «Подборки». Настройки остаются отдельным разделом.
  */
 private val TABS = listOf(
     TvTab("Главная", TvHomeRoute) { it?.hasRoute(TvHomeRoute::class) == true },
     TvTab("Я смотрю", TvWatchingRoute) { it?.hasRoute(TvWatchingRoute::class) == true },
     TvTab("Каталог", TvSearchRoute) { it?.hasRoute(TvSearchRoute::class) == true },
-    TvTab("Закладки", TvBookmarksRoute) { it?.hasRoute(TvBookmarksRoute::class) == true },
+    TvTab("Подборки", TvBookmarksRoute) { it?.hasRoute(TvBookmarksRoute::class) == true },
     TvTab("Настройки", TvProfileRoute) { it?.hasRoute(TvProfileRoute::class) == true },
 )
 

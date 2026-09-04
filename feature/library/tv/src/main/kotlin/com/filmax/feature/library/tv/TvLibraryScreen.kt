@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RectangleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -48,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -79,6 +82,7 @@ import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
+import com.filmax.feature.library.common.BookmarkFolderPreview
 import com.filmax.feature.library.common.LibraryEvent
 import com.filmax.feature.library.common.LibrarySection
 import com.filmax.feature.library.common.LibraryScreenModel
@@ -86,7 +90,7 @@ import com.filmax.feature.library.common.LibraryState
 import com.filmax.feature.library.common.OpenBookmarkFolder
 import org.koin.androidx.compose.koinViewModel
 
-/** Подразделы «Я смотрю»; в «Закладках» сразу показываются подборки. */
+/** Подразделы «Я смотрю»; в разделе «Подборки» сразу показывается сетка подборок. */
 private enum class LibrarySegment(val label: String) {
     CONTINUE("Продолжить"),
     HISTORY("История"),
@@ -106,6 +110,7 @@ private val LibrarySection.initialSegment: LibrarySegment
 private data class TvLibraryActions(
     val onOpenItem: (Int) -> Unit,
     val onOpenFolder: (BookmarkFolder) -> Unit,
+    val onLoadFolderPreview: (BookmarkFolder) -> Unit,
     val onLoadMoreFolderItems: () -> Unit,
 )
 
@@ -183,6 +188,7 @@ fun TvLibraryScreen(
                 actions = TvLibraryActions(
                     onOpenItem = onOpenItem,
                     onOpenFolder = { folder -> screenModel.dispatch(LibraryEvent.OpenFolder(folder)) },
+                    onLoadFolderPreview = { folder -> screenModel.dispatch(LibraryEvent.LoadFolderPreview(folder)) },
                     onLoadMoreFolderItems = { screenModel.dispatch(LibraryEvent.LoadMoreFolderItems) },
                 ),
             )
@@ -191,7 +197,7 @@ fun TvLibraryScreen(
 }
 
 /**
- * Шапка «Я смотрю». В «Закладках» остаётся только панель открытой подборки.
+ * Шапка «Я смотрю». В «Подборках» остаётся только панель открытой подборки.
  */
 @Composable
 private fun MineHeader(
@@ -343,7 +349,7 @@ private fun LazyGridScope.continueSegment(
     }
 }
 
-/** «Закладки» — серверные подборки: список подборок либо содержимое открытой. */
+/** «Подборки» — серверные подборки: список подборок либо содержимое открытой. */
 private fun LazyGridScope.bookmarksSegment(
     state: LibraryState,
     ui: TvBookmarkUi,
@@ -352,7 +358,13 @@ private fun LazyGridScope.bookmarksSegment(
 ) {
     val openFolder = state.openFolder
     if (openFolder == null) {
-        folderTiles(state.lists, actions.onOpenFolder, onNewFolder = { ui.creating = true })
+        folderTiles(
+            folders = state.lists,
+            previews = state.folderPreviews,
+            onLoadPreview = actions.onLoadFolderPreview,
+            onOpenFolder = actions.onOpenFolder,
+            onNewFolder = { ui.creating = true },
+        )
     } else {
         folderItems(openFolder, ui, actions.onOpenItem, focus)
     }
@@ -360,6 +372,8 @@ private fun LazyGridScope.bookmarksSegment(
 
 private fun LazyGridScope.folderTiles(
     folders: List<BookmarkFolder>,
+    previews: Map<Int, BookmarkFolderPreview>,
+    onLoadPreview: (BookmarkFolder) -> Unit,
     onOpenFolder: (BookmarkFolder) -> Unit,
     onNewFolder: () -> Unit,
 ) {
@@ -369,7 +383,13 @@ private fun LazyGridScope.folderTiles(
         return
     }
     items(folders, key = { it.id }) { folder ->
-        FolderTile(folder = folder, onClick = { onOpenFolder(folder) })
+        val preview = previews[folder.id]
+        // LazyGrid создаёт плитки только вблизи экрана, поэтому не делаем запросы за все
+        // подборки сразу. Первая страница сохраняется и используется при входе в подборку.
+        LaunchedEffect(folder.id) {
+            if (preview == null) onLoadPreview(folder)
+        }
+        FolderTile(folder = folder, preview = preview, onClick = { onOpenFolder(folder) })
     }
     item(key = "new_folder") { NewFolderTile(onClick = onNewFolder) }
 }
@@ -537,9 +557,13 @@ private fun HistoryWatchingCard(
     )
 }
 
-/** Плитка подборки. Фокусируется и открывается — содержимое грузит [LibraryScreenModel]. */
+/** Плитка подборки с первыми 14 обложками в серверном порядке. */
 @Composable
-private fun FolderTile(folder: BookmarkFolder, onClick: () -> Unit) {
+private fun FolderTile(
+    folder: BookmarkFolder,
+    preview: BookmarkFolderPreview?,
+    onClick: () -> Unit,
+) {
     val count = folder.count
     val word = when {
         count % 100 in 11..14 -> "тайтлов"
@@ -552,27 +576,84 @@ private fun FolderTile(folder: BookmarkFolder, onClick: () -> Unit) {
         shape = TvMetrics.PanelShape,
         modifier = Modifier.height(FolderTileHeight),
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .clip(TvMetrics.PanelShape)
-                .background(TvSurfaceContainer)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.Bottom,
+                .background(TvSurfaceContainer),
         ) {
-            Text(
-                folder.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = TvOnSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+            FolderPreviewGrid(items = preview?.items.orEmpty(), modifier = Modifier.fillMaxSize())
+            // Низ затемнён сильнее: название читается на любой обложке, сетка при этом остаётся
+            // фоном, а не интерактивным набором мелких карточек.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(TvSurface.copy(alpha = 0.08f), TvSurface.copy(alpha = 0.94f)),
+                        ),
+                    ),
             )
-            Text(
-                "$count $word",
-                style = MaterialTheme.typography.bodySmall,
-                color = TvOnSurfaceVariant,
-                modifier = Modifier.padding(top = 3.dp),
-            )
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(16.dp),
+            ) {
+                Text(
+                    folder.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TvOnSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "$count $word",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TvOnSurfaceVariant,
+                    modifier = Modifier.padding(top = 3.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Фон плитки всегда состоит из 2×7 одинаковых ячеек. Если тайтлов меньше, свободные ячейки
+ * остаются нейтральными; лишние не рисуем. Порядок списка не меняем — это первые позиции той
+ * же страницы, которая становится началом открытой подборки.
+ */
+@Composable
+private fun FolderPreviewGrid(items: List<Item>, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(FolderPreviewInset),
+        verticalArrangement = Arrangement.spacedBy(FolderPreviewGap),
+    ) {
+        repeat(FOLDER_PREVIEW_ROWS) { row ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(FolderPreviewGap),
+            ) {
+                repeat(FOLDER_PREVIEW_COLUMNS) { column ->
+                    val item = items.getOrNull(row * FOLDER_PREVIEW_COLUMNS + column)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .background(TvSurfaceContainerHigh),
+                    ) {
+                        item?.let {
+                            TvPoster(
+                                url = it.posters.medium.ifBlank { it.posters.small },
+                                title = it.title,
+                                modifier = Modifier.fillMaxSize(),
+                                shape = RectangleShape,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -858,7 +939,11 @@ private val GridPadding = PaddingValues(
     bottom = TvMetrics.FocusInset + TvMetrics.SafeVertical,
 )
 
-private val FolderTileHeight = 130.dp
+private val FolderTileHeight = 174.dp
+private val FolderPreviewInset = 3.dp
+private val FolderPreviewGap = 3.dp
+private const val FOLDER_PREVIEW_ROWS = 2
+private const val FOLDER_PREVIEW_COLUMNS = 7
 
 /** Ширина диалогов закладок: у́же экрана, чтобы читаться с дивана и не растягивать кнопки. */
 private val DialogMaxWidth = 420.dp

@@ -2,6 +2,7 @@ package com.filmax.feature.details.common
 
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.person.CastMember
+import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.model.Continuation
 
 data class DetailsState(
@@ -17,12 +18,20 @@ data class DetailsState(
     val cast: List<CastMember> = emptyList(),
     val isFav: Boolean = false,
     val isDownloaded: Boolean = false,
+    /** Подборки пользователя — для выбора, куда добавить тайтл, кроме «Буду смотреть». */
+    val bookmarkFolders: List<BookmarkFolder> = emptyList(),
     val error: String? = null,
 )
 
 sealed interface DetailsEvent {
     data object ToggleFav : DetailsEvent
     data object ToggleDownload : DetailsEvent
+
+    /** Добавить текущий тайтл в существующую подборку. */
+    data class AddToFolder(val folderId: Int) : DetailsEvent
+
+    /** Создать новую подборку и сразу добавить в неё текущий тайтл. */
+    data class CreateFolderAndAdd(val title: String) : DetailsEvent
 }
 
 sealed interface DetailsSideEffect

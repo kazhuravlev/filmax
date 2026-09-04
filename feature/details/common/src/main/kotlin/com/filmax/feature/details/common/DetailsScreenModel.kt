@@ -10,11 +10,15 @@ import com.filmax.core.domain.downloads.model.DownloadedItem
 import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.favorites.model.toFavoriteItem
 import com.filmax.core.domain.person.CastRepository
+import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.domain.watching.model.calculateContinuation
 import com.filmax.core.presentation.BaseScreenModel
 import com.filmax.feature.details.common.navigation.DetailsRoute
 
+// Экран деталей сводит воспроизведение, избранное, загрузки и подборки в одной модели —
+// дробить её ради лимитов нельзя: состояние и обработчики читаются только вместе.
+@Suppress("LongParameterList", "TooManyFunctions")
 class DetailsScreenModel(
     savedStateHandle: SavedStateHandle,
     private val catalog: CatalogRepository,
@@ -22,6 +26,7 @@ class DetailsScreenModel(
     private val downloads: DownloadsRepository,
     private val favorites: FavoritesRepository,
     private val cast: CastRepository,
+    private val user: UserRepository,
 ) : BaseScreenModel<DetailsState, DetailsSideEffect, DetailsEvent>(DetailsState()) {
 
     private val route = savedStateHandle.toRoute<DetailsRoute>()
@@ -30,12 +35,15 @@ class DetailsScreenModel(
         onFetchData()
         observeDownloadState()
         observeFavoriteState()
+        loadBookmarkFolders()
     }
 
     override fun dispatch(event: DetailsEvent) {
         when (event) {
             DetailsEvent.ToggleFav -> toggleFav()
             DetailsEvent.ToggleDownload -> toggleDownload()
+            is DetailsEvent.AddToFolder -> addToFolder(event.folderId)
+            is DetailsEvent.CreateFolderAndAdd -> createFolderAndAdd(event.title)
         }
     }
 
@@ -124,5 +132,35 @@ class DetailsScreenModel(
                 )
             }
         }
+    }
+
+    private fun loadBookmarkFolders() {
+        screenModelScope { reloadBookmarkFolders() }
+    }
+
+    /** Добавляет тайтл в выбранную подборку — независимо от «Буду смотреть». */
+    private fun addToFolder(folderId: Int) {
+        val item = state.item ?: return
+        screenModelScope {
+            user.addToBookmark(item.id, folderId)
+            reloadBookmarkFolders()
+        }
+    }
+
+    /** Создаёт подборку и сразу заносит в неё текущий тайтл — одно действие в диалоге выбора. */
+    private fun createFolderAndAdd(title: String) {
+        val trimmed = title.trim()
+        if (trimmed.isEmpty()) return
+        val item = state.item ?: return
+        screenModelScope {
+            val created = user.createBookmarkFolder(trimmed).getOrNull() ?: return@screenModelScope
+            user.addToBookmark(item.id, created.id)
+            reloadBookmarkFolders()
+        }
+    }
+
+    private suspend fun reloadBookmarkFolders() {
+        val folders = user.getBookmarkFolders().getOrNull() ?: return
+        updateState { it.copy(bookmarkFolders = folders) }
     }
 }

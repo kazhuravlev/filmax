@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,39 +32,53 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemRating
 import com.filmax.core.domain.catalog.model.MediaTrack
 import com.filmax.core.domain.person.CastMember
+import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.model.Continuation
+import com.filmax.core.tv.designsystem.TvAccent
 import com.filmax.core.tv.designsystem.TvButton
 import com.filmax.core.tv.designsystem.TvCardSize
 import com.filmax.core.tv.designsystem.TvChip
@@ -164,6 +179,7 @@ fun TvDetailsScreen(
                 cast = state.cast,
                 isFav = state.isFav,
                 continuation = state.continuation,
+                bookmarkFolders = state.bookmarkFolders,
                 actions = DetailsActions(
                     onPlay = { season, videoId, resumePositionSeconds ->
                         nav.onPlay(item.id, season, videoId, resumePositionSeconds)
@@ -172,6 +188,8 @@ fun TvDetailsScreen(
                     onOpenItem = nav.onOpenItem,
                     onOpenPerson = nav.onOpenPerson,
                     onPlayTrailer = nav.onPlayTrailer,
+                    onAddToFolder = { folderId -> screenModel.dispatch(DetailsEvent.AddToFolder(folderId)) },
+                    onCreateFolder = { title -> screenModel.dispatch(DetailsEvent.CreateFolderAndAdd(title)) },
                 ),
             )
         }
@@ -199,8 +217,16 @@ private data class DetailsActions(
     val onOpenItem: (Int) -> Unit,
     val onOpenPerson: (name: String, isDirector: Boolean) -> Unit,
     val onPlayTrailer: (url: String, title: String) -> Unit,
+    /** Добавить тайтл в конкретную подборку — отдельно от «Буду смотреть». */
+    val onAddToFolder: (folderId: Int) -> Unit,
+    /** Создать подборку и сразу занести в неё тайтл — из того же диалога выбора. */
+    val onCreateFolder: (title: String) -> Unit,
 )
 
+// Экран собирает hero, все секции полотна и диалог выбора подборки в одном месте — раскладывать
+// его по отдельным composable ради лимитов значило бы разорвать код, который читается только
+// вместе (см. заголовок файла). Тот же осознанный Suppress, что и для класса-модели экрана.
+@Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @Composable
 private fun DetailsContent(
     item: Item,
@@ -208,8 +234,10 @@ private fun DetailsContent(
     cast: List<CastMember>,
     isFav: Boolean,
     continuation: Continuation?,
+    bookmarkFolders: List<BookmarkFolder>,
     actions: DetailsActions,
 ) {
+    val folderPicker = remember { TvFolderPickerUi() }
     val series = remember(item, continuation) {
         if (item.isSeries()) calculateSeriesData(item.tracklist, continuation) else null
     }
@@ -279,6 +307,7 @@ private fun DetailsContent(
                             }
                         },
                         onToggleFav = actions.onToggleFav,
+                        onOpenFolderPicker = { folderPicker.pickerOpen = true },
                         onHeroFocusChanged = onHeroFocusChanged,
                         onTrailer = trailerUrl?.let { ::playTrailer },
                     ),
@@ -292,6 +321,13 @@ private fun DetailsContent(
             )
         }
     }
+
+    TvFolderPickerHost(
+        ui = folderPicker,
+        folders = bookmarkFolders,
+        onSelectFolder = { folder -> actions.onAddToFolder(folder.id) },
+        onCreateFolder = { title -> actions.onCreateFolder(title) },
+    )
 }
 
 /**
@@ -390,6 +426,8 @@ private data class HeroPlayback(
     val playModifier: Modifier,
     val onPlay: () -> Unit,
     val onToggleFav: () -> Unit,
+    /** Открыть выбор подборки — кнопка-шеврон рядом с «Буду смотреть». */
+    val onOpenFolderPicker: () -> Unit,
     /** Фокус зашёл на кнопки hero или ушёл с них — экран переключает стейт полотна. */
     val onHeroFocusChanged: (Boolean) -> Unit,
     /** null — у тайтла нет играбельного трейлера, кнопки нет. */
@@ -485,6 +523,7 @@ private fun HeroButtons(
     Row(
         modifier.onFocusChanged { playback.onHeroFocusChanged(it.hasFocus) },
         horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         TvButton(
             text = playLabel(resume),
@@ -492,12 +531,17 @@ private fun HeroButtons(
             leadingIcon = Icons.Filled.PlayArrow,
             modifier = playback.playModifier,
         )
-        TvButton(
-            text = if (isFav) "В списке" else "Буду смотреть",
-            onClick = playback.onToggleFav,
-            primary = false,
-            leadingIcon = if (isFav) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-        )
+        // «Буду смотреть» — быстрое действие в один клик; шеврон рядом — выбор ЛЮБОЙ другой
+        // подборки, отдельным диалогом. Сгруппированы узким зазором — читаются одной кнопкой.
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+            TvButton(
+                text = if (isFav) "В списке" else "Буду смотреть",
+                onClick = playback.onToggleFav,
+                primary = false,
+                leadingIcon = if (isFav) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+            )
+            TvFolderPickerButton(onClick = playback.onOpenFolderPicker)
+        }
         playback.onTrailer?.let { onTrailer ->
             TvButton(
                 text = "Трейлер",
@@ -508,6 +552,33 @@ private fun HeroButtons(
         }
     }
 }
+
+/** Кнопка-шеврон рядом с «Буду смотреть»: открывает выбор конкретной подборки. */
+@Composable
+private fun TvFolderPickerButton(onClick: () -> Unit) {
+    TvFocusCard(
+        onClick = onClick,
+        shape = TvMetrics.ButtonShape,
+        modifier = Modifier.size(FolderPickerButtonSize),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(TvMetrics.ButtonShape)
+                .background(TvSurfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Filled.ArrowDropDown,
+                contentDescription = "Выбрать подборку",
+                tint = TvOnSurface,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+    }
+}
+
+private val FolderPickerButtonSize = 44.dp
 
 /**
  * КП и IMDb показываем РАЗДЕЛЬНО: `rating.external` усредняет их, а расхождение оценок — это
@@ -833,6 +904,203 @@ private fun EpisodeThumb(url: String, episode: MediaTrack, isResume: Boolean, mo
         }
     }
 }
+
+// ─────────────────────────── Выбор подборки ──────────────────────────────
+
+/** Стейт диалогов выбора подборки: живёт в [DetailsContent], меняется кнопкой-шевроном и диалогами. */
+@Stable
+private class TvFolderPickerUi {
+    var pickerOpen by mutableStateOf(false)
+    var creatingFolder by mutableStateOf(false)
+}
+
+/** Рисует активный диалог выбора подборки и переводит выбор в события экрана. */
+@Composable
+private fun TvFolderPickerHost(
+    ui: TvFolderPickerUi,
+    folders: List<BookmarkFolder>,
+    onSelectFolder: (BookmarkFolder) -> Unit,
+    onCreateFolder: (String) -> Unit,
+) {
+    if (ui.pickerOpen) {
+        TvFolderPickerDialog(
+            folders = folders,
+            onSelectFolder = { folder ->
+                onSelectFolder(folder)
+                ui.pickerOpen = false
+            },
+            onNewFolder = {
+                ui.pickerOpen = false
+                ui.creatingFolder = true
+            },
+            onDismiss = { ui.pickerOpen = false },
+        )
+    }
+    if (ui.creatingFolder) {
+        TvCreateBookmarkFolderDialog(
+            onConfirm = { title ->
+                onCreateFolder(title)
+                ui.creatingFolder = false
+            },
+            onDismiss = { ui.creatingFolder = false },
+        )
+    }
+}
+
+/**
+ * Список подборок для добавления тайтла. «Буду смотреть» сюда не входит — она добавляется
+ * основной кнопкой в один клик, этот диалог — про любую ДРУГУЮ подборку. «Новая подборка»
+ * всегда последней строкой, даже если подборок ещё нет вовсе.
+ */
+@Composable
+private fun TvFolderPickerDialog(
+    folders: List<BookmarkFolder>,
+    onSelectFolder: (BookmarkFolder) -> Unit,
+    onNewFolder: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val firstRowFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { firstRowFocus.requestFocus() }
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = FolderDialogWidth)
+                .clip(TvMetrics.PanelShape)
+                .background(TvSurfaceContainer)
+                .padding(24.dp),
+        ) {
+            Text("Добавить в подборку", style = MaterialTheme.typography.titleLarge, color = TvOnSurface)
+            Spacer(Modifier.height(18.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                folders.forEachIndexed { index, folder ->
+                    TvFolderPickerRow(
+                        title = folder.title,
+                        subtitle = bookmarkCountLabel(folder.count),
+                        icon = Icons.Filled.Bookmark,
+                        focusRequester = if (index == 0) firstRowFocus else null,
+                        onClick = { onSelectFolder(folder) },
+                    )
+                }
+                TvFolderPickerRow(
+                    title = "Новая подборка",
+                    subtitle = null,
+                    icon = Icons.Filled.CreateNewFolder,
+                    focusRequester = if (folders.isEmpty()) firstRowFocus else null,
+                    onClick = onNewFolder,
+                )
+            }
+        }
+    }
+}
+
+/** Строка диалога: иконка, название подборки, счётчик тайтлов (для новой подборки — без него). */
+@Composable
+private fun TvFolderPickerRow(
+    title: String,
+    subtitle: String?,
+    icon: ImageVector,
+    focusRequester: FocusRequester?,
+    onClick: () -> Unit,
+) {
+    TvFocusCard(
+        onClick = onClick,
+        shape = TvMetrics.ButtonShape,
+        focusRequester = focusRequester,
+        modifier = Modifier.fillMaxWidth().height(FolderRowHeight),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(TvMetrics.ButtonShape)
+                .background(TvSurfaceContainerHigh)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(icon, contentDescription = null, tint = TvOnSurface, modifier = Modifier.size(20.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = TvOnSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (subtitle != null) {
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TvOnSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+/** Диалог названия новой подборки. По подтверждению подборка создаётся и тайтл сразу в неё добавляется. */
+@Composable
+private fun TvCreateBookmarkFolderDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var name by rememberSaveable { mutableStateOf("") }
+    val fieldFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { fieldFocus.requestFocus() }
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = FolderDialogWidth)
+                .clip(TvMetrics.PanelShape)
+                .background(TvSurfaceContainer)
+                .padding(28.dp),
+        ) {
+            Text("Новая подборка", style = MaterialTheme.typography.titleLarge, color = TvOnSurface)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Введите название пультом",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TvOnSurfaceVariant,
+            )
+            Spacer(Modifier.height(18.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(TvMetrics.ButtonShape)
+                    .background(TvSurfaceContainerHigh)
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
+            ) {
+                if (name.isEmpty()) {
+                    Text(
+                        "Название подборки",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TvOnSurfaceVariant,
+                    )
+                }
+                BasicTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = TvOnSurface),
+                    cursorBrush = SolidColor(TvAccent),
+                    modifier = Modifier.fillMaxWidth().focusRequester(fieldFocus),
+                )
+            }
+            Spacer(Modifier.height(24.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TvButton(text = "Создать и добавить", onClick = { onConfirm(name) })
+                TvButton(text = "Отмена", onClick = onDismiss, primary = false)
+            }
+        }
+    }
+}
+
+/** «3 тайтла» / «1 тайтл» / «5 тайтлов» — подпись счётчика под названием подборки. */
+private fun bookmarkCountLabel(count: Int): String {
+    val word = when {
+        count % 100 in 11..14 -> "тайтлов"
+        count % 10 == 1 -> "тайтл"
+        count % 10 in 2..4 -> "тайтла"
+        else -> "тайтлов"
+    }
+    return "$count $word"
+}
+
+private val FolderDialogWidth = 420.dp
+private val FolderRowHeight = 56.dp
 
 // ─────────────────────────────────── Похожее ─────────────────────────────────
 

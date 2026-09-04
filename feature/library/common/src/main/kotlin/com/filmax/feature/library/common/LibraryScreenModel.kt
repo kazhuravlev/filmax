@@ -1,5 +1,6 @@
 package com.filmax.feature.library.common
 
+import com.filmax.core.domain.catalog.model.ItemPage
 import com.filmax.core.domain.common.firstErrorMessage
 import com.filmax.core.domain.common.getOrNull
 import com.filmax.core.domain.favorites.FavoritesRepository
@@ -40,6 +41,7 @@ class LibraryScreenModel(
             is LibraryEvent.RemoveFromHistory -> removeFromHistory(event.itemId)
             LibraryEvent.ClearHistory -> clearHistory()
             is LibraryEvent.OpenFolder -> openFolder(event.folder)
+            is LibraryEvent.LoadFolderPreview -> loadFolderPreview(event.folder)
             LibraryEvent.CloseFolder -> closeFolder()
             LibraryEvent.LoadMoreFolderItems -> loadMoreFolderItems()
             is LibraryEvent.CreateFolder -> createFolder(event.title)
@@ -93,15 +95,29 @@ class LibraryScreenModel(
         }
     }
 
-    /** Открывает папку-закладку и грузит первую страницу её содержимого. */
+    /** Открывает подборку и грузит первую страницу её содержимого. */
     private fun openFolder(folder: BookmarkFolder) {
+        val preview = state.folderPreviews[folder.id]
+        val previewLoading = folder.id in state.loadingFolderPreviews
         screenModelScope { _ ->
-            updateState { it.copy(openFolder = OpenBookmarkFolder(folder = folder)) }
+            updateState { current ->
+                current.copy(
+                    openFolder = preview?.toOpenFolder(folder) ?: OpenBookmarkFolder(folder = folder),
+                    loadingFolderPreviews = if (preview == null) {
+                        current.loadingFolderPreviews + folder.id
+                    } else {
+                        current.loadingFolderPreviews
+                    },
+                )
+            }
+            // Видимая плитка могла уже начать загрузку превью. Ждём тот же запрос,
+            // чтобы не получить две разные страницы и не задублировать сетевой вызов.
+            if (preview != null || previewLoading) return@screenModelScope
             val result = user.getBookmarkItems(folder.id)
             val itemPage = result.getOrNull()
             updateState { current ->
                 val open = current.openFolder ?: return@updateState current
-                // Пока грузили, папку могли закрыть или открыть другую — чужой ответ не применяем.
+                // Пока грузили, подборку могли закрыть или открыть другую — чужой ответ не применяем.
                 if (open.folder.id != folder.id) return@updateState current
                 current.copy(
                     openFolder = open.copy(
@@ -113,6 +129,44 @@ class LibraryScreenModel(
                         endReached = itemPage?.pagination?.hasNextPage != true,
                         error = firstErrorMessage(result),
                     ),
+                    folderPreviews = itemPage?.let { page ->
+                        current.folderPreviews + (folder.id to page.toFolderPreview())
+                    } ?: current.folderPreviews,
+                    loadingFolderPreviews = current.loadingFolderPreviews - folder.id,
+                )
+            }
+        }
+    }
+
+    /** Загружает начало видимой подборки для плитки, не меняя экран на loader. */
+    private fun loadFolderPreview(folder: BookmarkFolder) {
+        if (folder.count == 0 ||
+            folder.id in state.folderPreviews ||
+            folder.id in state.loadingFolderPreviews
+        ) return
+
+        screenModelScope { _ ->
+            updateState { current ->
+                current.copy(loadingFolderPreviews = current.loadingFolderPreviews + folder.id)
+            }
+            val result = user.getBookmarkItems(folder.id)
+            val itemPage = result.getOrNull()
+            updateState { current ->
+                val open = current.openFolder
+                val isOpenFolder = open?.folder?.id == folder.id
+                current.copy(
+                    folderPreviews = itemPage?.let { page ->
+                        current.folderPreviews + (folder.id to page.toFolderPreview())
+                    } ?: current.folderPreviews,
+                    loadingFolderPreviews = current.loadingFolderPreviews - folder.id,
+                    // Если подборку успели открыть, тот же ответ — её первая страница.
+                    // Так обложки снаружи и тайтлы внутри имеют одинаковый серверный порядок.
+                    openFolder = if (isOpenFolder && open.loading) {
+                        itemPage?.let { page -> page.toOpenFolder(folder) }
+                            ?: open.copy(loading = false, error = firstErrorMessage(result))
+                    } else {
+                        open
+                    },
                 )
             }
         }
@@ -170,6 +224,8 @@ class LibraryScreenModel(
             updateState { current ->
                 current.copy(
                     lists = current.lists.filter { it.id != folderId },
+                    folderPreviews = current.folderPreviews - folderId,
+                    loadingFolderPreviews = current.loadingFolderPreviews - folderId,
                     openFolder = current.openFolder?.takeIf { it.folder.id != folderId },
                 )
             }
@@ -188,7 +244,17 @@ class LibraryScreenModel(
             updateState { current ->
                 val open = current.openFolder ?: return@updateState current
                 if (open.folder.id != folderId) return@updateState current
-                current.copy(openFolder = open.copy(items = open.items.filter { it.id != itemId }))
+                val preview = current.folderPreviews[folderId]
+                current.copy(
+                    openFolder = open.copy(items = open.items.filter { it.id != itemId }),
+                    folderPreviews = if (preview != null) {
+                        current.folderPreviews + (
+                            folderId to preview.copy(items = preview.items.filter { it.id != itemId })
+                        )
+                    } else {
+                        current.folderPreviews
+                    },
+                )
             }
             user.removeFromBookmark(itemId, folderId)
             reloadFolders()
@@ -198,8 +264,27 @@ class LibraryScreenModel(
     /** Перечитывает список папок с сервера: id, счётчики и порядок — его зона ответственности. */
     private suspend fun reloadFolders() {
         val folders = user.getBookmarkFolders().getOrNull() ?: return
-        updateState { it.copy(lists = folders) }
+        val folderIds = folders.mapTo(mutableSetOf()) { it.id }
+        updateState { current ->
+            current.copy(
+                lists = folders,
+                folderPreviews = current.folderPreviews.filterKeys { it in folderIds },
+                loadingFolderPreviews = current.loadingFolderPreviews.intersect(folderIds),
+            )
+        }
     }
+
+    private fun ItemPage.toFolderPreview(): BookmarkFolderPreview =
+        BookmarkFolderPreview(items = items.distinctBy { it.id }, endReached = !pagination.hasNextPage)
+
+    private fun BookmarkFolderPreview.toOpenFolder(folder: BookmarkFolder): OpenBookmarkFolder =
+        OpenBookmarkFolder(
+            folder = folder,
+            items = items,
+            page = FIRST_PAGE,
+            loading = false,
+            endReached = endReached,
+        )
 
     private companion object {
         /** Первая страница содержимого папки (нумерация kino.watch — с единицы). */

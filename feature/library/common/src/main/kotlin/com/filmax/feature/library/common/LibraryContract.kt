@@ -9,8 +9,17 @@ import com.filmax.core.domain.watching.model.WatchHistory
 /** Два самостоятельных раздела бывшего «Моё». */
 enum class LibrarySection(val title: String) {
     WATCHING("Я смотрю"),
-    BOOKMARKS("Закладки"),
+    BOOKMARKS("Подборки"),
 }
+
+/**
+ * Первая страница подборки для плитки-превью в серверном порядке.
+ * При открытии она становится началом сетки, поэтому превью и содержимое совпадают.
+ */
+data class BookmarkFolderPreview(
+    val items: List<Item>,
+    val endReached: Boolean,
+)
 
 /**
  * Открытая папка-закладка вместе с её содержимым. Отдельный объект, а не плоские поля
@@ -34,6 +43,10 @@ data class LibraryState(
     /** Только реально незавершённые тайтлы; вычисляются по общей continuation-логике. */
     val continuations: List<Continuation> = emptyList(),
     val lists: List<BookmarkFolder> = emptyList(),
+    /** Уже загруженные первые страницы для видимых плиток подборок. */
+    val folderPreviews: Map<Int, BookmarkFolderPreview> = emptyMap(),
+    /** Идут отдельно, чтобы одновременные рекомпозиции плитки не дублировали запрос. */
+    val loadingFolderPreviews: Set<Int> = emptySet(),
     /** Папка-закладка, в которую провалились; null — показываем список папок. */
     val openFolder: OpenBookmarkFolder? = null,
     val loading: Boolean = true,
@@ -44,6 +57,7 @@ sealed interface LibraryEvent {
     data class RemoveFromHistory(val itemId: Int) : LibraryEvent
     data object ClearHistory : LibraryEvent
     data class OpenFolder(val folder: BookmarkFolder) : LibraryEvent
+    data class LoadFolderPreview(val folder: BookmarkFolder) : LibraryEvent
     data object CloseFolder : LibraryEvent
     data object LoadMoreFolderItems : LibraryEvent
 
