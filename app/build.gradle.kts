@@ -188,16 +188,12 @@ android {
 }
 
 dependencies {
-    // Core
     implementation(project(":core:network"))
     implementation(project(":core:domain"))
-    implementation(project(":core:designsystem"))
     implementation(project(":core:tv-designsystem"))
     implementation(project(":core:ui"))
     implementation(project(":core:presentation"))
-    implementation(project(":core:navigation"))
 
-    // Data
     implementation(project(":data:auth"))
     implementation(project(":data:catalog"))
     implementation(project(":data:search"))
@@ -205,25 +201,21 @@ dependencies {
     implementation(project(":data:watching"))
     implementation(project(":data:tmdb"))
 
-    // Features
-    implementation(project(":feature:onboarding:mobile"))
-    implementation(project(":feature:home:mobile"))
-    implementation(project(":feature:search:mobile"))
-    implementation(project(":feature:collections:mobile"))
-    implementation(project(":feature:library:mobile"))
-    implementation(project(":feature:profile:mobile"))
-    implementation(project(":feature:details:mobile"))
-    implementation(project(":feature:player:mobile"))
-    implementation(project(":feature:designsystem"))
-
-    // TV UI (выбирается в MainActivity по FEATURE_LEANBACK)
+    implementation(project(":feature:onboarding:common"))
     implementation(project(":feature:onboarding:tv"))
+    implementation(project(":feature:home:common"))
     implementation(project(":feature:home:tv"))
+    implementation(project(":feature:search:common"))
     implementation(project(":feature:search:tv"))
+    implementation(project(":feature:collections:common"))
     implementation(project(":feature:collections:tv"))
+    implementation(project(":feature:library:common"))
     implementation(project(":feature:library:tv"))
+    implementation(project(":feature:profile:common"))
     implementation(project(":feature:profile:tv"))
+    implementation(project(":feature:details:common"))
     implementation(project(":feature:details:tv"))
+    implementation(project(":feature:player:common"))
     implementation(project(":feature:player:tv"))
 
     // Compose

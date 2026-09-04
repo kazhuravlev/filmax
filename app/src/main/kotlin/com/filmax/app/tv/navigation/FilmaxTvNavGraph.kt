@@ -1,12 +1,21 @@
 package com.filmax.app.tv.navigation
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -18,6 +27,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
@@ -31,6 +41,9 @@ import com.filmax.app.navigation.navFadeIn
 import com.filmax.app.navigation.navFadeOut
 import com.filmax.core.tv.designsystem.LocalTvNavBarFocused
 import com.filmax.core.tv.designsystem.LocalTvScrollToTop
+import com.filmax.core.tv.designsystem.TvMetrics
+import com.filmax.core.tv.designsystem.TvOnSurface
+import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.feature.collections.common.navigation.CollectionDetailRoute
 import com.filmax.feature.collections.tv.navigation.tvCollectionDetailScreen
 import com.filmax.feature.details.common.navigation.DetailsRoute
@@ -50,6 +63,7 @@ import com.filmax.feature.profile.tv.navigation.tvProfileScreen
 import com.filmax.feature.search.common.navigation.FilmographyRoute
 import com.filmax.feature.search.tv.navigation.tvFilmographyScreen
 import com.filmax.feature.search.tv.navigation.tvSearchScreen
+import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
 import org.koin.androidx.compose.koinViewModel
 
@@ -59,6 +73,7 @@ private object TvSplashRoute
 @Composable
 fun FilmaxTvNavGraph(
     onCheckUpdates: () -> Unit,
+    onExit: () -> Unit,
     // Переиспользуем общий RootScreenModel (тот же auth.isAuthenticated, что и в телефонном графе).
     rootScreenModel: RootScreenModel = koinViewModel(),
 ) {
@@ -76,6 +91,23 @@ fun FilmaxTvNavGraph(
     val backStack by navController.currentBackStackEntryAsState()
     val currentDest = backStack?.destination
     val showTopBar = TOP_LEVEL_ROUTES.any { currentDest?.hasRoute(it) == true }
+    val isHome = currentDest?.hasRoute<TvHomeRoute>() == true
+    var exitArmed by remember { mutableStateOf(false) }
+
+    // Подтверждение действует только на главной и ровно секунду. Переход в другой раздел
+    // сразу его отменяет: Back там остаётся обычным возвратом по стеку навигации.
+    LaunchedEffect(isHome) {
+        if (!isHome) exitArmed = false
+    }
+    LaunchedEffect(exitArmed) {
+        if (exitArmed) {
+            delay(EXIT_CONFIRMATION_TIMEOUT_MILLIS)
+            exitArmed = false
+        }
+    }
+    BackHandler(enabled = isHome) {
+        if (exitArmed) onExit() else exitArmed = true
+    }
 
     // Явная связь фокуса между оверлейной шапкой и контентом: они — соседи в Box, и
     // D-pad-поиск между ними сам по себе не проходит, поэтому шапка по «вниз» уводит в
@@ -146,8 +178,39 @@ fun FilmaxTvNavGraph(
                     },
             )
         }
+
+        AnimatedVisibility(
+            visible = exitArmed,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = TvMetrics.SafeVertical),
+        ) {
+            TvExitConfirmationHint()
+        }
     }
 }
+
+/** Нефокусируемая подсказка: повторный Back в течение секунды закрывает task. */
+@Composable
+private fun TvExitConfirmationHint() {
+    Surface(
+        color = TvSurfaceContainerHigh,
+        contentColor = TvOnSurface,
+        shape = TvMetrics.PanelShape,
+        shadowElevation = 8.dp,
+    ) {
+        Row(Modifier.padding(horizontal = 24.dp, vertical = 14.dp)) {
+            Text(
+                text = "Нажмите «Назад» ещё раз, чтобы выйти из приложения",
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
+    }
+}
+
+private const val EXIT_CONFIRMATION_TIMEOUT_MILLIS = 1_000L
 
 /** Регистрация всех экранов TV-графа: сплэш, онбординг, разделы и детали/плеер. */
 private fun NavGraphBuilder.tvDestinations(

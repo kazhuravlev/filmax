@@ -4,7 +4,6 @@ import android.app.Application
 import android.content.pm.PackageManager
 import com.filmax.app.di.appModule
 import com.filmax.core.domain.common.ErrorReporting
-import com.filmax.core.navigation.di.navigationModule
 import com.filmax.core.network.di.networkModule
 import com.filmax.core.network.di.platformNetworkModule
 import com.filmax.data.auth.di.authModule
@@ -42,7 +41,6 @@ class FilmaxApplication : Application() {
             properties(mapOf(TMDB_API_KEY_PROPERTY to BuildConfig.TMDB_API_KEY))
             modules(
                 // core / data
-                navigationModule,
                 networkModule,
                 platformNetworkModule,
                 authModule,

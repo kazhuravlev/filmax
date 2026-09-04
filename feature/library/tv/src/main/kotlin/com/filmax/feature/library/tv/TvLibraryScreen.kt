@@ -512,6 +512,7 @@ private fun ContinueWatchingCard(
     )
 }
 
+@Composable
 private fun HistoryWatchingCard(
     entry: WatchHistory,
     returnKey: String,
