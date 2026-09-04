@@ -162,7 +162,7 @@ class LibraryScreenModel(
                     // Если подборку успели открыть, тот же ответ — её первая страница.
                     // Так обложки снаружи и тайтлы внутри имеют одинаковый серверный порядок.
                     openFolder = if (isOpenFolder && open.loading) {
-                        itemPage?.let { page -> page.toOpenFolder(folder) }
+                        itemPage?.let { page -> page.toFolderPreview().toOpenFolder(folder) }
                             ?: open.copy(loading = false, error = firstErrorMessage(result))
                     } else {
                         open
