@@ -333,14 +333,12 @@ private fun LazyGridScope.continueSegment(
         return
     }
     items(continuations, key = { it.itemId }) { continuation ->
-        continuation.history?.let { entry ->
-            ProgressCard(
-                entry = entry,
-                returnKey = "continue:${entry.itemId}",
-                focus = focus,
-                onOpenItem = onOpenItem,
-            )
-        }
+        ContinueWatchingCard(
+            continuation = continuation,
+            returnKey = "continue:${continuation.itemId}",
+            focus = focus,
+            onOpenItem = onOpenItem,
+        )
     }
 }
 
@@ -448,7 +446,7 @@ private fun LazyGridScope.historySegment(
         return
     }
     items(state.history, key = { it.itemId }) { entry ->
-        ProgressCard(
+        HistoryWatchingCard(
             entry = entry,
             returnKey = "history:${entry.itemId}",
             focus = focus,
@@ -484,24 +482,50 @@ private fun MineEmpty(icon: ImageVector, title: String, hint: String) {
 }
 
 @Composable
-private fun ProgressCard(
+private fun ContinueWatchingCard(
+    continuation: Continuation,
+    returnKey: String,
+    focus: TvScreenFocus,
+    onOpenItem: (Int) -> Unit,
+) {
+    val unwatchedCount = continuation.item.tracklist.count { it.watchStatus != 1 }
+    TvPosterCard(
+        title = continuation.title,
+        meta = posterMeta(type = null, year = continuation.item.year),
+        posterUrl = continuation.item.posters.medium.ifBlank { continuation.item.posters.small },
+        onClick = { onOpenItem(continuation.itemId) },
+        modifier = focus.item(returnKey),
+        rating = ratingLabel(continuation.item.rating.external),
+        posterContent = { url, posterModifier ->
+            Box(posterModifier) {
+                TvPoster(url, continuation.title, Modifier.fillMaxSize(), TvMetrics.PosterShape)
+                if (unwatchedCount > 0) {
+                    TvUnwatchedBadge(
+                        count = unwatchedCount,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp),
+                    )
+                }
+            }
+        },
+    )
+}
+
+private fun HistoryWatchingCard(
     entry: WatchHistory,
     returnKey: String,
     focus: TvScreenFocus,
     onOpenItem: (Int) -> Unit,
 ) {
-    TvProgressCard(
+    TvPosterCard(
         title = entry.title,
-        meta = progressMeta(entry.progress),
-        // Карточка 16:9 — берём кадр, а не вертикальный постер: тот обрезался бы по центру.
-        posterUrl = entry.wideOrPoster,
-        progress = entry.progress?.fraction ?: 0f,
-        // Карточка ведёт в карточку тайтла, а не сразу в плеер: оттуда «Продолжить · SxEy»
-        // играет ту же серию, но остаётся выбор эпизода, сезонов и описание.
+        meta = null,
+        posterUrl = entry.posterSmall.orEmpty(),
         onClick = { onOpenItem(entry.itemId) },
         modifier = focus.item(returnKey),
         posterContent = { url, posterModifier ->
-            TvPoster(url, entry.title, posterModifier, TvMetrics.CardShape)
+            TvPoster(url, entry.title, posterModifier, TvMetrics.PosterShape)
         },
     )
 }
@@ -648,6 +672,24 @@ private fun TvPoster(url: String, title: String, modifier: Modifier, shape: Shap
         shape = shape,
         accentColor = TvSurfaceContainerHighest,
     )
+}
+
+/** Счётчик непросмотренных серий в углу постера на TV. */
+@Composable
+private fun TvUnwatchedBadge(count: Int, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(TvAccent),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            count.toString(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onPrimary,
+        )
+    }
 }
 
 // ── Диалоги закладок ──────────────────────────────────────────────────────

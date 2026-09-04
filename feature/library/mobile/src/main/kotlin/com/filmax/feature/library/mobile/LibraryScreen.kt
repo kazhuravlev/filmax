@@ -59,6 +59,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.filmax.core.designsystem.FilmaxMetrics
@@ -319,7 +320,7 @@ private fun MineGrid(state: LibraryState, segment: LibrarySegment, actions: Mine
     }
 }
 
-/** «Продолжить» — начатое, но не досмотренное. Ведёт сразу в плеер, минуя детали. */
+/** «Продолжить» — начатое, но не досмотренное. Ведёт в карточку тайтла, откуда можно выбрать серию. */
 private fun LazyGridScope.continueSegment(continuations: List<Continuation>, actions: MineActions) {
     if (continuations.isEmpty()) {
         emptyItem(
@@ -333,7 +334,10 @@ private fun LazyGridScope.continueSegment(continuations: List<Continuation>, act
         return
     }
     items(continuations, key = { it.itemId }) { continuation ->
-        continuation.history?.let { entry -> ProgressCard(entry = entry, onOpenItem = actions.onOpenItem) }
+        ContinueWatchingCard(
+            continuation = continuation,
+            onOpenItem = actions.onOpenItem,
+        )
     }
 }
 
@@ -422,25 +426,50 @@ private fun LazyGridScope.historySegment(state: LibraryState, actions: MineActio
         return
     }
     items(state.history, key = { it.itemId }) { entry ->
-        ProgressCard(entry = entry, onOpenItem = actions.onOpenItem)
+        HistoryWatchingCard(
+            entry = entry,
+            onOpenItem = actions.onOpenItem,
+        )
     }
 }
 
 // ── Карточки ──────────────────────────────────────────────────────────────
 
 @Composable
-private fun ProgressCard(entry: WatchHistory, onOpenItem: (Int) -> Unit) {
-    FilmaxProgressCard(
-        title = entry.title,
-        meta = continueMeta(entry.progress),
-        // Карточка 16:9 — берём кадр серии, а не вертикальный постер: тот обрезался бы по центру.
-        posterUrl = entry.wideOrPoster,
-        progress = entry.progress?.fraction ?: 0f,
-        // В карточку тайтла, а не сразу в плеер: там «Продолжить · SxEy», серии и описание.
-        onClick = { onOpenItem(entry.itemId) },
-        width = FilmaxMetrics.MineCardWidth,
-        height = FilmaxMetrics.MineCardHeight,
-    )
+private fun ContinueWatchingCard(continuation: Continuation, onOpenItem: (Int) -> Unit) {
+    val unwatchedCount = continuation.item.tracklist.count { it.watchStatus != 1 }
+    Box {
+        FilmaxPosterCard(
+            title = continuation.title,
+            posterUrl = continuation.item.posters.medium.ifBlank { continuation.item.posters.small },
+            onClick = { onOpenItem(continuation.itemId) },
+            width = FilmaxMetrics.GridPosterWidth,
+            height = FilmaxMetrics.GridPosterHeight,
+            meta = posterMeta(type = null, year = continuation.item.year),
+        )
+        if (unwatchedCount > 0) {
+            UnwatchedBadge(
+                count = unwatchedCount,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(5.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistoryWatchingCard(entry: WatchHistory, onOpenItem: (Int) -> Unit) {
+    Box {
+        FilmaxPosterCard(
+            title = entry.title,
+            posterUrl = entry.posterSmall.orEmpty(),
+            onClick = { onOpenItem(entry.itemId) },
+            width = FilmaxMetrics.GridPosterWidth,
+            height = FilmaxMetrics.GridPosterHeight,
+            meta = null,
+        )
+    }
 }
 
 /**
@@ -554,6 +583,25 @@ private fun RemoveBadge(onClick: () -> Unit, modifier: Modifier = Modifier) {
             contentDescription = "Убрать из подборки",
             tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.size(14.dp),
+        )
+    }
+}
+
+/** Счётчик непросмотренных серий в углу постера: полупрозрачный фон с числом. */
+@Composable
+private fun UnwatchedBadge(count: Int, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            count.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onPrimary,
+            fontWeight = FontWeight.Bold,
         )
     }
 }
@@ -793,7 +841,7 @@ private fun LoadingBox(modifier: Modifier = Modifier) {
 
 /** Колонки при ширине кадра 360dp: карточки 16:9 150dp — вдвое, постеры 98dp — втрое. */
 private fun columnsFor(segment: LibrarySegment, folderOpen: Boolean): Int = when (segment) {
-    LibrarySegment.CONTINUE, LibrarySegment.HISTORY -> WIDE_COLUMNS
+    LibrarySegment.CONTINUE, LibrarySegment.HISTORY -> POSTER_COLUMNS
     LibrarySegment.BOOKMARKS -> if (folderOpen) POSTER_COLUMNS else FOLDER_COLUMNS
 }
 
