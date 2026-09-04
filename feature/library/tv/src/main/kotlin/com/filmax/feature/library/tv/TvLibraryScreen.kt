@@ -202,18 +202,19 @@ private fun MineHeader(
     onSegment: (LibrarySegment) -> Unit,
 ) {
     if (section == LibrarySection.BOOKMARKS) {
-        state.openFolder?.let { folder ->
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        start = TvMetrics.SafeHorizontal,
-                        end = TvMetrics.SafeHorizontal,
-                        top = TvMetrics.ContentTop,
-                    ),
-            ) {
-                OpenFolderBar(folder = folder.folder, ui = ui)
-            }
+        // Отступ сверху нужен всегда, а не только при открытой подборке — иначе список подборок
+        // без него заезжает под верхний таб-бар: тот рисуется отдельным оверлеем и своё место
+        // в раскладке не резервирует.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = TvMetrics.SafeHorizontal,
+                    end = TvMetrics.SafeHorizontal,
+                    top = TvMetrics.ContentTop,
+                ),
+        ) {
+            state.openFolder?.let { folder -> OpenFolderBar(folder = folder.folder, ui = ui) }
         }
         return
     }
