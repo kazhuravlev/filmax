@@ -8,6 +8,7 @@ import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchProgress
 import com.filmax.data.watching.remote.WatchingApi
 import com.filmax.data.watching.remote.dto.HistoryEntryDto
+import com.filmax.data.watching.remote.dto.PaginationDto
 
 /** `watching/{type}`: единственный трек «досмотрено» — статус 1, как и в `items/{id}`. */
 private const val WATCH_STATUS_IN_PROGRESS = 0
@@ -47,19 +48,38 @@ internal class WatchingRepositoryImpl(
      * отдаёт `time` по каждому видео, саму серию (`media`) с её кадром и длительностью — и уже
      * отсортирован сервером по свежести.
      *
-     * Одна страница: на экран «Продолжить» и так попадает верхушка списка, а `perpage` = 20.
+     * История ведётся ПО СЕРИЯМ: один сериал приходит несколькими записями (s1e1, s1e2, …),
+     * а зрителю нужен один тайтл — тот, на котором он остановился. Страница — это `perpage` СЫРЫХ
+     * записей серий, а не тайтлов. Раньше бралась ровно одна страница: марафон или массовая отметка
+     * серий одного сериала «просмотрено» кладёт десятки его записей подряд (все свежие) и вытесняет
+     * с первой страницы вообще все остальные тайтлы — «Я смотрю» схлопывался в один сериал, хотя
+     * пользователь смотрел кучу другого. Поэтому листаем страницы, пока не наберём разумное число
+     * РАЗНЫХ тайтлов или не упрёмся в потолок страниц (свой сериал-марафон не должен грузить сервер
+     * бесконечно).
      *
-     * `distinctBy(itemId)` обязателен. История ведётся ПО СЕРИЯМ: один сериал приходит несколькими
-     * записями (s1e1, s1e2, …), а зрителю нужен один тайтл — тот, на котором он остановился.
-     * Сервер отдаёт список от свежего к старому, поэтому первая запись тайтла и есть последняя
-     * серия. Без дедупликации ряд получал дублирующиеся ключи и Compose падал с
-     * «Key … was already used».
+     * Дедупликация по первому вхождению обязательна: сервер отдаёт список от свежего к старому,
+     * поэтому первая запись тайтла и есть последняя серия. Без неё ряд получал дублирующиеся
+     * ключи и Compose падал с «Key … was already used».
      */
     override suspend fun getHistory(type: String): RequestResult<List<WatchHistory>> = safeRequest {
-        api.getHistoryList().history
-            .map { entry -> entry.toDomain() }
-            .distinctBy { it.itemId }
+        val distinct = mutableMapOf<Int, WatchHistory>()
+        var page = 1
+        while (distinct.size < HISTORY_TARGET_TITLES && page <= HISTORY_MAX_PAGES) {
+            val response = api.getHistoryList(page)
+            if (response.history.isEmpty()) break
+            for (entry in response.history) {
+                val history = entry.toDomain()
+                if (history.itemId !in distinct) distinct[history.itemId] = history
+            }
+            val pagination = response.pagination ?: break
+            if (!pagination.hasNextPage()) break
+            page++
+        }
+        distinct.values.toList()
     }
+
+    /** `total` у kino.watch — число страниц, а не число элементов (как и в остальных списках). */
+    private fun PaginationDto.hasNextPage(): Boolean = current < total
 
     override suspend fun saveProgress(itemId: Int, videoId: Int, timeSeconds: Int): RequestResult<Unit> =
         safeRequest { api.saveProgress(itemId, videoId, timeSeconds) }
@@ -103,5 +123,11 @@ internal class WatchingRepositoryImpl(
     private companion object {
         // kino.watch отдаёт временные метки в секундах — переводим в миллисекунды.
         const val MILLIS_IN_SECOND = 1000
+
+        /** Сколько РАЗНЫХ тайтлов достаточно набрать в историю — столько же ждали от одной страницы. */
+        const val HISTORY_TARGET_TITLES = 20
+
+        /** Потолок страниц сырых записей серий — предохранитель от бесконечной пагинации марафона. */
+        const val HISTORY_MAX_PAGES = 15
     }
 }
