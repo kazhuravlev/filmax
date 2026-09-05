@@ -1,6 +1,7 @@
 package com.filmax.core.ui.cache
 
 import android.content.Context
+import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
@@ -31,9 +32,11 @@ import java.util.concurrent.ConcurrentHashMap
  * идёт СТРОГО последовательно (одна картинка за раз, `for` по [Channel] в одной корутине), а не
  * параллельным залпом, который отъедал бы соединения у активного контента.
  *
- * Повторной сети на уже закэшированное не будет: [ImageRequest] выполняется через обычный
- * [SingletonImageLoader], а тот сам проверяет память/диск раньше похода в сеть — здесь достаточно
- * не поставить один и тот же ключ в очередь дважды, пока первый ещё не обработан ([queuedKeys]).
+ * Перед каждой закачкой явно проверяем дисковый кэш Coil по ключу ([isAlreadyCached]) и, если
+ * запись уже есть, вообще не трогаем сеть — не полагаемся молча на то, что [SingletonImageLoader]
+ * сам решит не ходить в сеть на свежую запись: на практике полагаться получалось не всегда
+ * (одни и те же постеры перекачивались повторно). Кроме того, не поставить один и тот же ключ в
+ * очередь дважды, пока первый ещё не обработан ([queuedKeys]).
  *
  * [enabled] персистится в SharedPreferences (тот же подход, что и у [ImageProxyRepositoryImpl]
  * рядом) и по умолчанию включён. Выключение не отменяет уже стоящую в очереди картинку — очередь
@@ -92,6 +95,7 @@ internal class ImagePrefetcherImpl(private val context: Context) : ImagePrefetch
 
     private suspend fun prefetchOne(image: PrefetchImage) {
         val imageLoader = SingletonImageLoader.get(context)
+        if (isAlreadyCached(imageLoader, image.key)) return
         val request = ImageRequest.Builder(context)
             .data(CacheableImage(key = image.key, url = image.url))
             // Маркер для FilmaxImageLoaderFactory (app): там по нему придушивают скорость именно
@@ -101,6 +105,12 @@ internal class ImagePrefetcherImpl(private val context: Context) : ImagePrefetch
             .build()
         imageLoader.execute(request)
     }
+
+    /** `openSnapshot` блокирует поток на файловом I/O, но мы и так уже на [Dispatchers.IO]
+     * (см. [scope]) — отдельного переключения диспетчера не нужно. Снапшот тут же закрывается
+     * ([use]): нужен только сам факт, есть ли запись, не её содержимое. */
+    private fun isAlreadyCached(imageLoader: ImageLoader, key: String): Boolean =
+        imageLoader.diskCache?.openSnapshot(key)?.use { true } ?: false
 
     private companion object {
         const val PREFETCH_TIMEOUT_MS = 15_000L

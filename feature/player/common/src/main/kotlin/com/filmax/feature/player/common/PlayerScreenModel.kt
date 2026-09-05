@@ -10,6 +10,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.navigation.toRoute
+import com.filmax.core.domain.cache.ImagePrefetchThrottle
 import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.catalog.model.AudioTrack
 import com.filmax.core.domain.catalog.model.MediaTrack
@@ -92,6 +93,12 @@ class PlayerScreenModel(
             override fun onTracksChanged(tracks: Tracks) {
                 updateAudioTracks(tracks)
                 updateSubtitleTracks(tracks)
+            }
+
+            // Пока идёт воспроизведение, фоновая закачка картинок придушивает себя — не
+            // соревнуется за канал с активным видео (см. ImagePrefetchThrottle).
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                ImagePrefetchThrottle.setPlaying(isPlaying)
             }
         })
         onFetchData()
@@ -420,6 +427,7 @@ class PlayerScreenModel(
     // корутины на отменённом родителе). Вызов saveProgress() здесь был бы «мёртвым кодом»,
     // который выглядит рабочим, но никогда не долетает до сети — поэтому его нет.
     override fun onCleared() {
+        ImagePrefetchThrottle.setPlaying(false)
         player.release()
         super.onCleared()
     }

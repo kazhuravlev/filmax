@@ -8,6 +8,7 @@ import coil3.key.Keyer
 import coil3.map.Mapper
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.filmax.core.domain.cache.ImageCacheStatsRecording
+import com.filmax.core.domain.cache.ImagePrefetchThrottle
 import com.filmax.core.ui.cache.BACKGROUND_FETCH_HEADER
 import com.filmax.core.ui.cache.CacheableImage
 import okhttp3.Interceptor
@@ -70,16 +71,19 @@ class FilmaxImageLoaderFactory : SingletonImageLoader.Factory {
  * `headers.delete('Content-Length')`) — со старым подходом статистика кэша никогда не росла для
  * ЛЮБОЙ картинки, идущей через прокси, то есть почти для всех.
  *
- * Здесь же придушиваем фоновую закачку ([BACKGROUND_FETCH_HEADER], см. `ImagePrefetcherImpl`):
- * заголовок снимается перед отправкой на сервер, а тело ответа для помеченных запросов
- * заворачивается в [ThrottledResponseBody] — обычные запросы экрана идут не тронутыми, так что
- * фоновая очередь фактически получает лишь вторичный приоритет за канал, а не соревнуется с тем,
- * что сейчас реально нужно пользователю (в том числе с видео в плеере).
+ * Здесь же придушиваем фоновую закачку ([BACKGROUND_FETCH_HEADER], см. `ImagePrefetcherImpl`) —
+ * но не всегда, а только пока недавно было что-то ещё ([ImagePrefetchThrottle.shouldThrottle]):
+ * обычный запрос экрана, запрос основного API-клиента или активное воспроизведение в плеере.
+ * Простаивает приложение — фоновая очередь идёт на полной скорости, наравне с обычными запросами;
+ * как только появляется другая активность, следующие 10 секунд фоновая закачка придушена, чтобы
+ * не отъедать канал у того, что реально нужно пользователю прямо сейчас. Заголовок снимается перед
+ * отправкой на сервер в любом случае — до него не доезжает.
  */
 private class ImageCacheLifetimeInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val originalRequest = chain.request()
         val isBackgroundFetch = originalRequest.header(BACKGROUND_FETCH_HEADER) != null
+        if (!isBackgroundFetch) ImagePrefetchThrottle.touch()
         val outgoingRequest = if (isBackgroundFetch) {
             originalRequest.newBuilder().removeHeader(BACKGROUND_FETCH_HEADER).build()
         } else {
@@ -97,7 +101,7 @@ private class ImageCacheLifetimeInterceptor : Interceptor {
         if (response.code != HTTP_OK || body == null) return response
 
         val countingBody = CountingResponseBody(body)
-        val finalBody = if (isBackgroundFetch) {
+        val finalBody = if (isBackgroundFetch && ImagePrefetchThrottle.shouldThrottle) {
             ThrottledResponseBody(countingBody, BACKGROUND_FETCH_BYTES_PER_SECOND)
         } else {
             countingBody

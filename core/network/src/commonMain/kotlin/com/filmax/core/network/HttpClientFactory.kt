@@ -1,10 +1,12 @@
 package com.filmax.core.network
 
+import com.filmax.core.domain.cache.ImagePrefetchThrottle
 import com.filmax.core.domain.network.ApiHostRepository
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.api.createClientPlugin
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
@@ -43,6 +45,15 @@ fun buildHttpClient(
     enableLogging: Boolean = false,
 ): HttpClient = HttpClient(engine) {
     expectSuccess = true
+
+    // Любой запрос основного API-клиента — это «пользователь сейчас чем-то занят» для фоновой
+    // закачки картинок (см. ImagePrefetchThrottle): она придушивает себя на 10 секунд после
+    // такой активности, чтобы не отъедать канал у того, что реально нужно прямо сейчас.
+    install(
+        createClientPlugin("ActivityTrackingPlugin") {
+            onRequest { _, _ -> ImagePrefetchThrottle.touch() }
+        },
+    )
 
     install(ContentNegotiation) {
         json(networkJson)
