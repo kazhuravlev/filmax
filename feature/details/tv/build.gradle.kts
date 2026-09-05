@@ -17,6 +17,10 @@ dependencies {
     implementation(bom)
     implementation(libs.bundles.compose)
     implementation(libs.navigation.compose)
+    // Прямой Coil нужен только для аватара актёра: PosterImage при ошибке рисует значок «фото
+    // нет» (правильно для настоящих постеров), а угаданное по MD5 имени фото должно тихо
+    // откатываться на инициалы — см. TvActorCard в TvDetailsScreen.kt.
+    implementation(libs.coil.compose)
     implementation(platform(libs.koin.bom))
     implementation(libs.koin.androidx.compose)
 }

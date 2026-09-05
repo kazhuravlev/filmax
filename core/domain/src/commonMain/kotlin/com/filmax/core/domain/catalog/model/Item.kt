@@ -19,6 +19,10 @@ data class Item(
     val finished: Boolean,
     /** Числовой IMDb-id тайтла — по нему TMDB отдаёт фото актёров. null, если API его не прислал. */
     val imdbId: String? = null,
+    /** Число просмотров тайтла на kino.watch. 0 — данных нет (не «ноль просмотров»). */
+    val views: Int = 0,
+    /** В видео тайтла есть реклама (kino.watch `advert`) — показываем бейдж на карточке-постере. */
+    val advert: Boolean = false,
 )
 
 enum class ItemType(val apiValue: String) {

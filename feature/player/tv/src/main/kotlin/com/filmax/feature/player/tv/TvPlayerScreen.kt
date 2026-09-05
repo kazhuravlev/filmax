@@ -147,7 +147,10 @@ private fun episodesPanelData(
     )
 }
 
-/** Тики и таймеры плеера: прогресс/SaveProgress, автопереход, скраб, автоскрытие оверлея. */
+/**
+ * Тики и таймеры плеера: UI-прогресс, автопереход, скраб, автоскрытие оверлея, а также события,
+ * по которым SaveProgress уходит на сервер (пауза/перемотка/конец/выход с экрана — не по таймеру).
+ */
 @Composable
 private fun PlayerEffects(ui: TvPlayerUiState, screenModel: PlayerScreenModel, menu: PlayerActions) {
     val player = screenModel.player
@@ -161,32 +164,60 @@ private fun PlayerEffects(ui: TvPlayerUiState, screenModel: PlayerScreenModel, m
         ui.isPlaying = player.isPlaying
         ui.isBuffering = player.playbackState == Player.STATE_BUFFERING
         val listener = object : Player.Listener {
+            // Событийный marktime (не по таймеру): пауза/буферизация/конец/ошибка — везде, где
+            // плеер перестаёт идти вперёд, это подходящий момент зафиксировать позицию. Лишние
+            // вызовы (эта колбэка срабатывает и на буферизации, не только на паузе пользователя)
+            // безвредны — троттлинг внутри saveProgress их отфильтрует.
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 ui.isPlaying = isPlaying
+                if (!isPlaying) screenModel.dispatch(PlayerEvent.SaveProgress(player.currentPosition))
             }
 
             // Серия дотекла до конца раньше тика — переходим сразу (если не отменяли «Назад»).
             override fun onPlaybackStateChanged(playbackState: Int) {
                 ui.isBuffering = playbackState == Player.STATE_BUFFERING
-                if (playbackState == Player.STATE_ENDED && currentMenu.hasNextEpisode && !ui.autoNextDismissed) {
+                if (playbackState != Player.STATE_ENDED) return
+                screenModel.dispatch(PlayerEvent.SaveProgress(player.currentPosition))
+                if (currentMenu.hasNextEpisode && !ui.autoNextDismissed) {
                     ui.autoNextVisible = false
                     currentMenu.onNextEpisode()
                 }
             }
+
+            // Перемотка пультом/скрабом — второе из трёх событий эталонного клиента. Другие
+            // причины разрыва (авто-переход между сегментами, внутренние сбои плеера) — шум,
+            // не пользовательское намерение, поэтому фильтруем по причине.
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                    screenModel.dispatch(PlayerEvent.SaveProgress(player.currentPosition))
+                }
+            }
         }
         player.addListener(listener)
-        onDispose { player.removeListener(listener) }
+        onDispose {
+            // Уход с экрана плеера, пока видео ещё играет (например, «Назад» без предварительной
+            // паузы) — единственный случай, не покрытый событиями выше: без этой финальной записи
+            // прогресс потерялся бы вплоть до последнего pause/seek. Дедупликация в saveProgress
+            // делает вызов безвредным, если позиция уже была сохранена только что.
+            screenModel.dispatch(PlayerEvent.SaveProgress(player.currentPosition))
+            player.removeListener(listener)
+        }
     }
 
-    // Тик прогресса и сохранения позиции. Пока длительность неизвестна — не сохраняем: записали бы
-    // нулевую позицию поверх реального прогресса. Во время скраббинга позицию ведёт пульт.
+    // Тик прогресса. Сохранение позиции на сервер ушло на события плеера (пауза/перемотка/конец/
+    // выход с экрана, см. DisposableEffect выше) — здесь только UI-состояние прогресс-бара и
+    // автопереход. Пока длительность неизвестна — не обновляем: записали бы нулевую позицию
+    // поверх реального прогресса. Во время скраббинга позицию ведёт пульт.
     LaunchedEffect(player) {
         while (true) {
             delay(PROGRESS_TICK_MS)
             val duration = player.duration.takeIf { it > 0 } ?: continue
             ui.durationMs = duration
             if (!ui.isScrubbing) ui.positionMs = player.currentPosition
-            screenModel.dispatch(PlayerEvent.SaveProgress(player.currentPosition))
 
             // Автопереход: плашка появляется в конце серии, отсчёт дошёл до нуля — следующая.
             ui.updateAutoNext(
