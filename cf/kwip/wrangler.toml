@@ -5,3 +5,11 @@ compatibility_date = "2025-09-01"
 # No routes/custom domain configured on purpose: the worker is served on the
 # free "*.workers.dev" subdomain (workers_dev = true is the default), which
 # keeps this on Cloudflare's free plan (100k requests/day, no billing).
+
+[vars]
+# kino.watch's own web client (kpapp.link) rewrites every poster/thumbnail
+# URL to this CDN host before use — see doccs-api/API_CONTRACT.md and
+# feature/details/common/ActorPhotoUrl.kt, which already hits the same host.
+IMAGE_ALLOWED_HOSTS = ["m.staticpop.net"]
+IMAGE_CACHE_TTL_SECONDS = 2592000
+IMAGE_MAX_BYTES = 10485760
