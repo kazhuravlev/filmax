@@ -73,6 +73,7 @@ private data class CatalogRequest(
 private data class CatalogPage(
     val items: List<Item>,
     val exhaustedTypes: Set<ItemType>,
+    val hadErrors: Boolean = false,
 )
 
 /**
@@ -106,6 +107,12 @@ class SearchScreenModel(
     /** Типы, у которых страницы кончились: их не запрашиваем при догрузке. */
     private var exhaustedTypes = setOf<ItemType>()
 
+    /** Повторяет текущую выдачу и справочники, не сбрасывая серию автоповторов. */
+    private val retryVisibleContent: () -> Unit = {
+        screenModelScope { _ -> reload() }
+        if (state.catalogEnabled) loadCatalogMetadata()
+    }
+
     init {
         onFetchData()
     }
@@ -119,6 +126,7 @@ class SearchScreenModel(
             is SearchEvent.ApplyFilters -> updateAndReload { it.copy(filters = event.filters) }
             SearchEvent.ResetFilters -> updateAndReload { it.copy(filters = CatalogFilters()) }
             is SearchEvent.SubmitQuery -> {
+                resetServerRetryCycle()
                 onQueryChange(event.query)
                 screenModelScope { _ -> performSearch(event.query) }
             }
@@ -127,8 +135,19 @@ class SearchScreenModel(
                 updateState { it.copy(recentQueries = emptyList()) }
             }
 
-            SearchEvent.LoadCatalog -> onLoadCatalog()
-            SearchEvent.Refresh -> screenModelScope { _ -> reload() }
+            SearchEvent.LoadCatalog -> {
+                if (!state.catalogEnabled) {
+                    screenModelScope { _ ->
+                        updateState { it.copy(catalogEnabled = true) }
+                        reload()
+                    }
+                    loadCatalogMetadata()
+                }
+            }
+            SearchEvent.Refresh -> {
+                resetServerRetryCycle()
+                retryVisibleContent()
+            }
             SearchEvent.LoadMoreCatalog -> onLoadMoreCatalog()
         }
     }
@@ -161,28 +180,29 @@ class SearchScreenModel(
 
     /** Смена любого фильтра — это всегда «поправь состояние и перезапроси выдачу». */
     private fun updateAndReload(change: (SearchState) -> SearchState) {
+        resetServerRetryCycle()
         screenModelScope { _ ->
             updateState(change)
             reload()
         }
     }
 
-    private fun onLoadCatalog() {
-        if (state.catalogEnabled) return
+    /** Метаданные грузятся параллельно сетке, но их ошибки больше не скрываются от пользователя. */
+    private fun loadCatalogMetadata() {
         screenModelScope { _ ->
-            updateState { it.copy(catalogEnabled = true) }
-            reload()
+            when (val result = catalog.getGenres()) {
+                is RequestResult.Success -> updateState {
+                    it.copy(genres = result.data.filter { genre -> genre.type in VIDEO_GENRE_TYPES })
+                }
+
+                is RequestResult.Error -> scheduleServerRetry(retryVisibleContent)
+            }
         }
-        // Жанры — отдельной корутиной: чипы не должны ждать сетку, а сетка — чипы.
         screenModelScope { _ ->
-            catalog.getGenres().getOrNull()
-                ?.filter { it.type in VIDEO_GENRE_TYPES }
-                ?.let { genres -> updateState { it.copy(genres = genres) } }
-        }
-        // Страны — тоже отдельно: список нужен только листу фильтров, сетку он не держит.
-        screenModelScope { _ ->
-            catalog.getCountries().getOrNull()
-                ?.let { countries -> updateState { it.copy(countries = countries) } }
+            when (val result = catalog.getCountries()) {
+                is RequestResult.Success -> updateState { it.copy(countries = result.data) }
+                is RequestResult.Error -> scheduleServerRetry(retryVisibleContent)
+            }
         }
     }
 
@@ -194,13 +214,15 @@ class SearchScreenModel(
 
     private suspend fun performSearch(query: String) {
         updateState { it.copy(loading = true) }
-        when (val result = search.search(query, state.filter, perPage = PER_PAGE)) {
+        val result = search.search(query, state.filter, perPage = PER_PAGE)
+        when (result) {
             is RequestResult.Success -> updateState { current ->
                 val recent = (listOf(query) + current.recentQueries).distinct().take(RECENT_LIMIT)
                 current.copy(
                     loading = false,
                     results = arrange(result.data, current),
                     recentQueries = recent,
+                    error = null,
                 )
             }
 
@@ -208,6 +230,7 @@ class SearchScreenModel(
                 it.copy(loading = false, error = result.message)
             }
         }
+        if (result is RequestResult.Error) scheduleServerRetry(retryVisibleContent)
     }
 
     private suspend fun loadCatalog() {
@@ -227,14 +250,19 @@ class SearchScreenModel(
                             error = null,
                         )
                     }
+                    first.data.takeIf(CatalogPage::hadErrors)?.let {
+                        scheduleServerRetry(retryVisibleContent)
+                    }
                 }
             }
 
             is RequestResult.Error -> {
                 if (state.matches(request)) {
                     updateState {
-                        it.copy(loading = false, catalogItems = emptyList(), error = first.message)
+                        // Не превращаем сетевой сбой в настоящее пустое состояние каталога.
+                        it.copy(loading = false, error = first.message)
                     }
+                    scheduleServerRetry(retryVisibleContent)
                 }
             }
         }
@@ -257,7 +285,9 @@ class SearchScreenModel(
             when (val next = fetchCatalogPage(request, page, exhausted)) {
                 is RequestResult.Success -> {
                     if (!state.matches(request)) return@screenModelScope
-                    catalogPage = page
+                    // При частичном ответе повторяем тот же номер страницы: иначе у упавшего
+                    // типа образуется незаметная дыра, хотя остальные карточки уже показаны.
+                    if (!next.data.hadErrors) catalogPage = page
                     exhaustedTypes = next.data.exhaustedTypes
                     updateState { s ->
                         val seen = s.catalogItems.mapTo(HashSet()) { it.id }
@@ -270,11 +300,12 @@ class SearchScreenModel(
                             catalogEndReached = request.activeTypes.all { it in next.data.exhaustedTypes },
                         )
                     }
+                    if (next.data.hadErrors) scheduleServerRetry { onLoadMoreCatalog() }
                 }
 
-                // Тихий фейл: показанную витрину не рушим, следующий подход к хвосту повторит.
                 is RequestResult.Error -> if (state.matches(request)) {
                     updateState { it.copy(catalogLoadingMore = false) }
+                    scheduleServerRetry { onLoadMoreCatalog() }
                 }
             }
         }
@@ -313,6 +344,7 @@ class SearchScreenModel(
                 CatalogPage(
                     items = request.narrow(interleave(succeeded.map { (_, itemPage) -> itemPage.items })),
                     exhaustedTypes = nextExhausted,
+                    hadErrors = results.any { (_, result) -> result is RequestResult.Error },
                 ),
             )
         }

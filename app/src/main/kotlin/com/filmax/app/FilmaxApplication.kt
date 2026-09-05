@@ -2,10 +2,13 @@ package com.filmax.app
 
 import android.app.Application
 import android.content.pm.PackageManager
+import coil3.SingletonImageLoader
 import com.filmax.app.di.appModule
+import com.filmax.app.image.FilmaxImageLoaderFactory
 import com.filmax.core.domain.common.ErrorReporting
 import com.filmax.core.network.di.networkModule
 import com.filmax.core.network.di.platformNetworkModule
+import com.filmax.core.ui.di.coreUiModule
 import com.filmax.data.auth.di.authModule
 import com.filmax.data.catalog.di.catalogModule
 import com.filmax.data.search.di.searchModule
@@ -28,7 +31,12 @@ import org.koin.android.ext.koin.androidLogger
 import org.koin.core.context.startKoin
 import org.koin.core.logger.Level
 
-class FilmaxApplication : Application() {
+// SingletonImageLoader.Factory — делегирован FilmaxImageLoaderFactory: Coil сам находит эту
+// реализацию через applicationContext при первом обращении к синглтон-загрузчику, вызывать
+// что-то явно в onCreate не нужно (см. com.filmax.app.image.FilmaxImageLoaderFactory).
+class FilmaxApplication :
+    Application(),
+    SingletonImageLoader.Factory by FilmaxImageLoaderFactory() {
     override fun onCreate() {
         super.onCreate()
         initErrorReporting()
@@ -49,6 +57,7 @@ class FilmaxApplication : Application() {
                 userModule,
                 watchingModule,
                 tmdbModule,
+                coreUiModule,
                 // features
                 onboardingModule,
                 homeModule,

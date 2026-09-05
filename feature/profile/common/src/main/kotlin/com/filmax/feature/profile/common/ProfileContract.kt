@@ -28,6 +28,7 @@ sealed interface ProfileEvent {
     data class SetSubtitleLanguage(val language: String) : ProfileEvent
     data object ResetSubtitlePreferences : ProfileEvent
     data class SetApiHost(val host: String) : ProfileEvent
+    data object ClearImageCache : ProfileEvent
 }
 
 sealed interface ProfileSideEffect {

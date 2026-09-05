@@ -18,9 +18,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
+import com.filmax.core.presentation.ServerRetryNotice
 import com.filmax.core.tv.designsystem.TvMetrics
 import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvPosterGrid
+import com.filmax.core.tv.designsystem.TvServerRetryNotification
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
@@ -41,46 +43,55 @@ fun TvCollectionDetailScreen(
     screenModel: CollectionDetailScreenModel = koinViewModel(),
 ) {
     val state by screenModel.collectAsState()
+    val retryNotice by screenModel.collectServerRetryNoticeAsState()
     val focus = rememberTvScreenFocus()
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(top = TvMetrics.ContentTop),
+            .background(MaterialTheme.colorScheme.background),
     ) {
-        Column(Modifier.padding(horizontal = TvMetrics.SafeHorizontal)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                "Подборка",
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp, bottom = 20.dp),
-            )
-        }
-
-        when {
-            state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        Column(Modifier.fillMaxSize().padding(top = TvMetrics.ContentTop)) {
+            Column(Modifier.padding(horizontal = TvMetrics.SafeHorizontal)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    "Подборка",
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 20.dp),
+                )
             }
 
-            else -> TvPosterGrid(
-                modifier = focus.containerModifier,
-            ) {
-                items(state.items, key = { item -> item.id }) { item ->
-                    CollectionPoster(
-                        item = item,
-                        modifier = focus.item("collection:${item.id}"),
-                        onClick = { onOpenItem(item.id) },
-                    )
+            when {
+                state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+
+                else -> TvPosterGrid(
+                    modifier = focus.containerModifier,
+                ) {
+                    items(state.items, key = { item -> item.id }) { item ->
+                        CollectionPoster(
+                            item = item,
+                            modifier = focus.item("collection:${item.id}"),
+                            onClick = { onOpenItem(item.id) },
+                        )
+                    }
                 }
             }
         }
+        TvServerRetryNotification(
+            visible = retryNotice != null,
+            retriesExhausted = retryNotice is ServerRetryNotice.Exhausted,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = TvMetrics.SafeVertical),
+        )
     }
 }
 

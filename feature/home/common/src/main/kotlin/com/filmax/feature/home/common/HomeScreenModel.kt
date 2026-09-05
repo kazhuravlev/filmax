@@ -24,7 +24,10 @@ class HomeScreenModel(
 
     override fun dispatch(event: HomeEvent) {
         when (event) {
-            HomeEvent.Load -> onFetchData()
+            HomeEvent.Load -> {
+                resetServerRetryCycle()
+                onFetchData()
+            }
             is HomeEvent.LoadMoreRow -> loadMoreRow(event.id)
         }
     }
@@ -34,26 +37,46 @@ class HomeScreenModel(
             updateState { it.copy(loading = true, error = null) }
             val feed = getHomeFeed()
             updateState { s ->
+                // При частичном сбое сервер возвращает пустой список только для упавшей секции.
+                // Не выдаём его за реальное «ничего нет»: оставляем прежнюю секцию до повтора.
+                val preserveMissing = feed.error != null
+                val oldContinue = s.rows.filterIsInstance<HomeRow.Continue>().firstOrNull()?.entries.orEmpty()
+                val oldTrending = s.titleItems(HomeRowId.TRENDING)
+                val oldForYou = s.titleItems(HomeRowId.FOR_YOU)
+                val oldCollections = s.rows.filterIsInstance<HomeRow.Collections>()
+                    .firstOrNull()?.paging?.items.orEmpty()
                 s.copy(
                     loading = false,
-                    hero = feed.hero,
+                    hero = feed.hero ?: s.hero.takeIf { preserveMissing },
                     // Состав и порядок ленты — здесь и только здесь.
                     rows = listOf(
-                        HomeRow.Continue(feed.continueWatching),
-                        HomeRow.Titles(HomeRowId.TRENDING, RowPaging(feed.trending)),
-                        HomeRow.Titles(HomeRowId.FOR_YOU, RowPaging(feed.forYou)),
-                        HomeRow.Collections(RowPaging(feed.collections)),
+                        HomeRow.Continue(feed.continueWatching.preserveEmpty(oldContinue, preserveMissing)),
+                        HomeRow.Titles(
+                            HomeRowId.TRENDING,
+                            RowPaging(feed.trending.preserveEmpty(oldTrending, preserveMissing)),
+                        ),
+                        HomeRow.Titles(
+                            HomeRowId.FOR_YOU,
+                            RowPaging(feed.forYou.preserveEmpty(oldForYou, preserveMissing)),
+                        ),
+                        HomeRow.Collections(
+                            RowPaging(feed.collections.preserveEmpty(oldCollections, preserveMissing)),
+                        ),
                     ),
                     error = feed.error,
                 )
             }
+            if (feed.error != null) scheduleServerRetry(::onFetchData)
             when {
                 // Контент из кэша при офлайне (issue #42) — показываем баннер, не модалку.
                 feed.fromCache -> showOfflineBanner()
                 // Пусто + ошибка — блокирующая модалка.
                 !feed.hasContent && feed.error != null -> showError(feed.error)
                 // Свежие данные приехали — прячем баннер, если висел.
-                else -> dismissOfflineBanner()
+                else -> {
+                    dismissOfflineBanner()
+                    dismissError()
+                }
             }
         }
     }
@@ -82,13 +105,15 @@ class HomeScreenModel(
         val nextPage = row.paging.page + 1
         screenModelScope { _ ->
             updateTitles(row.id) { it.copy(loadingMore = true) }
-            when (val result = catalog.getItems(source.type, source.sort, nextPage)) {
+            val result = catalog.getItems(source.type, source.sort, nextPage)
+            when (result) {
                 is RequestResult.Success -> updateTitles(row.id) {
                     it.append(result.data.items, Item::id, result.data.pagination.hasNextPage)
                 }
 
                 is RequestResult.Error -> updateTitles(row.id) { it.copy(loadingMore = false) }
             }
+            if (result is RequestResult.Error) scheduleServerRetry { loadMoreRow(row.id) }
         }
     }
 
@@ -101,13 +126,15 @@ class HomeScreenModel(
         val nextPage = row.paging.page + 1
         screenModelScope { _ ->
             updateCollections { it.copy(loadingMore = true) }
-            when (val result = catalog.getCollections(nextPage)) {
+            val result = catalog.getCollections(nextPage)
+            when (result) {
                 is RequestResult.Success -> updateCollections {
                     it.append(result.data, Collection::id, hasNextPage = result.data.isNotEmpty())
                 }
 
                 is RequestResult.Error -> updateCollections { it.copy(loadingMore = false) }
             }
+            if (result is RequestResult.Error) scheduleServerRetry { loadMoreRow(row.id) }
         }
     }
 
@@ -127,6 +154,12 @@ class HomeScreenModel(
         updateState { it.copy(rows = it.rows.map(transform)) }
     }
 }
+
+private fun HomeState.titleItems(id: HomeRowId): List<Item> =
+    rows.filterIsInstance<HomeRow.Titles>().firstOrNull { it.id == id }?.paging?.items.orEmpty()
+
+private fun <T> List<T>.preserveEmpty(previous: List<T>, preserve: Boolean): List<T> =
+    if (preserve && isEmpty()) previous else this
 
 /** Чем наполняется ряд тайтлов при догрузке: фид даёт стартовую горстку, дальше — каталог. */
 private data class TitleSource(val type: ItemType, val sort: CatalogSort)

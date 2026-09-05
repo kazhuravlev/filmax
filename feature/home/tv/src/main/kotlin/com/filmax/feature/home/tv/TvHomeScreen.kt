@@ -38,6 +38,7 @@ import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.watching.model.Continuation
+import com.filmax.core.presentation.ServerRetryNotice
 import com.filmax.core.tv.designsystem.RefreshOnTopNavReselect
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvAccent
@@ -51,6 +52,7 @@ import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvProgressCard
 import com.filmax.core.tv.designsystem.TvRail
 import com.filmax.core.tv.designsystem.TvScreenFocus
+import com.filmax.core.tv.designsystem.TvServerRetryNotification
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.core.tv.designsystem.posterMeta
@@ -87,6 +89,7 @@ fun TvHomeScreen(
     RefreshOnTopNavReselect { screenModel.dispatch(HomeEvent.Load) }
     val offline by screenModel.collectOfflineBannerAsState()
     val appError by screenModel.collectErrorAsState()
+    val retryNotice by screenModel.collectServerRetryNoticeAsState()
 
     Box(
         modifier = modifier
@@ -123,6 +126,13 @@ fun TvHomeScreen(
                 ),
             )
         }
+        TvServerRetryNotification(
+            visible = retryNotice != null,
+            retriesExhausted = retryNotice is ServerRetryNotice.Exhausted,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = TvMetrics.SafeVertical),
+        )
     }
 }
 

@@ -26,12 +26,15 @@ class CollectionDetailScreenModel(
         screenModelScope { _ ->
             updateState { it.copy(loading = true, error = null) }
             when (val result = catalog.getCollectionItems(route.collectionId, page = 1)) {
-                is RequestResult.Success ->
+                is RequestResult.Success -> {
                     updateState { it.copy(loading = false, items = result.data.items) }
+                    dismissError()
+                }
 
                 is RequestResult.Error -> {
                     updateState { it.copy(loading = false, error = result.message) }
                     showError(result)
+                    scheduleServerRetry(::onFetchData)
                 }
             }
         }

@@ -161,6 +161,10 @@ private fun ProfileContent(
                 spec = SettingRowSpec(label = "Проверить обновления"),
                 onClick = actions.onCheckUpdates,
             )
+            SettingRow(
+                spec = SettingRowSpec(label = "Сбросить кеш изображений", labelColor = TvError),
+                onClick = actions.onClearImageCache,
+            )
             Spacer(Modifier.height(26.dp))
             FilmaxVersionLabel(color = TvOnSurfaceDim)
         }
@@ -212,6 +216,7 @@ private data class ProfileActions(
     val onLogout: () -> Unit,
     val onCheckUpdates: () -> Unit,
     val onCycleApiHost: () -> Unit,
+    val onClearImageCache: () -> Unit,
 )
 
 /** Лямбды замыкают текущий [state], поэтому пересобираются вместе с ним — без remember. */
@@ -246,6 +251,7 @@ private fun profileActions(
             screenModel.dispatch(ProfileEvent.SetApiHost(next(hosts, state.apiHost)))
         }
     },
+    onClearImageCache = { screenModel.dispatch(ProfileEvent.ClearImageCache) },
 )
 
 @Composable

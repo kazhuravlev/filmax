@@ -6,8 +6,8 @@ import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.common.LastValueCache
 import com.filmax.core.domain.common.firstErrorMessage
 import com.filmax.core.domain.common.getOrNull
-import com.filmax.core.domain.watching.model.ContinuationResolver
 import com.filmax.core.domain.watching.WatchingRepository
+import com.filmax.core.domain.watching.model.ContinuationResolver
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
@@ -49,7 +49,7 @@ class GetHomeFeedUseCase(
             collections = collections.getOrNull()?.take(COLLECTIONS_LIMIT) ?: emptyList(),
             trending = trending.getOrNull()?.items?.take(ROW_LIMIT) ?: emptyList(),
             forYou = forYou.getOrNull()?.items?.take(ROW_LIMIT) ?: emptyList(),
-            error = firstErrorMessage(hot, trending, collections, forYou),
+            error = firstErrorMessage(hot, trending, collections, forYou, history),
         )
 
         when {

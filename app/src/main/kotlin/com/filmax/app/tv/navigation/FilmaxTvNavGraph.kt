@@ -7,12 +7,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -27,7 +24,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
@@ -42,9 +38,8 @@ import com.filmax.app.navigation.navFadeOut
 import com.filmax.core.tv.designsystem.LocalTvNavBarFocused
 import com.filmax.core.tv.designsystem.LocalTvRefreshRequests
 import com.filmax.core.tv.designsystem.LocalTvScrollToTop
+import com.filmax.core.tv.designsystem.TvBottomNotification
 import com.filmax.core.tv.designsystem.TvMetrics
-import com.filmax.core.tv.designsystem.TvOnSurface
-import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.feature.collections.common.navigation.CollectionDetailRoute
 import com.filmax.feature.collections.tv.navigation.tvCollectionDetailScreen
 import com.filmax.feature.details.common.navigation.DetailsRoute
@@ -206,7 +201,7 @@ fun FilmaxTvNavGraph(
                 .align(Alignment.BottomCenter)
                 .padding(bottom = TvMetrics.SafeVertical),
         ) {
-            TvExitConfirmationHint()
+            TvBottomNotification("Нажмите «Назад» ещё раз, чтобы выйти из приложения")
         }
     }
 
@@ -220,24 +215,6 @@ fun FilmaxTvNavGraph(
             onExit()
         } else {
             exitArmed = true
-        }
-    }
-}
-
-/** Нефокусируемая подсказка: повторный Back в течение секунды закрывает task. */
-@Composable
-private fun TvExitConfirmationHint() {
-    Surface(
-        color = TvSurfaceContainerHigh,
-        contentColor = TvOnSurface,
-        shape = TvMetrics.PanelShape,
-        shadowElevation = 8.dp,
-    ) {
-        Row(Modifier.padding(horizontal = 24.dp, vertical = 14.dp)) {
-            Text(
-                text = "Нажмите «Назад» ещё раз, чтобы выйти из приложения",
-                style = MaterialTheme.typography.titleMedium,
-            )
         }
     }
 }

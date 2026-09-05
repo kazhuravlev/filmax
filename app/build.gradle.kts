@@ -227,6 +227,11 @@ dependencies {
     // Navigation
     implementation(libs.navigation.compose)
 
+    // Coil: только для настройки общего ImageLoader (FilmaxImageLoaderFactory) — сами картинки
+    // грузит core:ui/PosterImage через синглтон-загрузчик, без прямого обращения к Coil отсюда.
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+
     // In-app update: разбор ответа GitHub Releases.
     implementation(libs.kotlinx.serialization.json)
 

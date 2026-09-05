@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -61,6 +62,7 @@ import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchingItem
+import com.filmax.core.presentation.ServerRetryNotice
 import com.filmax.core.tv.designsystem.RefreshOnTopNavReselect
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvAccent
@@ -75,6 +77,7 @@ import com.filmax.core.tv.designsystem.TvOutlineVariant
 import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvPosterGrid
 import com.filmax.core.tv.designsystem.TvScreenFocus
+import com.filmax.core.tv.designsystem.TvServerRetryNotification
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
@@ -142,6 +145,7 @@ fun TvLibraryScreen(
     screenModel: LibraryScreenModel = koinViewModel(),
 ) {
     val state by screenModel.collectAsState()
+    val retryNotice by screenModel.collectServerRetryNoticeAsState()
     RefreshOnTopNavReselect { screenModel.dispatch(LibraryEvent.Refresh(section)) }
     // ViewModel живёт дольше экрана: без этого возврат из деталей (например, после «Я смотрю»)
     // показывал бы список, каким он был при первом входе в раздел.
@@ -163,42 +167,58 @@ fun TvLibraryScreen(
         dispatch = screenModel::dispatch,
     )
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(TvSurface),
     ) {
-        MineHeader(
-            section = section,
-            state = state,
-            segment = segment,
-            ui = ui,
-            onSegment = { next ->
-                segment = next
-                // Уход из подборок закрывает открытую подборку: иначе возврат показал бы содержимое,
-                // которое уже никто не просил.
-                if (next != LibrarySegment.BOOKMARKS && state.openFolder != null) {
-                    screenModel.dispatch(LibraryEvent.CloseFolder)
-                }
-            },
-        )
-
-        if (state.loading) {
-            LoadingBox(Modifier.fillMaxSize())
-        } else {
-            MineGrid(
+        Column(Modifier.fillMaxSize()) {
+            MineHeader(
+                section = section,
                 state = state,
                 segment = segment,
                 ui = ui,
-                actions = TvLibraryActions(
-                    onOpenItem = onOpenItem,
-                    onOpenFolder = { folder -> screenModel.dispatch(LibraryEvent.OpenFolder(folder)) },
-                    onLoadFolderPreview = { folder -> screenModel.dispatch(LibraryEvent.LoadFolderPreview(folder)) },
-                    onLoadMoreFolderItems = { screenModel.dispatch(LibraryEvent.LoadMoreFolderItems) },
-                ),
+                onSegment = { next ->
+                    segment = next
+                    // Уход из подборок закрывает открытую подборку: иначе возврат показал бы содержимое,
+                    // которое уже никто не просил.
+                    if (next != LibrarySegment.BOOKMARKS && state.openFolder != null) {
+                        screenModel.dispatch(LibraryEvent.CloseFolder)
+                    }
+                },
             )
+
+            if (state.loading) {
+                LoadingBox(Modifier.fillMaxSize())
+            } else {
+                MineGrid(
+                    state = state,
+                    segment = segment,
+                    ui = ui,
+                    actions = TvLibraryActions(
+                        onOpenItem = onOpenItem,
+                        onOpenFolder = { folder -> screenModel.dispatch(LibraryEvent.OpenFolder(folder)) },
+                        onLoadFolderPreview = { folder ->
+                            screenModel.dispatch(LibraryEvent.LoadFolderPreview(folder))
+                        },
+                        onLoadMoreFolderItems = { screenModel.dispatch(LibraryEvent.LoadMoreFolderItems) },
+                    ),
+                )
+            }
         }
+        TvLibraryRetryNotification(retryNotice)
     }
+}
+
+@Composable
+private fun BoxScope.TvLibraryRetryNotification(notice: ServerRetryNotice?) {
+    TvServerRetryNotification(
+        visible = notice != null,
+        retriesExhausted = notice is ServerRetryNotice.Exhausted,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = TvMetrics.SafeVertical),
+    )
 }
 
 /**

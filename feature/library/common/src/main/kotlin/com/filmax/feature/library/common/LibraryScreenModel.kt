@@ -39,7 +39,10 @@ class LibraryScreenModel(
 
     override fun dispatch(event: LibraryEvent) {
         when (event) {
-            is LibraryEvent.Refresh -> refresh(event.section)
+            is LibraryEvent.Refresh -> {
+                resetServerRetryCycle()
+                refresh(event.section)
+            }
             is LibraryEvent.RemoveFromHistory -> removeFromHistory(event.itemId)
             LibraryEvent.ClearHistory -> clearHistory()
             is LibraryEvent.OpenFolder -> openFolder(event.folder)
@@ -64,14 +67,15 @@ class LibraryScreenModel(
         screenModelScope {
             updateState { it.copy(loading = true, error = null) }
             val watchingResult = loadWatchingSection()
-            updateState {
-                it.copy(
+            updateState { current ->
+                current.copy(
                     loading = false,
-                    watching = watchingResult.titles,
-                    history = watchingResult.history,
+                    watching = watchingResult.titles.preserveEmpty(current.watching, watchingResult.error),
+                    history = watchingResult.history.preserveEmpty(current.history, watchingResult.error),
                     error = watchingResult.error,
                 )
             }
+            if (watchingResult.error != null) scheduleServerRetry(::refreshWatching)
         }
     }
 
@@ -117,7 +121,7 @@ class LibraryScreenModel(
                 current.copy(
                     loading = openedFolder == null,
                     error = null,
-                    folderPreviews = emptyMap(),
+                    folderPreviews = current.folderPreviews,
                     loadingFolderPreviews = emptySet(),
                     openFolder = current.openFolder?.copy(
                         loading = true,
@@ -128,7 +132,8 @@ class LibraryScreenModel(
             }
             val foldersResult = user.getBookmarkFolders()
             val itemsResult = openedFolder?.let { user.getBookmarkItems(it.id) }
-            applyRefreshedBookmarks(openedFolder, foldersResult, itemsResult)
+            val error = applyRefreshedBookmarks(openedFolder, foldersResult, itemsResult)
+            if (error != null) scheduleServerRetry(::refreshBookmarks)
         }
     }
 
@@ -136,7 +141,7 @@ class LibraryScreenModel(
         openedFolder: BookmarkFolder?,
         foldersResult: RequestResult<List<BookmarkFolder>>,
         itemsResult: RequestResult<ItemPage>?,
-    ) {
+    ): String? {
         val folders = foldersResult.getOrNull()
         val refreshedPage = itemsResult?.getOrNull()
         val error = if (itemsResult == null) {
@@ -155,15 +160,17 @@ class LibraryScreenModel(
             current.copy(
                 loading = false,
                 lists = folders ?: current.lists,
-                folderPreviews = if (refreshedFolder != null && refreshedPage != null) {
-                    mapOf(refreshedFolder.id to refreshedPage.toFolderPreview())
-                } else {
-                    emptyMap()
+                folderPreviews = when {
+                    error != null -> current.folderPreviews
+                    refreshedFolder != null && refreshedPage != null ->
+                        mapOf(refreshedFolder.id to refreshedPage.toFolderPreview())
+                    else -> emptyMap()
                 },
                 openFolder = refreshedOpen,
                 error = error,
             )
         }
+        return error
     }
 
     override fun onFetchData() {
@@ -173,15 +180,17 @@ class LibraryScreenModel(
                 val listsDeferred = async { user.getBookmarkFolders() }
                 val watchingResult = watchingDeferred.await()
                 val lists = listsDeferred.await()
-                updateState {
-                    it.copy(
+                val error = watchingResult.error ?: firstErrorMessage(lists)
+                updateState { current ->
+                    current.copy(
                         loading = false,
-                        watching = watchingResult.titles,
-                        history = watchingResult.history,
-                        lists = lists.getOrNull().orEmpty(),
-                        error = watchingResult.error ?: firstErrorMessage(lists),
+                        watching = watchingResult.titles.preserveEmpty(current.watching, error),
+                        history = watchingResult.history.preserveEmpty(current.history, error),
+                        lists = lists.getOrNull() ?: current.lists,
+                        error = error,
                     )
                 }
+                if (error != null) scheduleServerRetry(::onFetchData)
             }
         }
     }
@@ -236,10 +245,10 @@ class LibraryScreenModel(
                     openFolder = open.copy(
                         // distinctBy — та же страховка, что и в loadMoreFolderItems: дубликат id
                         // в первой же странице уронил бы LazyGrid по key.
-                        items = itemPage?.items.orEmpty().distinctBy { it.id },
-                        page = FIRST_PAGE,
+                        items = itemPage?.items?.distinctBy { it.id } ?: open.items,
+                        page = if (itemPage != null) FIRST_PAGE else open.page,
                         loading = false,
-                        endReached = itemPage?.pagination?.hasNextPage != true,
+                        endReached = itemPage?.pagination?.hasNextPage?.not() ?: open.endReached,
                         error = firstErrorMessage(result),
                     ),
                     folderPreviews = itemPage?.let { page ->
@@ -248,6 +257,7 @@ class LibraryScreenModel(
                     loadingFolderPreviews = current.loadingFolderPreviews - folder.id,
                 )
             }
+            if (result is RequestResult.Error) scheduleServerRetry { openFolder(folder) }
         }
     }
 
@@ -284,6 +294,7 @@ class LibraryScreenModel(
                     },
                 )
             }
+            if (result is RequestResult.Error) scheduleServerRetry { loadFolderPreview(folder) }
         }
     }
 
@@ -315,6 +326,7 @@ class LibraryScreenModel(
                     ),
                 )
             }
+            if (result is RequestResult.Error) scheduleServerRetry(::loadMoreFolderItems)
         }
     }
 
@@ -377,7 +389,12 @@ class LibraryScreenModel(
 
     /** Перечитывает список папок с сервера: id, счётчики и порядок — его зона ответственности. */
     private suspend fun reloadFolders() {
-        val folders = user.getBookmarkFolders().getOrNull() ?: return
+        val result = user.getBookmarkFolders()
+        val folders = result.getOrNull()
+        if (folders == null) {
+            scheduleServerRetry { screenModelScope { reloadFolders() } }
+            return
+        }
         val folderIds = folders.mapTo(mutableSetOf()) { it.id }
         updateState { current ->
             current.copy(
@@ -409,3 +426,6 @@ class LibraryScreenModel(
         const val TYPE_SERIALS = "serials"
     }
 }
+
+private fun <T> List<T>.preserveEmpty(previous: List<T>, error: String?): List<T> =
+    if (error != null && isEmpty()) previous else this

@@ -1,6 +1,7 @@
 package com.filmax.feature.profile.common
 
 import com.filmax.core.domain.auth.AuthRepository
+import com.filmax.core.domain.cache.ImageCacheRepository
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.network.ApiHostRepository
@@ -9,6 +10,7 @@ import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.presentation.BaseScreenModel
 
+@Suppress("LongParameterList")
 class ProfileScreenModel(
     private val user: UserRepository,
     private val watching: WatchingRepository,
@@ -16,6 +18,7 @@ class ProfileScreenModel(
     private val favorites: FavoritesRepository,
     private val playbackSettings: PlaybackSettingsRepository,
     private val apiHost: ApiHostRepository,
+    private val imageCache: ImageCacheRepository,
 ) : BaseScreenModel<ProfileState, ProfileSideEffect, ProfileEvent>(ProfileState()) {
 
     init {
@@ -57,6 +60,7 @@ class ProfileScreenModel(
             is ProfileEvent.SetSubtitleLanguage -> setSubtitleLanguage(event.language)
             ProfileEvent.ResetSubtitlePreferences -> resetSubtitlePreferences()
             is ProfileEvent.SetApiHost -> setApiHost(event.host)
+            ProfileEvent.ClearImageCache -> clearImageCache()
         }
     }
 
@@ -78,6 +82,10 @@ class ProfileScreenModel(
 
     private fun resetSubtitlePreferences() = screenModelScope {
         playbackSettings.clearSubtitlePreferences()
+    }
+
+    private fun clearImageCache() = screenModelScope {
+        imageCache.clear()
     }
 
     override fun onFetchData() {

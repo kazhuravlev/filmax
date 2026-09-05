@@ -64,6 +64,7 @@ import com.filmax.core.domain.catalog.SortOption
 import com.filmax.core.domain.catalog.model.Genre
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
+import com.filmax.core.presentation.ServerRetryNotice
 import com.filmax.core.tv.designsystem.RefreshOnTopNavReselect
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvChip
@@ -75,6 +76,7 @@ import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvPosterGrid
 import com.filmax.core.tv.designsystem.TvScreenFocus
+import com.filmax.core.tv.designsystem.TvServerRetryNotification
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
@@ -120,6 +122,7 @@ fun TvCatalogScreen(
     screenModel: SearchScreenModel = koinViewModel(),
 ) {
     val state by screenModel.collectAsState()
+    val retryNotice by screenModel.collectServerRetryNoticeAsState()
     RefreshOnTopNavReselect { screenModel.dispatch(SearchEvent.Refresh) }
     val focus = rememberTvScreenFocus(startAt = SEARCH_KEY)
     val gridState = rememberLazyGridState()
@@ -149,6 +152,13 @@ fun TvCatalogScreen(
                 onApplyFilters = { screenModel.dispatch(SearchEvent.ApplyFilters(it)) },
             ),
             onLoadMore = { screenModel.dispatch(SearchEvent.LoadMoreCatalog) },
+        )
+        TvServerRetryNotification(
+            visible = retryNotice != null,
+            retriesExhausted = retryNotice is ServerRetryNotice.Exhausted,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = TvMetrics.SafeVertical),
         )
     }
 }
