@@ -68,6 +68,7 @@ class DetailsScreenModel(
                             loading = false,
                             item = itemResult.data,
                             continuation = calculateContinuation(itemResult.data, history),
+                            isWatching = itemResult.data.tracklist.any { track -> track.watchStatus != NOT_WATCHED },
                             similar = similar,
                         )
                     }
@@ -125,16 +126,16 @@ class DetailsScreenModel(
 
     /**
      * «Я смотрю»: отдельная от watchlist пометка тайтла (см. [DetailsEvent.ToggleWatching]).
-     * Сервер не возвращает новый статус в ответе на toggle, поэтому после него перечитываем
-     * историю и пересчитываем continuation — иначе кнопка «Продолжить»/прогресс на экране
-     * молча оставались бы прежними, а клик выглядел бы так, будто ничего не произошло.
+     * `watching/toggle` возвращает итоговое `watched` — используем его напрямую для кнопки,
+     * а continuation всё равно пересчитываем: иначе «Продолжить»/прогресс на экране молча
+     * оставались бы прежними, будто клик ни на что не повлиял.
      */
     private fun toggleWatching() {
         val item = state.item ?: return
         screenModelScope {
-            watching.toggleWatched(item.id)
+            val watched = watching.toggleWatched(item.id).getOrNull() ?: return@screenModelScope
             val history = findHistoryEntry()
-            updateState { it.copy(continuation = calculateContinuation(item, history)) }
+            updateState { it.copy(isWatching = watched, continuation = calculateContinuation(item, history)) }
         }
     }
 
@@ -245,5 +246,8 @@ class DetailsScreenModel(
 
         /** То же название, что и [FavoritesRepository] использует для поиска/создания своей подборки. */
         const val FAVORITES_FOLDER_TITLE = "Буду смотреть"
+
+        /** kino.watch `watching.status`: -1 — нет отметки о просмотре. */
+        const val NOT_WATCHED = -1
     }
 }

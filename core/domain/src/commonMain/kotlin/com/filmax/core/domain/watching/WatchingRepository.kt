@@ -26,7 +26,8 @@ interface WatchingRepository {
         timeSeconds: Int,
     ): RequestResult<Unit>
 
-    suspend fun toggleWatched(itemId: Int): RequestResult<Unit>
+    /** true — тайтл теперь отмечен «Я смотрю», false — отметка снята (см. `watching/toggle`). */
+    suspend fun toggleWatched(itemId: Int): RequestResult<Boolean>
 
     suspend fun toggleWatchlist(itemId: Int): RequestResult<Boolean>
 

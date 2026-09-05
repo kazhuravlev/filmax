@@ -115,8 +115,8 @@ internal class WatchingRepositoryImpl(
     ): RequestResult<Unit> =
         safeRequest { api.saveProgressSerial(itemId, season, videoId, timeSeconds) }
 
-    override suspend fun toggleWatched(itemId: Int): RequestResult<Unit> =
-        safeRequest { api.toggleWatched(itemId) }
+    override suspend fun toggleWatched(itemId: Int): RequestResult<Boolean> =
+        safeRequest { api.toggleWatched(itemId).watched == 1 }
 
     override suspend fun toggleWatchlist(itemId: Int): RequestResult<Boolean> =
         safeRequest { api.toggleWatchlist(itemId)["watching"] == 1 }

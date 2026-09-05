@@ -2,6 +2,7 @@ package com.filmax.data.watching.remote
 
 import com.filmax.data.watching.remote.dto.HistoryListResponseDto
 import com.filmax.data.watching.remote.dto.NotificationsDto
+import com.filmax.data.watching.remote.dto.ToggleWatchedResponseDto
 import com.filmax.data.watching.remote.dto.WatchingListResponseDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -53,9 +54,9 @@ internal class WatchingApi(private val client: HttpClient) {
         }
     }
 
-    suspend fun toggleWatched(id: Int) {
-        client.get("api/v1/watching/toggle") { parameter("id", id) }
-    }
+    /** Возвращает итоговое `watched` (0/1) — иначе кнопке «Я смотрю» нечем отразить новое состояние. */
+    suspend fun toggleWatched(id: Int): ToggleWatchedResponseDto =
+        client.get("api/v1/watching/toggle") { parameter("id", id) }.body()
 
     suspend fun toggleWatchlist(id: Int): Map<String, Int> =
         client.get("api/v1/watching/togglewatchlist") { parameter("id", id) }.body()

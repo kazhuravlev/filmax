@@ -10,6 +10,12 @@ data class DetailsState(
     val item: Item? = null,
     /** Рассчитан по history + tracklist, а не по одному `watchStatus` из деталей. */
     val continuation: Continuation? = null,
+    /**
+     * Пометка «Я смотрю» (см. [DetailsEvent.ToggleWatching]) — читаем из `tracklist[].watchStatus`
+     * при загрузке (тот же флаг, что переключает `watching/toggle`), а после клика — из ответа
+     * самого toggle, он точнее и не ждёт повторной загрузки тайтла.
+     */
+    val isWatching: Boolean = false,
     val similar: List<Item> = emptyList(),
     /**
      * Актёры с фото (TMDB) — украшение поверх строки имён от kino.watch. Пустой список, когда фото
@@ -28,9 +34,8 @@ sealed interface DetailsEvent {
     data object ToggleDownload : DetailsEvent
 
     /**
-     * Отметить тайтл как «Я смотрю» — отдельная от подборок серверная пометка (`watching/toggle`).
-     * У неё нет читаемого состояния «включено/выключено» на уровне тайтла (сервер отдаёт статус
-     * только по конкретной серии), поэтому это одноразовое действие, а не переключатель.
+     * Переключить пометку «Я смотрю» — отдельная от подборок серверная пометка (`watching/toggle`).
+     * Текущее состояние — [DetailsState.isWatching].
      */
     data object ToggleWatching : DetailsEvent
 

@@ -13,5 +13,6 @@ class ToggleWatchlistUseCase(private val repository: WatchingRepository) {
 }
 
 class ToggleWatchedUseCase(private val repository: WatchingRepository) {
-    suspend operator fun invoke(itemId: Int): RequestResult<Unit> = repository.toggleWatched(itemId)
+    /** @return новое состояние «Я смотрю» (true — отмечено). */
+    suspend operator fun invoke(itemId: Int): RequestResult<Boolean> = repository.toggleWatched(itemId)
 }
