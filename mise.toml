@@ -1,0 +1,7 @@
+[tasks."cf:worker:deploy"]
+description = "Deploy the kwip Cloudflare Worker (free plan, *.workers.dev)"
+dir = "cf/kwip"
+run = [
+  "npm install --no-audit --no-fund",
+  "npx wrangler deploy --config wrangler.toml",
+]
