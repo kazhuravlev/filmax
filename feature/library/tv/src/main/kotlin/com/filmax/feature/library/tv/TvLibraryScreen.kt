@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -355,8 +356,10 @@ private fun MineGrid(
             contentPadding = GridPadding,
         ) {
             when (segment) {
-                LibrarySegment.WATCHING -> watchingSegment(state.watching, actions.onOpenItem, focus)
-                LibrarySegment.HISTORY -> historySegment(state.history, actions.onOpenItem, focus)
+                LibrarySegment.WATCHING ->
+                    watchingSegment(state.watching, state.titleDetails, actions.onOpenItem, focus)
+                LibrarySegment.HISTORY ->
+                    historySegment(state.history, state.titleDetails, actions.onOpenItem, focus)
                 LibrarySegment.BOOKMARKS -> bookmarksSegment(state, ui, actions, focus)
             }
         }
@@ -369,6 +372,7 @@ private fun MineGrid(
  */
 private fun LazyGridScope.watchingSegment(
     watching: List<WatchingItem>,
+    titleDetails: Map<Int, Item>,
     onOpenItem: (Int) -> Unit,
     focus: TvScreenFocus,
 ) {
@@ -383,6 +387,7 @@ private fun LazyGridScope.watchingSegment(
     items(watching, key = { it.itemId }) { item ->
         WatchingCard(
             item = item,
+            details = titleDetails[item.itemId],
             returnKey = "watching:${item.itemId}",
             focus = focus,
             onOpenItem = onOpenItem,
@@ -393,6 +398,7 @@ private fun LazyGridScope.watchingSegment(
 /** «История» — последние просмотренные тайтлы из отдельного endpoint `/history`. */
 private fun LazyGridScope.historySegment(
     history: List<WatchHistory>,
+    titleDetails: Map<Int, Item>,
     onOpenItem: (Int) -> Unit,
     focus: TvScreenFocus,
 ) {
@@ -407,6 +413,7 @@ private fun LazyGridScope.historySegment(
     items(history, key = { it.itemId }) { entry ->
         HistoryCard(
             entry = entry,
+            details = titleDetails[entry.itemId],
             modifier = focus.item("history:${entry.itemId}"),
             onClick = { onOpenItem(entry.itemId) },
         )
@@ -545,53 +552,81 @@ private fun MineEmpty(icon: ImageVector, title: String, hint: String) {
     }
 }
 
-/**
- * Карточка тайтла «в процессе». Без года/жанра/рейтинга — `watching/{type}` их не отдаёт
- * (см. [WatchingItem]), а тянуть их отдельным getItemDetails на каждую карточку — это ровно тот
- * N+1, которого список избегает. Бейдж — счётчик недосмотренных серий, готовый от сервера;
- * у фильмов его нет вовсе (сервер не считает серии там, где их одна).
- */
+/** «В процессе» расширяет универсальную карточку только счётчиком непросмотренных серий. */
 @Composable
 private fun WatchingCard(
     item: WatchingItem,
+    details: Item?,
     returnKey: String,
     focus: TvScreenFocus,
     onOpenItem: (Int) -> Unit,
 ) {
-    TvPosterCard(
-        title = item.title,
-        meta = null,
-        posterUrl = item.posterUrl,
+    LibraryTitleCard(
+        content = LibraryCardContent(
+            details = details,
+            fallbackTitle = item.title,
+            fallbackPosterUrl = item.posterUrl,
+            unwatchedEpisodes = item.newEpisodes ?: item.totalEpisodes?.let { total ->
+                (total - (item.watchedEpisodes ?: 0)).coerceAtLeast(0)
+            },
+        ),
         onClick = { onOpenItem(item.itemId) },
         modifier = focus.item(returnKey),
-        width = TvMetrics.CompactPosterWidth,
-        height = TvMetrics.CompactPosterHeight,
-        posterContent = { url, posterModifier ->
-            Box(posterModifier) {
-                TvPoster(url, item.title, Modifier.fillMaxSize(), TvMetrics.PosterShape)
-                val newCount = item.newEpisodes
-                if (newCount != null && newCount > 0) {
-                    Box(modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)) {
-                        TvCountBadge(count = newCount)
-                    }
-                }
-            }
-        },
     )
 }
 
 @Composable
-private fun HistoryCard(entry: WatchHistory, modifier: Modifier, onClick: () -> Unit) {
+private fun HistoryCard(entry: WatchHistory, details: Item?, modifier: Modifier, onClick: () -> Unit) {
+    LibraryTitleCard(
+        content = LibraryCardContent(
+            details = details,
+            fallbackTitle = entry.title,
+            fallbackPosterUrl = entry.posterSmall.orEmpty(),
+        ),
+        onClick = onClick,
+        modifier = modifier,
+    )
+}
+
+private data class LibraryCardContent(
+    val details: Item?,
+    val fallbackTitle: String,
+    val fallbackPosterUrl: String,
+    val unwatchedEpisodes: Int? = null,
+)
+
+/** Единый адаптер библиотечных данных к той же карточке, что используют каталог и подборки. */
+@Composable
+private fun LibraryTitleCard(
+    content: LibraryCardContent,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) {
+    val details = content.details
+    val title = details?.title ?: content.fallbackTitle
+    val posterUrl = details?.posters?.medium
+        ?.ifBlank { details.posters.big }
+        ?.ifBlank { content.fallbackPosterUrl }
+        ?: content.fallbackPosterUrl
+    val badgeContent: (@Composable RowScope.() -> Unit)? =
+        content.unwatchedEpisodes?.takeIf { it > 0 }?.let { count ->
+            {
+                TvCountBadge(count)
+            }
+        }
     TvPosterCard(
-        title = entry.title,
-        meta = null,
-        posterUrl = entry.posterSmall.orEmpty(),
+        title = title,
+        meta = details?.let { gridPosterMeta(year = it.year, genre = it.genres.firstOrNull()?.title) },
+        posterUrl = posterUrl,
         onClick = onClick,
         modifier = modifier,
         width = TvMetrics.CompactPosterWidth,
         height = TvMetrics.CompactPosterHeight,
+        imdbRating = ratingLabel(details?.rating?.imdb),
+        kinopoiskRating = ratingLabel(details?.rating?.kinopoisk),
+        badgeContent = badgeContent,
         posterContent = { url, posterModifier ->
-            TvPoster(url, entry.title, posterModifier, TvMetrics.PosterShape)
+            TvPoster(url, title, posterModifier, TvMetrics.PosterShape)
         },
     )
 }

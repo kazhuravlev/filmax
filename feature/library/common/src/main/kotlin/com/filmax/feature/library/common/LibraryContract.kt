@@ -40,13 +40,14 @@ data class OpenBookmarkFolder(
 data class LibraryState(
     val favorites: List<FavoriteItem> = emptyList(),
     /**
-     * Тайтлы «в процессе» — одним запросом на тип (`watching/{type}`), без резолва каждого
-     * тайтла через getItemDetails. Без точной позиции: она не нужна для списка, только при
-     * открытии конкретного тайтла (экран деталей запросит её сам).
+     * Тайтлы «в процессе» приходят одним запросом на тип (`watching/{type}`). Полные данные
+     * универсальной карточки догружаются отдельно в [titleDetails]; точной позиции здесь нет.
      */
     val watching: List<WatchingItem> = emptyList(),
     /** Полная история просмотров, отсортированная сервером от новых записей к старым. */
     val history: List<WatchHistory> = emptyList(),
+    /** Полные данные для единой карточки тайтла: год, жанры, рейтинги и качественный постер. */
+    val titleDetails: Map<Int, Item> = emptyMap(),
     val lists: List<BookmarkFolder> = emptyList(),
     /** Уже загруженные первые страницы для видимых плиток подборок. */
     val folderPreviews: Map<Int, BookmarkFolderPreview> = emptyMap(),

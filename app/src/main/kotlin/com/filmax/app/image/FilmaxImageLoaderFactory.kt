@@ -4,7 +4,7 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
-import coil3.network.okhttp.OkHttpNetworkFetcher
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
@@ -22,7 +22,7 @@ class FilmaxImageLoaderFactory : SingletonImageLoader.Factory {
             .addNetworkInterceptor(ImageCacheLifetimeInterceptor())
             .build()
         return ImageLoader.Builder(context)
-            .components { add(OkHttpNetworkFetcher.factory(callFactory = { okHttpClient })) }
+            .components { add(OkHttpNetworkFetcherFactory(callFactory = { okHttpClient })) }
             .diskCache {
                 DiskCache.Builder()
                     .directory(context.cacheDir.resolve(IMAGE_DISK_CACHE_DIR).toOkioPath())

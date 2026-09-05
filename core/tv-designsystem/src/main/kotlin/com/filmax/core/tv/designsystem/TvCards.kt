@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -54,6 +55,8 @@ enum class TvCardSize(val width: Dp, val height: Dp) {
  *
  * [imdbRating]/[kinopoiskRating] — уже отформатированные строки (например «8.3»), каждая своя
  * пилюля с лого источника; null — эта пилюля не рисуется. Обе null — бейджа нет вовсе.
+ * [badgeContent] — расширяемый слот рядом с рейтингами: например, «В процессе» выводит в нём
+ * число непросмотренных серий, не меняя устройство самой карточки.
  */
 // Компонент дизайн-системы: параметры — его публичный API (Compose-конвенция: modifier прямым
 // параметром, хвост — опции с дефолтами). Обёртка в data-класс сломала бы «минимальный API».
@@ -70,6 +73,7 @@ fun TvPosterCard(
     imdbRating: String? = null,
     kinopoiskRating: String? = null,
     focusRequester: FocusRequester? = null,
+    badgeContent: (@Composable RowScope.() -> Unit)? = null,
     posterContent: @Composable (url: String, modifier: Modifier) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -89,11 +93,20 @@ fun TvPosterCard(
         ) {
             Box(Modifier.fillMaxSize().clip(TvMetrics.PosterShape)) {
                 posterContent(posterUrl, Modifier.fillMaxSize())
-                TvRatingPill(
-                    imdbRating = imdbRating,
-                    kinopoiskRating = kinopoiskRating,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
-                )
+                val hasRating = imdbRating != null || kinopoiskRating != null
+                if (hasRating || badgeContent != null) {
+                    Column(
+                        modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                        horizontalAlignment = Alignment.End,
+                    ) {
+                        TvRatingPill(imdbRating = imdbRating, kinopoiskRating = kinopoiskRating)
+                        badgeContent?.let { content ->
+                            Row(modifier = if (hasRating) Modifier.padding(top = 6.dp) else Modifier) {
+                                content()
+                            }
+                        }
+                    }
+                }
             }
         }
         TvCardCaption(title = title, meta = meta, focused = focused)
@@ -214,8 +227,8 @@ private fun TvRatingSource(icon: ImageVector, value: String) {
  * цветное пятно интерфейса, наравне с ошибками ([TvError]): число, которое должно бросаться
  * в глаза раньше, чем зритель успеет прочитать постер.
  *
- * Ставится РЯДОМ с [TvRatingPill] в одном ряду, а не поверх неё — иначе рейтинг и счётчик
- * серий накладываются друг на друга и оба становятся нечитаемыми.
+ * Ставится в дополнительный слот [TvPosterCard] под [TvRatingPill], а не поверх неё — иначе
+ * рейтинг и счётчик серий накладываются друг на друга и оба становятся нечитаемыми.
  */
 @Composable
 fun TvCountBadge(count: Int, modifier: Modifier = Modifier) {

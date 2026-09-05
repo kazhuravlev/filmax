@@ -1,5 +1,7 @@
 package com.filmax.feature.library.common
 
+import com.filmax.core.domain.catalog.CatalogRepository
+import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemPage
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.firstErrorMessage
@@ -12,7 +14,10 @@ import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchingItem
 import com.filmax.core.presentation.BaseScreenModel
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 // Общая модель двух разделов держит по одному короткому обработчику на каждое MVI-событие.
 // Дробить её на несколько классов ради лимита нельзя: логика закладок и истории связана общим
@@ -22,6 +27,7 @@ class LibraryScreenModel(
     private val watching: WatchingRepository,
     private val user: UserRepository,
     private val favoritesRepo: FavoritesRepository,
+    private val catalog: CatalogRepository,
 ) : BaseScreenModel<LibraryState, LibrarySideEffect, LibraryEvent>(LibraryState()) {
 
     init {
@@ -72,6 +78,7 @@ class LibraryScreenModel(
                     loading = false,
                     watching = watchingResult.titles.preserveEmpty(current.watching, watchingResult.error),
                     history = watchingResult.history.preserveEmpty(current.history, watchingResult.error),
+                    titleDetails = current.titleDetails + watchingResult.titleDetails,
                     error = watchingResult.error,
                 )
             }
@@ -85,17 +92,22 @@ class LibraryScreenModel(
         val historyDeferred = async { watching.getHistory() }
         val titles = titlesDeferred.await()
         val history = historyDeferred.await()
+        val historyItems = history.getOrNull().orEmpty()
+        val titleDetails = loadTitleDetails(
+            titles.titles.map(WatchingItem::itemId) + historyItems.map(WatchHistory::itemId),
+        )
         WatchingResult(
             titles = titles.titles,
-            history = history.getOrNull().orEmpty(),
-            error = titles.error ?: firstErrorMessage(history),
+            history = historyItems,
+            titleDetails = titleDetails.items,
+            error = titles.error ?: firstErrorMessage(history) ?: titleDetails.error,
         )
     }
 
     /**
      * Тайтлы «в процессе» — фильмы и сериалы одним запросом на тип, параллельно. Каждый ответ уже
-     * готовый список тайтлов (не серий), без обхода `/history` и без getItemDetails на каждый —
-     * см. [WatchingRepository.getWatchingTitles].
+     * готовый список тайтлов (не серий), без обхода `/history`; недостающие данные карточки
+     * обогащаются отдельно в [loadTitleDetails].
      */
     private suspend fun loadWatchingTitles(): WatchingResult = coroutineScope {
         val moviesDeferred = async { watching.getWatchingTitles(TYPE_MOVIES) }
@@ -111,6 +123,35 @@ class LibraryScreenModel(
     private data class WatchingResult(
         val titles: List<WatchingItem>,
         val history: List<WatchHistory> = emptyList(),
+        val titleDetails: Map<Int, Item> = emptyMap(),
+        val error: String?,
+    )
+
+    /**
+     * Эндпоинты `watching` не отдают год, жанры и рейтинги. Детали подгружаются ограниченно
+     * параллельно: это сохраняет универсальную карточку, но не устраивает залп из десятков
+     * одновременных запросов к серверу.
+     */
+    private suspend fun loadTitleDetails(itemIds: List<Int>): TitleDetailsResult = coroutineScope {
+        val limiter = Semaphore(TITLE_DETAILS_CONCURRENCY)
+        val results = itemIds.distinct().map { itemId ->
+            async {
+                limiter.withPermit { itemId to catalog.getItemDetails(itemId) }
+            }
+        }.awaitAll()
+        val items = results.mapNotNull { (_, result) ->
+            (result as? RequestResult.Success)?.data
+        }.associateBy(Item::id)
+        val failed = results.firstOrNull { (_, result) -> result is RequestResult.Error }
+        TitleDetailsResult(
+            items = items,
+            error = (failed?.second as? RequestResult.Error)?.message
+                ?: SERVER_DETAILS_ERROR.takeIf { failed != null },
+        )
+    }
+
+    private data class TitleDetailsResult(
+        val items: Map<Int, Item>,
         val error: String?,
     )
 
@@ -186,6 +227,7 @@ class LibraryScreenModel(
                         loading = false,
                         watching = watchingResult.titles.preserveEmpty(current.watching, error),
                         history = watchingResult.history.preserveEmpty(current.history, error),
+                        titleDetails = current.titleDetails + watchingResult.titleDetails,
                         lists = lists.getOrNull() ?: current.lists,
                         error = error,
                     )
@@ -199,9 +241,13 @@ class LibraryScreenModel(
         screenModelScope {
             watching.clearHistory(itemId)
             updateState { current ->
+                val watchingItems = current.watching.filter { it.itemId != itemId }
+                val historyItems = current.history.filter { it.itemId != itemId }
+                val remainingIds = (watchingItems.map { it.itemId } + historyItems.map { it.itemId }).toSet()
                 current.copy(
-                    watching = current.watching.filter { it.itemId != itemId },
-                    history = current.history.filter { it.itemId != itemId },
+                    watching = watchingItems,
+                    history = historyItems,
+                    titleDetails = current.titleDetails.filterKeys { it in remainingIds },
                 )
             }
         }
@@ -211,7 +257,7 @@ class LibraryScreenModel(
         val ids = (state.watching.map { it.itemId } + state.history.map { it.itemId }).distinct()
         screenModelScope { _ ->
             ids.forEach { id -> watching.clearHistory(id) }
-            updateState { it.copy(watching = emptyList(), history = emptyList()) }
+            updateState { it.copy(watching = emptyList(), history = emptyList(), titleDetails = emptyMap()) }
         }
     }
 
@@ -424,6 +470,8 @@ class LibraryScreenModel(
         /** Единственные два значения `type`, которые понимает `watching/{type}`. */
         const val TYPE_MOVIES = "movies"
         const val TYPE_SERIALS = "serials"
+        const val TITLE_DETAILS_CONCURRENCY = 4
+        const val SERVER_DETAILS_ERROR = "Сервер не вернул данные тайтла"
     }
 }
 

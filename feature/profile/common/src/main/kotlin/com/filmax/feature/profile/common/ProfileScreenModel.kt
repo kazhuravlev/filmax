@@ -10,7 +10,9 @@ import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.presentation.BaseScreenModel
 
-@Suppress("LongParameterList")
+// Экран профиля сводит аккаунт, воспроизведение, сервер API и кэш изображений в одной модели —
+// один короткий обработчик на каждую настройку, дробить их по классам ради лимита незачем.
+@Suppress("LongParameterList", "TooManyFunctions")
 class ProfileScreenModel(
     private val user: UserRepository,
     private val watching: WatchingRepository,
