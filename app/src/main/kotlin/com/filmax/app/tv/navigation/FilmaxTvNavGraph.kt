@@ -96,22 +96,28 @@ fun FilmaxTvNavGraph(
     val backStack by navController.currentBackStackEntryAsState()
     val currentDest = backStack?.destination
     val showTopBar = TOP_LEVEL_ROUTES.any { currentDest?.hasRoute(it) == true }
-    val isHome = currentDest?.hasRoute<TvHomeRoute>() == true
     var exitArmed by remember { mutableStateOf(false) }
 
-    // Подтверждение действует только на главной и ровно секунду. Переход в другой раздел
-    // сразу его отменяет: Back там остаётся обычным возвратом по стеку навигации.
-    LaunchedEffect(isHome) {
-        if (!isHome) exitArmed = false
+    // Пока в стеке навигации есть куда вернуться, Back поднимается по иерархии на уровень
+    // выше; подтверждение выхода включается только когда возвращаться уже некуда (главная).
+    //
+    // У NavHost внутри свой BackHandler на асинхронном PredictiveBackHandler (включён, пока
+    // в стеке больше одной записи) — раньше наш хендлер стоял ДО NavHost в композиции и потому
+    // регистрировался раньше него, а Compose отдаёт Back самому позднему из зарегистрированных
+    // колбэков. На пульте это давало гонку: серия быстрых нажатий «Назад» иногда обгоняла
+    // асинхронный поп NavHost, и подтверждение выхода всплывало посреди стека, хотя выхода не
+    // происходило. Теперь сами решаем «вверх по стеку или выйти» одним синхронным хендлером,
+    // объявленным ПОСЛЕ NavHost (см. конец функции) — он регистрируется позже внутреннего и
+    // получает нажатие первым, так что до внутреннего predictive-back дело не доходит вовсе.
+    val canGoBack = navController.previousBackStackEntry != null
+    LaunchedEffect(canGoBack) {
+        if (canGoBack) exitArmed = false
     }
     LaunchedEffect(exitArmed) {
         if (exitArmed) {
             delay(EXIT_CONFIRMATION_TIMEOUT_MILLIS)
             exitArmed = false
         }
-    }
-    BackHandler(enabled = isHome) {
-        if (exitArmed) onExit() else exitArmed = true
     }
 
     // Явная связь фокуса между оверлейной шапкой и контентом: они — соседи в Box, и
@@ -201,6 +207,19 @@ fun FilmaxTvNavGraph(
                 .padding(bottom = TvMetrics.SafeVertical),
         ) {
             TvExitConfirmationHint()
+        }
+    }
+
+    // Ниже NavHost намеренно (см. комментарий у canGoBack): у экрана, который сам не берёт
+    // Back (свой BackHandler — плеер, «Подборки» с открытой папкой, фильмография), нажатие
+    // доходит именно сюда, а не в предиктивный обработчик NavHost.
+    BackHandler {
+        if (navController.previousBackStackEntry != null) {
+            navController.popBackStack()
+        } else if (exitArmed) {
+            onExit()
+        } else {
+            exitArmed = true
         }
     }
 }

@@ -8,6 +8,7 @@ import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.WatchingRepository
+import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchingItem
 import com.filmax.core.presentation.BaseScreenModel
 import kotlinx.coroutines.async
@@ -62,15 +63,29 @@ class LibraryScreenModel(
     private fun refreshWatching() {
         screenModelScope {
             updateState { it.copy(loading = true, error = null) }
-            val watchingResult = loadWatchingTitles()
+            val watchingResult = loadWatchingSection()
             updateState {
                 it.copy(
                     loading = false,
                     watching = watchingResult.titles,
+                    history = watchingResult.history,
                     error = watchingResult.error,
                 )
             }
         }
+    }
+
+    /** «В процессе» и история — разные серверные источники и должны загружаться независимо. */
+    private suspend fun loadWatchingSection(): WatchingResult = coroutineScope {
+        val titlesDeferred = async { loadWatchingTitles() }
+        val historyDeferred = async { watching.getHistory() }
+        val titles = titlesDeferred.await()
+        val history = historyDeferred.await()
+        WatchingResult(
+            titles = titles.titles,
+            history = history.getOrNull().orEmpty(),
+            error = titles.error ?: firstErrorMessage(history),
+        )
     }
 
     /**
@@ -91,6 +106,7 @@ class LibraryScreenModel(
 
     private data class WatchingResult(
         val titles: List<WatchingItem>,
+        val history: List<WatchHistory> = emptyList(),
         val error: String?,
     )
 
@@ -153,7 +169,7 @@ class LibraryScreenModel(
     override fun onFetchData() {
         screenModelScope {
             coroutineScope {
-                val watchingDeferred = async { loadWatchingTitles() }
+                val watchingDeferred = async { loadWatchingSection() }
                 val listsDeferred = async { user.getBookmarkFolders() }
                 val watchingResult = watchingDeferred.await()
                 val lists = listsDeferred.await()
@@ -161,6 +177,7 @@ class LibraryScreenModel(
                     it.copy(
                         loading = false,
                         watching = watchingResult.titles,
+                        history = watchingResult.history,
                         lists = lists.getOrNull().orEmpty(),
                         error = watchingResult.error ?: firstErrorMessage(lists),
                     )
@@ -172,15 +189,20 @@ class LibraryScreenModel(
     private fun removeFromHistory(itemId: Int) {
         screenModelScope {
             watching.clearHistory(itemId)
-            updateState { s -> s.copy(watching = s.watching.filter { it.itemId != itemId }) }
+            updateState { current ->
+                current.copy(
+                    watching = current.watching.filter { it.itemId != itemId },
+                    history = current.history.filter { it.itemId != itemId },
+                )
+            }
         }
     }
 
     private fun clearHistory() {
-        val ids = state.watching.map { it.itemId }
+        val ids = (state.watching.map { it.itemId } + state.history.map { it.itemId }).distinct()
         screenModelScope { _ ->
             ids.forEach { id -> watching.clearHistory(id) }
-            updateState { it.copy(watching = emptyList()) }
+            updateState { it.copy(watching = emptyList(), history = emptyList()) }
         }
     }
 

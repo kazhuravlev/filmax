@@ -3,6 +3,7 @@ package com.filmax.feature.library.common
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.favorites.model.FavoriteItem
 import com.filmax.core.domain.user.model.BookmarkFolder
+import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchingItem
 
 /** Два самостоятельных раздела бывшего «Моё». */
@@ -44,6 +45,8 @@ data class LibraryState(
      * открытии конкретного тайтла (экран деталей запросит её сам).
      */
     val watching: List<WatchingItem> = emptyList(),
+    /** Полная история просмотров, отсортированная сервером от новых записей к старым. */
+    val history: List<WatchHistory> = emptyList(),
     val lists: List<BookmarkFolder> = emptyList(),
     /** Уже загруженные первые страницы для видимых плиток подборок. */
     val folderPreviews: Map<Int, BookmarkFolderPreview> = emptyMap(),

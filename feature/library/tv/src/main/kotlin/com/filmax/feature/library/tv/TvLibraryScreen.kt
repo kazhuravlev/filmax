@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayCircleOutline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -58,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.user.model.BookmarkFolder
+import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchingItem
 import com.filmax.core.tv.designsystem.RefreshOnTopNavReselect
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
@@ -89,19 +91,16 @@ import com.filmax.feature.library.common.LibraryState
 import com.filmax.feature.library.common.OpenBookmarkFolder
 import org.koin.androidx.compose.koinViewModel
 
-/**
- * «Я смотрю» больше не делится на «Продолжить»/«История»: `watching/{type}` одним запросом на
- * тип уже отдаёт ровно то, что недосмотрено, — делить один и тот же список на два подраздела
- * было бы искусственно. Тип оставлен для единообразия с «Подборками» (там своя вкладка).
- */
+/** Подразделы «Я смотрю»; в разделе «Подборки» сразу показывается сетка подборок. */
 private enum class LibrarySegment(val label: String) {
-    WATCHING("Я смотрю"),
+    WATCHING("В процессе"),
+    HISTORY("История"),
     BOOKMARKS("Подборки"),
 }
 
 private val LibrarySection.segments: List<LibrarySegment>
     get() = when (this) {
-        LibrarySection.WATCHING -> listOf(LibrarySegment.WATCHING)
+        LibrarySection.WATCHING -> listOf(LibrarySegment.WATCHING, LibrarySegment.HISTORY)
         LibrarySection.BOOKMARKS -> emptyList()
     }
 
@@ -337,6 +336,7 @@ private fun MineGrid(
         ) {
             when (segment) {
                 LibrarySegment.WATCHING -> watchingSegment(state.watching, actions.onOpenItem, focus)
+                LibrarySegment.HISTORY -> historySegment(state.history, actions.onOpenItem, focus)
                 LibrarySegment.BOOKMARKS -> bookmarksSegment(state, ui, actions, focus)
             }
         }
@@ -366,6 +366,29 @@ private fun LazyGridScope.watchingSegment(
             returnKey = "watching:${item.itemId}",
             focus = focus,
             onOpenItem = onOpenItem,
+        )
+    }
+}
+
+/** «История» — последние просмотренные тайтлы из отдельного endpoint `/history`. */
+private fun LazyGridScope.historySegment(
+    history: List<WatchHistory>,
+    onOpenItem: (Int) -> Unit,
+    focus: TvScreenFocus,
+) {
+    if (history.isEmpty()) {
+        emptyItem(
+            icon = Icons.Filled.History,
+            title = "История пуста",
+            hint = "Здесь появится всё, что вы смотрели",
+        )
+        return
+    }
+    items(history, key = { it.itemId }) { entry ->
+        HistoryCard(
+            entry = entry,
+            modifier = focus.item("history:${entry.itemId}"),
+            onClick = { onOpenItem(entry.itemId) },
         )
     }
 }
@@ -533,6 +556,22 @@ private fun WatchingCard(
                     }
                 }
             }
+        },
+    )
+}
+
+@Composable
+private fun HistoryCard(entry: WatchHistory, modifier: Modifier, onClick: () -> Unit) {
+    TvPosterCard(
+        title = entry.title,
+        meta = null,
+        posterUrl = entry.posterSmall.orEmpty(),
+        onClick = onClick,
+        modifier = modifier,
+        width = TvMetrics.CompactPosterWidth,
+        height = TvMetrics.CompactPosterHeight,
+        posterContent = { url, posterModifier ->
+            TvPoster(url, entry.title, posterModifier, TvMetrics.PosterShape)
         },
     )
 }
@@ -903,7 +942,7 @@ private fun LoadingBox(modifier: Modifier = Modifier) {
 
 /** Колонки не открытых подборок: компактные постеры — впятеро, папки — втроём. */
 private fun columnsFor(segment: LibrarySegment): Int = when (segment) {
-    LibrarySegment.WATCHING -> LIBRARY_POSTER_COLUMNS
+    LibrarySegment.WATCHING, LibrarySegment.HISTORY -> LIBRARY_POSTER_COLUMNS
     LibrarySegment.BOOKMARKS -> FOLDER_COLUMNS
 }
 
