@@ -31,3 +31,8 @@ google-services.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Cloudflare Workers (cf/)
+node_modules/
+.wrangler/
+.mise-cache/
