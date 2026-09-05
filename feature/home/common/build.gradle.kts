@@ -14,4 +14,11 @@ dependencies {
 
     implementation(platform(libs.koin.bom))
     implementation(libs.koin.android)
+
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
 }

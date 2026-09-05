@@ -2,6 +2,7 @@ package com.filmax.core.ui.cache
 
 import android.content.Context
 import coil3.SingletonImageLoader
+import coil3.disk.DiskCache
 import com.filmax.core.domain.cache.ImageCacheRepository
 import com.filmax.core.domain.cache.ImageCacheStats
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +27,15 @@ import kotlinx.coroutines.launch
  */
 internal class ImageCacheRepositoryImpl(
     private val context: Context,
+    // Тестовые швы: по умолчанию — ровно текущее боевое поведение (SingletonImageLoader.get(context)).
+    // ImageCacheRepositoryImplTest подставляет сюда фейковый DiskCache/лямбду очистки, не трогая
+    // production-вызов CoreUiModule.kt (ImageCacheRepositoryImpl(androidContext())).
+    private val diskCacheProvider: () -> DiskCache? = { SingletonImageLoader.get(context).diskCache },
+    private val clearCaches: () -> Unit = {
+        val imageLoader = SingletonImageLoader.get(context)
+        imageLoader.memoryCache?.clear()
+        imageLoader.diskCache?.clear()
+    },
 ) : ImageCacheRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -43,14 +53,12 @@ internal class ImageCacheRepositoryImpl(
     }
 
     override suspend fun clear() {
-        val imageLoader = SingletonImageLoader.get(context)
-        imageLoader.memoryCache?.clear()
-        imageLoader.diskCache?.clear()
+        clearCaches()
         statsState.value = readStats()
     }
 
     private fun readStats(): ImageCacheStats {
-        val diskCache = SingletonImageLoader.get(context).diskCache ?: return ImageCacheStats()
+        val diskCache = diskCacheProvider() ?: return ImageCacheStats()
         return ImageCacheStats(sizeBytes = diskCache.size, maxSizeBytes = diskCache.maxSize)
     }
 

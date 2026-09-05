@@ -319,13 +319,15 @@ private val RowPaging<*>.canLoadMore: Boolean
  * `feature:home:tv`) — ключ и источник url должны буква в букву совпадать с тем, что рисует экран,
  * иначе прогрев зря скачал бы то, что экран потом всё равно попросит под другим ключом.
  */
-private fun Item.heroBackdropPrefetch(): PrefetchImage? {
+// internal, а не private: только чтобы юнит-тесты (HomeBackdropPrefetchTest) могли проверить
+// ключ/url напрямую, как чистые функции — логика и видимость снаружи модуля не меняются.
+internal fun Item.heroBackdropPrefetch(): PrefetchImage? {
     val url = posters.wide ?: posters.big.takeIf { it.isNotBlank() } ?: return null
     val subId = if (posters.wide != null) ImageCacheKeys.WALL else ImageCacheKeys.SIZE_BIG
     return PrefetchImage(ImageCacheKeys.poster(type.apiValue, id, subId), url)
 }
 
-private fun Continuation.backdropPrefetch(): PrefetchImage? {
+internal fun Continuation.backdropPrefetch(): PrefetchImage? {
     val url = wideOrPoster.takeIf { it.isNotBlank() } ?: return null
     return PrefetchImage(ImageCacheKeys.poster(item.type.apiValue, itemId, ImageCacheKeys.WALL), url)
 }

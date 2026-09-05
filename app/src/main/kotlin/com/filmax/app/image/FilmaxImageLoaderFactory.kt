@@ -131,7 +131,7 @@ private const val HEADER_CACHE_CONTROL = "Cache-Control"
 
 /** Отдельная от `UPDATES_DIR` (APK обновлений, см. `GitHubUpdateRepository`) поддиректория кэша. */
 private const val IMAGE_DISK_CACHE_DIR = "image_cache"
-private const val IMAGE_DISK_CACHE_MAX_SIZE_BYTES = 250L * 1024 * 1024
+private const val IMAGE_DISK_CACHE_MAX_SIZE_BYTES = 1024L * 1024 * 1024
 private const val IMAGE_CACHE_MAX_AGE_SECONDS = 30L * 24 * 60 * 60
 
 private const val NANOS_PER_SECOND = 1_000_000_000L

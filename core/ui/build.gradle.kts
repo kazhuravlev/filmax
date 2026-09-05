@@ -22,4 +22,12 @@ dependencies {
     // koinInject() внутри @Composable (PosterImage/TvActorCard читают ImageProxyRepository) —
     // koin-android этого не даёт, нужен именно compose-модуль.
     implementation(libs.koin.androidx.compose)
+
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.mockk)
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
 }
