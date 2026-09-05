@@ -159,7 +159,19 @@ abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
      * ошибки образуют ограниченную серию: после трёх попыток запросы автоматически больше не
      * отправляются, а пользователь получает честное сообщение вместо ложного пустого состояния.
      */
-    protected fun scheduleServerRetry(retryAction: () -> Unit) {
+    protected fun scheduleServerRetry(retryAction: () -> Unit) = scheduleRetry(silent = false, retryAction)
+
+    /**
+     * Как [scheduleServerRetry], но без баннера «Сервер не вернул данные», пока автоматические
+     * попытки не исчерпаны. Для неявной (не по действию пользователя) первой загрузки экрана,
+     * когда на экране уже могут быть пригодные данные с прошлого раза ([preserveEmpty]-подобный
+     * приём): баннер «повторим через 3 секунды» на фоне уже показанного контента только пугает,
+     * не неся никакой полезной информации — а через 3 секунды всё равно тихо чинится само.
+     * Стойкий сбой (см. [MAX_AUTOMATIC_SERVER_RETRIES]) всё равно показывается — это уже не шум.
+     */
+    protected fun scheduleSilentServerRetry(retryAction: () -> Unit) = scheduleRetry(silent = true, retryAction)
+
+    private fun scheduleRetry(silent: Boolean, retryAction: () -> Unit) {
         retryRecoveryJob?.cancel()
         retryRecoveryJob = null
         if (serverRetryJob?.isActive == true) return
@@ -169,13 +181,13 @@ abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
         }
 
         automaticRetryCount += 1
-        _serverRetryNotice.value = ServerRetryNotice.Scheduled
+        if (!silent) _serverRetryNotice.value = ServerRetryNotice.Scheduled
         serverRetryJob = screenModelScope.launch(mainThreadDispatcher) {
             delay(SERVER_RETRY_DELAY_MILLIS)
             _serverRetryNotice.value = null
             serverRetryJob = null
             retryAction()
-            // Если повтор снова упадёт, scheduleServerRetry отменит этот таймер. Если новых
+            // Если повтор снова упадёт, scheduleRetry отменит этот таймер. Если новых
             // ошибок нет, считаем серию завершённой и следующий сбой снова получит три попытки.
             retryRecoveryJob = screenModelScope.launch(mainThreadDispatcher) {
                 delay(SERVER_RETRY_RECOVERY_MILLIS)

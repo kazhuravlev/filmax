@@ -294,6 +294,17 @@ class LibraryScreenModel(
         return error
     }
 
+    /**
+     * Неявная первая загрузка (не по действию пользователя) — в отличие от [refreshWatching]/
+     * [refreshBookmarks], сбой ретраится тихо ([scheduleSilentServerRetry]): баннер «сервер не
+     * вернул данные» на фоне уже показанных с прошлого раза данных только пугает, хотя через
+     * 3 секунды тихий повтор чаще всего сам всё чинит (см. `scheduleSilentServerRetry`).
+     *
+     * «В процессе» и «Подборки» — независимые источники: сбой подборок не должен подвешивать
+     * баннер над «В процессе» (и наоборот), поэтому в общий [error] попадает только ошибка
+     * [loadWatchingSection] — сбой подборок просто помечает раздел «грязным», следующий заход
+     * в «Подборки» тихо перечитает список (см. [refreshIfDirty]).
+     */
     override fun onFetchData() {
         screenModelScope {
             coroutineScope {
@@ -301,7 +312,7 @@ class LibraryScreenModel(
                 val listsDeferred = async { user.getBookmarkFolders() }
                 val watchingResult = watchingDeferred.await()
                 val lists = listsDeferred.await()
-                val error = watchingResult.error ?: firstErrorMessage(lists)
+                val error = watchingResult.error
                 updateState { current ->
                     current.copy(
                         loading = false,
@@ -312,7 +323,8 @@ class LibraryScreenModel(
                         error = error,
                     )
                 }
-                if (error != null) scheduleServerRetry(::onFetchData)
+                if (lists is RequestResult.Error) DataInvalidation.markDirty(DataDomain.BOOKMARKS)
+                if (error != null) scheduleSilentServerRetry(::onFetchData)
             }
         }
     }
