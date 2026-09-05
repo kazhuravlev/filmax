@@ -108,15 +108,20 @@ internal fun ItemDto.toDomainOnly(): Item = Item(
     advert = advert,
 )
 
+/**
+ * Только маленький постер — он один переиспользуется повсеместно (ряды, каталог, поиск,
+ * подборки, библиотека). Широкий фон/бэкдроп сюда намеренно не входит: он показывается только
+ * в hero и «продолжить» на главной (см. `HomeScreenModel`, который прогревает его сам для своего
+ * маленького набора тайтлов) и на экране деталей (грузится по факту открытия). Прогревать его для
+ * КАЖДОГО тайтла, когда-либо прошедшего через любой список/поиск/похожее — почти чистая трата:
+ * бэкдропы тяжелее постера на порядок, и на дисковом кэше в 250 МБ (см.
+ * `FilmaxImageLoaderFactory.IMAGE_DISK_CACHE_MAX_SIZE_BYTES`) быстро вытесняют как раз те
+ * маленькие постеры, что реально переиспользуются между экранами — отсюда и повторные закачки
+ * одного и того же при возврате на главную/в подборку.
+ */
 private fun Item.posterPrefetchImages(): List<PrefetchImage> = buildList {
-    val type = type.apiValue
     posters.medium.takeIf { it.isNotBlank() }?.let { url ->
-        add(PrefetchImage(ImageCacheKeys.poster(type, id, ImageCacheKeys.SIZE_MEDIUM), url))
-    }
-    val backdrop = posters.wide ?: posters.big.takeIf { it.isNotBlank() }
-    if (backdrop != null) {
-        val subId = if (backdrop == posters.wide) ImageCacheKeys.WALL else ImageCacheKeys.SIZE_BIG
-        add(PrefetchImage(ImageCacheKeys.poster(type, id, subId), backdrop))
+        add(PrefetchImage(ImageCacheKeys.poster(type.apiValue, id, ImageCacheKeys.SIZE_MEDIUM), url))
     }
 }
 

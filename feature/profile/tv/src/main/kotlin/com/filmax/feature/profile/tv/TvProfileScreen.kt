@@ -318,14 +318,9 @@ private fun AccountRows(state: ProfileState, actions: ProfileActions) {
 @Composable
 private fun ImageSettingsRows(state: ProfileState, actions: ProfileActions) {
     val stats = state.imageCacheStats
-    val megabytes = stats.totalBytes / (1024.0 * 1024.0)
-    val sizeLabel = String.format(Locale.US, "%.1f МБ", megabytes)
-    val imageWord = when {
-        stats.fileCount % 100 in 11..14 -> "изображений"
-        stats.fileCount % 10 == 1 -> "изображение"
-        stats.fileCount % 10 in 2..4 -> "изображения"
-        else -> "изображений"
-    }
+    val usedMb = stats.sizeBytes / (1024.0 * 1024.0)
+    val maxMb = stats.maxSizeBytes / (1024.0 * 1024.0)
+    val sizeLabel = String.format(Locale.US, "%.1f из %.0f МБ", usedMb, maxMb)
     Column(verticalArrangement = Arrangement.spacedBy(RowGap)) {
         SettingRow(
             spec = SettingRowSpec(label = "Прокси изображений", value = onOff(state.imageProxyEnabled)),
@@ -347,7 +342,7 @@ private fun ImageSettingsRows(state: ProfileState, actions: ProfileActions) {
         )
         SettingRow(
             spec = SettingRowSpec(
-                label = "Сбросить кеш изображений ($sizeLabel, ${stats.fileCount} $imageWord)",
+                label = "Сбросить кеш изображений ($sizeLabel)",
                 labelColor = TvError,
             ),
             onClick = actions.onClearImageCache,

@@ -7,7 +7,6 @@ import coil3.disk.DiskCache
 import coil3.key.Keyer
 import coil3.map.Mapper
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
-import com.filmax.core.domain.cache.ImageCacheStatsRecording
 import com.filmax.core.domain.cache.ImagePrefetchThrottle
 import com.filmax.core.ui.cache.BACKGROUND_FETCH_HEADER
 import com.filmax.core.ui.cache.CacheableImage
@@ -60,17 +59,6 @@ class FilmaxImageLoaderFactory : SingletonImageLoader.Factory {
  * старт. `addNetworkInterceptor`, а не `addInterceptor` — переписывать нужно ответ РЕАЛЬНОЙ сети,
  * до того как OkHttp/Coil решат, что с ним кэшировать.
  *
- * Заодно это же единственное место, где виден каждый факт реальной сетевой закачки картинки
- * (а не попадания в память/диск из уже тёплого кэша) — здесь же учитываем его в статистику кэша
- * для настроек ([ImageCacheStatsRecording]). `304 Not Modified` не считаем: байт не переписано,
- * значит запись в кэше та же, что уже учтена.
- *
- * Размер узнаём по РЕАЛЬНО прочитанным байтам тела ([CountingResponseBody]), а не по
- * `Content-Length`: прокси изображений (kwip, включён по умолчанию для всех картинок) намеренно
- * убирает этот заголовок после буферизации ответа на своей стороне (см. `cf/kwip/src/index.js`,
- * `headers.delete('Content-Length')`) — со старым подходом статистика кэша никогда не росла для
- * ЛЮБОЙ картинки, идущей через прокси, то есть почти для всех.
- *
  * Здесь же придушиваем фоновую закачку ([BACKGROUND_FETCH_HEADER], см. `ImagePrefetcherImpl`) —
  * но не всегда, а только пока недавно было что-то ещё ([ImagePrefetchThrottle.shouldThrottle]):
  * обычный запрос экрана, запрос основного API-клиента или активное воспроизведение в плеере.
@@ -98,41 +86,10 @@ private class ImageCacheLifetimeInterceptor : Interceptor {
             .build()
 
         val body = response.body
-        if (response.code != HTTP_OK || body == null) return response
-
-        val countingBody = CountingResponseBody(body)
-        val finalBody = if (isBackgroundFetch && ImagePrefetchThrottle.shouldThrottle) {
-            ThrottledResponseBody(countingBody, BACKGROUND_FETCH_BYTES_PER_SECOND)
-        } else {
-            countingBody
-        }
-        return response.newBuilder().body(finalBody).build()
+        val shouldThrottleBody = isBackgroundFetch && ImagePrefetchThrottle.shouldThrottle
+        if (response.code != HTTP_OK || body == null || !shouldThrottleBody) return response
+        return response.newBuilder().body(ThrottledResponseBody(body, BACKGROUND_FETCH_BYTES_PER_SECOND)).build()
     }
-}
-
-/** Оборачивает тело ответа и на EOF шлёт реально прочитанное число байт в [ImageCacheStatsRecording]. */
-private class CountingResponseBody(private val delegate: ResponseBody) : ResponseBody() {
-    private var bytesRead = 0L
-    private var recorded = false
-
-    private val countingSource: BufferedSource = object : ForwardingSource(delegate.source()) {
-        override fun read(sink: Buffer, byteCount: Long): Long {
-            val read = super.read(sink, byteCount)
-            if (read != -1L) {
-                bytesRead += read
-                return read
-            }
-            if (!recorded) {
-                recorded = true
-                ImageCacheStatsRecording.recorder.recordCached(bytesRead)
-            }
-            return read
-        }
-    }.buffer()
-
-    override fun contentType(): MediaType? = delegate.contentType()
-    override fun contentLength(): Long = delegate.contentLength()
-    override fun source(): BufferedSource = countingSource
 }
 
 /**

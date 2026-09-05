@@ -27,7 +27,7 @@ data class ProfileState(
     val imagePrefetchDownloaded: Int = 0,
     /** Сколько картинок ещё стоит в очереди фоновой закачки. */
     val imagePrefetchRemaining: Int = 0,
-    /** Сколько сейчас лежит в кэше изображений — для подписи на кнопке сброса. */
+    /** Сколько сейчас реально занято на диске кэшем изображений — для подписи на кнопке сброса. */
     val imageCacheStats: ImageCacheStats = ImageCacheStats(),
     /** Срок жизни кэша статической информации о тайтлах (см. [com.filmax.core.domain.cache.ItemDetailsCache]). */
     val itemCacheTtl: ItemCacheTtl = ItemCacheTtl.MONTH,

@@ -1,5 +1,8 @@
 package com.filmax.feature.home.common
 
+import com.filmax.core.domain.cache.ImageCacheKeys
+import com.filmax.core.domain.cache.ImageDiscovery
+import com.filmax.core.domain.cache.PrefetchImage
 import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.catalog.CatalogSort
 import com.filmax.core.domain.catalog.model.Collection
@@ -67,6 +70,7 @@ class HomeScreenModel(
                 val result = catalog.getHotItems(ItemType.MOVIE)
                 val fresh = result.getOrNull()?.items?.firstOrNull()
                 updateState { s -> s.copy(heroLoading = false, hero = fresh ?: s.hero) }
+                fresh?.let { ImageDiscovery.discovered(listOfNotNull(it.heroBackdropPrefetch())) }
                 result
             }
             val continueResult = async {
@@ -76,6 +80,7 @@ class HomeScreenModel(
                     ?.filter { it.isActualContinuation }
                     ?.take(CONTINUE_WATCHING_LIMIT)
                 updateContinueRow { it.copy(loading = false, entries = entries ?: it.entries) }
+                entries?.let { ImageDiscovery.discovered(it.mapNotNull(Continuation::backdropPrefetch)) }
                 result
             }
             val collectionsResult = async {
@@ -306,6 +311,24 @@ private const val ROW_LIMIT = 10
 /** Ряд можно листать дальше: не занят, не кончился, не упёрся в потолок и вообще не пуст. */
 private val RowPaging<*>.canLoadMore: Boolean
     get() = !loadingMore && !endReached && items.isNotEmpty() && items.size < HOME_ROW_MAX
+
+/**
+ * Фон-бэкдроп прогреваем ТОЛЬКО для этих двух маленьких наборов, а не для каждого тайтла везде
+ * (см. `CatalogMapper.posterPrefetchImages` — там теперь только маленький постер): именно здесь,
+ * в hero и «Продолжить просмотр», бэкдроп реально показывается (см. `TvHero`/`TvContinueCard` в
+ * `feature:home:tv`) — ключ и источник url должны буква в букву совпадать с тем, что рисует экран,
+ * иначе прогрев зря скачал бы то, что экран потом всё равно попросит под другим ключом.
+ */
+private fun Item.heroBackdropPrefetch(): PrefetchImage? {
+    val url = posters.wide ?: posters.big.takeIf { it.isNotBlank() } ?: return null
+    val subId = if (posters.wide != null) ImageCacheKeys.WALL else ImageCacheKeys.SIZE_BIG
+    return PrefetchImage(ImageCacheKeys.poster(type.apiValue, id, subId), url)
+}
+
+private fun Continuation.backdropPrefetch(): PrefetchImage? {
+    val url = wideOrPoster.takeIf { it.isNotBlank() } ?: return null
+    return PrefetchImage(ImageCacheKeys.poster(item.type.apiValue, itemId, ImageCacheKeys.WALL), url)
+}
 
 /**
  * Приклеивает страницу к ряду: дедуп по id (страницы kino.watch пересекаются) и потолок ряда.

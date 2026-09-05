@@ -4,67 +4,57 @@ import android.content.Context
 import coil3.SingletonImageLoader
 import com.filmax.core.domain.cache.ImageCacheRepository
 import com.filmax.core.domain.cache.ImageCacheStats
-import com.filmax.core.domain.cache.ImageCacheStatsRecorder
-import com.filmax.core.domain.cache.ImageCacheStatsRecording
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /**
  * Чистит и памятный, и дисковый кэш общего Coil-загрузчика (см. `FilmaxImageLoaderFactory` в
- * `app`), а заодно ведёт компактную статистику того, что в кэше лежит — для подписи на кнопке
- * сброса в настройках.
+ * `app`), а заодно читает его текущий размер — для подписи на кнопке сброса в настройках.
  *
- * Статистика не сканирует диск: она копится инкрементально ([recordCached], зовёт OkHttp
- * network-interceptor из app-модуля через [ImageCacheStatsRecording] — сам он вне Koin-графа) и
- * персистится в SharedPreferences. Счётчик растёт при каждой реальной закачке и не уменьшается,
- * когда Coil тихо вытесняет старые записи по лимиту размера диска
- * (`FilmaxImageLoaderFactory.IMAGE_DISK_CACHE_MAX_SIZE_BYTES`) — обнуляет его только явный сброс
- * кэша. Для подписи на кнопке этого достаточно: там нужен порядок величины перед сбросом, а не
- * точное «сколько байт реально лежит на диске прямо сейчас».
+ * [stats] — живое чтение `coil3.disk.DiskCache.size`/`.maxSize`, а не счётчик по фактам закачки:
+ * Coil сам ведёт эти два числа в памяти (никакого сканирования диска на каждый показ настроек),
+ * и, в отличие от инкрементального счётчика, они не расходятся с реальностью, когда Coil тихо
+ * вытесняет старые записи по лимиту размера. Опрашиваем раз в [STATS_REFRESH_INTERVAL_MS] — дешёвое
+ * чтение поля, а не I/O — пока кто-то подписан (обычно только открытый экран настроек).
  */
 internal class ImageCacheRepositoryImpl(
     private val context: Context,
-) : ImageCacheRepository, ImageCacheStatsRecorder {
+) : ImageCacheRepository {
 
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val statsState = MutableStateFlow(
-        ImageCacheStats(
-            fileCount = prefs.getInt(KEY_COUNT, 0),
-            totalBytes = prefs.getLong(KEY_BYTES, 0L),
-        ),
-    )
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val statsState = MutableStateFlow(readStats())
 
     override val stats: StateFlow<ImageCacheStats> = statsState.asStateFlow()
 
     init {
-        ImageCacheStatsRecording.recorder = this
-    }
-
-    @Synchronized
-    override fun recordCached(bytes: Long) {
-        if (bytes <= 0) return
-        val updated = statsState.value.let {
-            ImageCacheStats(fileCount = it.fileCount + 1, totalBytes = it.totalBytes + bytes)
+        scope.launch {
+            while (isActive) {
+                delay(STATS_REFRESH_INTERVAL_MS)
+                statsState.value = readStats()
+            }
         }
-        prefs.edit()
-            .putInt(KEY_COUNT, updated.fileCount)
-            .putLong(KEY_BYTES, updated.totalBytes)
-            .apply()
-        statsState.value = updated
     }
 
     override suspend fun clear() {
         val imageLoader = SingletonImageLoader.get(context)
         imageLoader.memoryCache?.clear()
         imageLoader.diskCache?.clear()
-        prefs.edit().clear().apply()
-        statsState.value = ImageCacheStats()
+        statsState.value = readStats()
+    }
+
+    private fun readStats(): ImageCacheStats {
+        val diskCache = SingletonImageLoader.get(context).diskCache ?: return ImageCacheStats()
+        return ImageCacheStats(sizeBytes = diskCache.size, maxSizeBytes = diskCache.maxSize)
     }
 
     private companion object {
-        const val PREFS_NAME = "filmax_image_cache_stats"
-        const val KEY_COUNT = "file_count"
-        const val KEY_BYTES = "total_bytes"
+        const val STATS_REFRESH_INTERVAL_MS = 3_000L
     }
 }
