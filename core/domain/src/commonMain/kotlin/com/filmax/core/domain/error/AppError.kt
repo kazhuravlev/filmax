@@ -8,7 +8,6 @@ import com.filmax.core.domain.common.RequestResult
  * модалку. UI-слой маппит [AppError] на иконку/цвет/тексты.
  */
 enum class AppError {
-    /** Нет сети / не удалось установить соединение. */
     Offline,
 
     /** Сбой на стороне сервера (5xx). */
@@ -32,7 +31,6 @@ enum class AppError {
     /** Сессия истекла / не авторизован (401). */
     Auth,
 
-    /** Ошибка воспроизведения видео. */
     Playback,
     ;
 
@@ -61,7 +59,6 @@ enum class AppError {
             }
         }
 
-        /** Нет сети / не удалось установить соединение (по имени исключения или тексту). */
         private fun isOffline(causeName: String, text: String): Boolean =
             causeName.contains("UnknownHost") ||
                 causeName.contains("ConnectException") ||
@@ -86,5 +83,4 @@ enum class AppError {
     }
 }
 
-/** Резолвит [RequestResult.Error] в семантический [AppError]. */
 fun RequestResult.Error.toAppError(): AppError = AppError.resolve(message, cause)

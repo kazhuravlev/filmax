@@ -36,7 +36,6 @@ internal class SecretMaskingLogger(private val delegate: Logger) : Logger {
     }
 }
 
-/** Правило маскировки: что найти и чем заменить. */
 private class MaskRule(pattern: String, val replacement: String) {
     val regex = Regex(pattern)
 }

@@ -269,7 +269,6 @@ private fun SettingRow(
 
 private fun onOff(enabled: Boolean): String = if (enabled) "Вкл" else "Выкл"
 
-/** Следующее значение в списке по кругу. */
 private fun next(ids: List<Int>, current: Int): Int {
     val index = ids.indexOf(current)
     return ids[(index + 1).mod(ids.size)]

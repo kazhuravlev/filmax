@@ -137,7 +137,6 @@ data class AudioDto(
     val author: AudioMetaDto? = null,
 )
 
-/** Пара id+title у типа/автора озвучки. */
 @Serializable
 data class AudioMetaDto(
     val id: Int = 0,

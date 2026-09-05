@@ -14,7 +14,6 @@ data class StreamQuality(val label: String, val urls: List<String>) {
         require(urls.isNotEmpty()) { "Качество $label без единой ссылки на поток" }
     }
 
-    /** Основная ссылка варианта — первая в порядке предпочтения. */
     val url: String get() = urls.first()
 }
 

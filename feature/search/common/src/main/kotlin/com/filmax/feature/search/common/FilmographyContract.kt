@@ -13,7 +13,6 @@ data class FilmographyState(
     val error: String? = null,
 )
 
-/** Retry — повтор загрузки после сбоя сети. */
 sealed interface FilmographyEvent {
     data object Retry : FilmographyEvent
 }

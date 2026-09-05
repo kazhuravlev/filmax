@@ -47,7 +47,6 @@ import com.filmax.feature.profile.tv.navigation.TvProfileRoute
 import com.filmax.feature.search.tv.navigation.TvSearchRoute
 import kotlin.reflect.KClass
 
-/** Вкладка верхнего таб-бара: ярлык + маршрут + проверка активности. */
 private data class TvTab(val label: String, val route: Any, val match: (NavDestination?) -> Boolean)
 
 /** Действия таб-бара объединены, чтобы его Compose API оставался компактным. */
@@ -78,7 +77,6 @@ val TOP_LEVEL_ROUTES: List<KClass<*>> = listOf(
     TvProfileRoute::class,
 )
 
-/** Фокус-реквестеры шапки: вход в таб-бар ([navBar]) и переход к контенту ([content]). */
 internal data class TvTopNavBarFocus(
     val navBar: FocusRequester,
     val content: FocusRequester,
@@ -146,7 +144,6 @@ private fun TvBrandLabel() {
     )
 }
 
-/** Ряд фокусируемых вкладок таб-бара. */
 @Composable
 private fun TvNavTabs(
     activeIndex: Int,

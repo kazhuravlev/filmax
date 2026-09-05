@@ -96,7 +96,6 @@ private fun FilmographyHeading(heading: String) {
     }
 }
 
-/** Тело экрана: индикатор загрузки, пустое состояние или сетка постеров. */
 @Composable
 private fun FilmographyBody(state: FilmographyState, onOpenItem: (Int) -> Unit) {
     when {

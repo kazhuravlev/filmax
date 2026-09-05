@@ -29,7 +29,6 @@ data class AppUpdateState(
     val downloading: Boolean = false,
     /** Прогресс скачивания 0..1. */
     val progress: Float = 0f,
-    /** Скачанный APK готов к установке. */
     val downloadedApk: File? = null,
     /** Ошибка скачивания — показывается в диалоге с кнопкой «Повторить». */
     val downloadError: Boolean = false,
@@ -39,10 +38,8 @@ sealed interface AppUpdateEvent {
     /** Проверить обновления по требованию — строка «Проверить обновления» в Профиле. */
     data object Check : AppUpdateEvent
 
-    /** Скачать APK свежего релиза. */
     data object Download : AppUpdateEvent
 
-    /** Запустить установку уже скачанного APK. */
     data object Install : AppUpdateEvent
 
     /** «Позже» — спрятать диалог до следующего запуска. */
@@ -50,6 +47,5 @@ sealed interface AppUpdateEvent {
 }
 
 sealed interface AppUpdateSideEffect {
-    /** Открыть системный установщик пакетов для [apk]. */
     data class LaunchInstaller(val apk: File) : AppUpdateSideEffect
 }

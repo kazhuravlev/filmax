@@ -312,7 +312,10 @@ private fun DetailsContent(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().then(focus.containerModifier),
-            contentPadding = PaddingValues(top = TvMetrics.ContentTop, bottom = ContentBottomPadding),
+            // Без top-инсета: бэкдроп hero — первый элемент полотна — должен упираться в настоящий
+            // верхний край экрана и уходить под плавающий TvTopNavBar, а не начинаться под ним.
+            // Клиренс под таб-бар отъезжает внутрь DetailsHero — на текстовую колонку, а не сюда.
+            contentPadding = PaddingValues(bottom = ContentBottomPadding),
         ) {
             item(key = "hero") {
                 DetailsHero(
@@ -532,7 +535,12 @@ private fun DetailsHero(
     Box(
         Modifier
             .fillMaxWidth()
-            .height(TvMetrics.DetailsHeroHeight),
+            // Бэкдроп растёт вверх на высоту таб-бара (см. LazyColumn выше): сам кадр честно
+            // упирается в верхний край экрана и уходит под плавающий TvTopNavBar, а текстовая
+            // колонка ниже отступает от него на ContentTop — её высота (и раскладка внутри)
+            // от этого не меняется, просто сдвинута вниз на ту же величину, что раньше давал
+            // top-инсет списка.
+            .height(TvMetrics.DetailsHeroHeight + TvMetrics.ContentTop),
     ) {
         HeroBackdrop(
             item = item,
@@ -546,7 +554,12 @@ private fun DetailsHero(
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(start = TvMetrics.SafeHorizontal, end = TvMetrics.SafeHorizontal, bottom = 22.dp),
+                .padding(
+                    start = TvMetrics.SafeHorizontal,
+                    end = TvMetrics.SafeHorizontal,
+                    top = TvMetrics.ContentTop,
+                    bottom = 22.dp,
+                ),
         ) {
             Text(
                 item.title,

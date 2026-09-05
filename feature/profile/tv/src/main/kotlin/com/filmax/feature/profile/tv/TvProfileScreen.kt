@@ -440,7 +440,6 @@ private fun SettingRow(spec: SettingRowSpec, onClick: (() -> Unit)?) {
 
 // ── Вспомогательное ──────────────────────────────────────────────────────────
 
-/** Следующее значение в списке опций по кругу. */
 private fun <T> next(options: List<T>, current: T): T {
     val index = options.indexOf(current)
     return options[(index + 1).mod(options.size)]

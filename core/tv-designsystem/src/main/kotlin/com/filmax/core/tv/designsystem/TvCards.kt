@@ -170,7 +170,6 @@ fun TvProgressCard(
     }
 }
 
-/** Полоса прогресса на карточке: белая заливка по прозрачно-белому треку. */
 @Composable
 fun TvProgressBar(progress: Float, modifier: Modifier = Modifier) {
     Box(

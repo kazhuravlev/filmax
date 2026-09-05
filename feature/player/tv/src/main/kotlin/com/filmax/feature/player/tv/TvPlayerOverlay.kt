@@ -204,7 +204,6 @@ internal fun SubscriptionCard(modifier: Modifier = Modifier) {
     }
 }
 
-/** Шапка: название и подзаголовок. */
 @Composable
 private fun PlayerTopBar(title: String, subtitle: String, modifier: Modifier = Modifier) {
     Row(

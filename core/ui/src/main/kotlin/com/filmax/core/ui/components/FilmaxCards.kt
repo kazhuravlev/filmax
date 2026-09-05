@@ -153,7 +153,6 @@ fun FilmaxProgressCard(
     }
 }
 
-/** Полоса прогресса на карточке: белая заливка по полупрозрачному треку. */
 @Composable
 fun FilmaxProgressBar(progress: Float, modifier: Modifier = Modifier) {
     Box(

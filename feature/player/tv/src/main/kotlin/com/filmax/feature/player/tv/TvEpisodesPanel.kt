@@ -194,5 +194,4 @@ private const val WATCH_STATUS_FINISHED = 1
 
 private const val SECONDS_IN_MINUTE = 60
 
-/** Ширина боковой панели серий. */
 private val EpisodesPanelWidth = 330.dp

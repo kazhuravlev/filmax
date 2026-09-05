@@ -157,7 +157,6 @@ fun FilmaxErrorModal(
     }
 }
 
-/** Кнопка закрытия в правом верхнем углу модалки. */
 @Composable
 private fun BoxScope.ErrorModalCloseButton(onDismiss: () -> Unit) {
     Box(

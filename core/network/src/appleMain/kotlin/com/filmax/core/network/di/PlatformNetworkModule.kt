@@ -11,7 +11,6 @@ import org.koin.dsl.module
 
 @OptIn(ExperimentalSettingsImplementation::class)
 actual val platformNetworkModule: Module = module {
-    // Токены на iOS хранятся только в Keychain.
     single<Settings> { KeychainSettings(service = "filmax_tokens") }
     single<Settings>(named(ITEM_CACHE_SETTINGS)) { KeychainSettings(service = "filmax_item_cache") }
     single<HttpClientEngine> { Darwin.create() }

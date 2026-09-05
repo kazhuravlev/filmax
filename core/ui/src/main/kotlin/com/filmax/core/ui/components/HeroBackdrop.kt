@@ -32,7 +32,6 @@ fun HeroBackdrop(
     posterUrl: String = item.posters.big,
     accentColor: Color = BackdropGradients.Accent,
 ) {
-    // Кадр героя — либо широкий (wide), либо запасной (big): подставляем соответствующий subId.
     val subId = if (posterUrl == item.posters.wide) ImageCacheKeys.WALL else ImageCacheKeys.SIZE_BIG
     Box(modifier) {
         PosterImage(

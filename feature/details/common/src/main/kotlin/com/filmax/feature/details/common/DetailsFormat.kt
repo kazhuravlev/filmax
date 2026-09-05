@@ -87,7 +87,6 @@ fun viewsLabel(views: Int): String? = views.takeIf { it > 0 }
     ?.joinToString(" ")
     ?.reversed()
 
-/** Инициалы для заглушки без фото: до двух заглавных букв из имени. */
 fun initials(name: String): String =
     name.split(" ")
         .filter { it.isNotBlank() }

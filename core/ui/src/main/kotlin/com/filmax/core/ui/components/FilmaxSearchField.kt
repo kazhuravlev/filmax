@@ -78,7 +78,6 @@ fun FilmaxSearchField(
     }
 }
 
-/** Хвостовой слот поля: кнопка очистки для непустого запроса, иначе иконка голосового поиска. */
 @Composable
 private fun FilmaxSearchTrailing(query: String, onQueryChange: (String) -> Unit) {
     if (query.isNotEmpty()) {

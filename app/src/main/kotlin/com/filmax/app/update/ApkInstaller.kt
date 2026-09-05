@@ -9,7 +9,6 @@ import java.io.File
 
 private const val APK_MIME = "application/vnd.android.package-archive"
 
-/** Authority FileProvider из манифеста: `${applicationId}.updates`. */
 private fun updateAuthority(context: Context): String = "${context.packageName}.updates"
 
 /**
