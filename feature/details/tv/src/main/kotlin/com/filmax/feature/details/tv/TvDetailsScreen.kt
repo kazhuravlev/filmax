@@ -96,7 +96,6 @@ import com.filmax.core.tv.designsystem.TvMetaRow
 import com.filmax.core.tv.designsystem.TvMetrics
 import com.filmax.core.tv.designsystem.TvOnSurface
 import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
-import com.filmax.core.tv.designsystem.TvOverline
 import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvProgressCard
 import com.filmax.core.tv.designsystem.TvRail
@@ -122,6 +121,7 @@ import com.filmax.feature.details.common.calculateSeriesData
 import com.filmax.feature.details.common.initials
 import com.filmax.feature.details.common.isSeries
 import com.filmax.feature.details.common.resolveCast
+import com.filmax.feature.details.common.resolveDirectors
 import com.filmax.feature.details.common.typeLabel
 import com.filmax.feature.details.common.viewsLabel
 import com.filmax.feature.details.common.volumeLabel
@@ -275,6 +275,8 @@ private fun DetailsContent(
     val trailerUrl = item.trailer?.url?.takeIf { it.startsWith("http") }
     // Актёры карточками: фото из TMDB, если доехали; иначе — имена из строки kino.watch.
     val people = remember(cast, item.cast) { resolveCast(cast, item.cast) }
+    // Режиссёр(ы) той же карточкой: у kino.watch это тоже строка имён через запятую.
+    val directors = remember(item.director) { resolveDirectors(item.director) }
 
     val listState = rememberLazyListState()
     // false = стейт hero (открытие экрана), true = фокус ушёл в контент. Пока полотно в стейте
@@ -332,7 +334,7 @@ private fun DetailsContent(
                 )
             }
             detailsSections(
-                data = DetailsSectionsData(item, similar, people, series, episodes, selectedSeason),
+                data = DetailsSectionsData(item, similar, people, directors, series, episodes, selectedSeason),
                 actions = actions,
                 onSelectSeason = { selectedSeason = it },
                 focus = focus,
@@ -397,10 +399,11 @@ private val NoFocusScroll = object : BringIntoViewSpec {
 }
 
 /** Данные секций полотна под hero — группой (detekt LongParameterList). */
-private class DetailsSectionsData(
+private data class DetailsSectionsData(
     val item: Item,
     val similar: List<Item>,
     val people: List<CastMember>,
+    val directors: List<CastMember>,
     val series: SeriesData?,
     val episodes: List<MediaTrack>,
     val selectedSeason: Int,
@@ -417,8 +420,8 @@ private fun LazyListScope.detailsSections(
     if (data.people.isNotEmpty()) {
         castRail(people = data.people, onOpenPerson = actions.onOpenPerson)
     }
-    if (data.item.director.isNotBlank()) {
-        directorSection(director = data.item.director, onOpenPerson = actions.onOpenPerson)
+    if (data.directors.isNotEmpty()) {
+        directorSection(directors = data.directors, onOpenPerson = actions.onOpenPerson)
     }
     if (data.episodes.isNotEmpty()) {
         episodesSection(
@@ -678,19 +681,17 @@ private fun LazyListScope.castRail(people: List<CastMember>, onOpenPerson: (Stri
     }
 }
 
-/** Режиссёр отдельным фокусируемым чипом под рядом актёров — ведёт в его фильмографию. */
-private fun LazyListScope.directorSection(director: String, onOpenPerson: (String, Boolean) -> Unit) {
+/**
+ * Ряд режиссёров — та же карточка, что и у актёров (см. [castRail]): у kino.watch `director` тоже
+ * строка имён через запятую, а не одно значение, поэтому раньше весь список садился в один чип.
+ */
+private fun LazyListScope.directorSection(directors: List<CastMember>, onOpenPerson: (String, Boolean) -> Unit) {
     item(key = "director") {
-        Column(
-            Modifier.padding(start = TvMetrics.SafeHorizontal, top = 22.dp),
-        ) {
-            TvOverline("Режиссёр", Modifier.padding(bottom = 8.dp))
-            Row(Modifier.padding(vertical = TvMetrics.FocusInset)) {
-                TvChip(
-                    label = director,
-                    selected = false,
-                    // По запятой — только первый режиссёр: kino.watch ищет по одному имени.
-                    onClick = { onOpenPerson(director.substringBefore(",").trim(), true) },
+        TvRail(title = "Режиссёр", modifier = Modifier.padding(top = 24.dp)) {
+            items(directors) { member ->
+                TvActorCard(
+                    member = member,
+                    onClick = { onOpenPerson(member.name, true) },
                 )
             }
         }

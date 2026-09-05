@@ -89,9 +89,10 @@ class DetailsScreenModel(
                         favorites.add(itemResult.data.toFavoriteItem())
                     }
                     // Постеры (itemResult.data/similar) уже ушли в фоновую закачку из
-                    // ItemDto.toDomain() — тут только фото актёров, угаданные из сырой строки
-                    // cast: их эта функция не знает, а строим мы их именно здесь (actorPhotoUrl).
-                    prefetchCastPhotos(itemResult.data.cast)
+                    // ItemDto.toDomain() — тут только фото актёров и режиссёра, угаданные из сырых
+                    // строк cast/director: их эта функция не знает, а строим мы их именно здесь
+                    // (actorPhotoUrl).
+                    prefetchCastPhotos(itemResult.data.cast, itemResult.data.director)
                     loadCast(itemResult.data.imdbId)
                     // Подборки грузим только теперь: скан принадлежности (см. scanMemberships)
                     // читает state.item, который до этого момента ещё null.
@@ -107,15 +108,18 @@ class DetailsScreenModel(
     }
 
     /**
-     * Угаданные фото актёров (см. [actorPhotoUrl]) ставим в фоновую очередь сразу по сырой строке
-     * `cast` — не дожидаясь ответа TMDB ([loadCast]) и тем более того, что пользователь долистает
-     * до ряда актёров: к этому моменту угаданные картинки, скорее всего, уже в кэше.
+     * Угаданные фото актёров и режиссёра (см. [actorPhotoUrl]) ставим в фоновую очередь сразу по
+     * сырым строкам `cast`/`director` — не дожидаясь ответа TMDB ([loadCast]) и тем более того,
+     * что пользователь долистает до соответствующего ряда: к этому моменту угаданные картинки,
+     * скорее всего, уже в кэше.
      */
-    private fun prefetchCastPhotos(rawCast: String) {
-        val images = rawCast.split(",")
+    private fun prefetchCastPhotos(vararg rawNames: String) {
+        val images = rawNames.asSequence()
+            .flatMap { it.split(",").asSequence() }
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .map { name -> PrefetchImage(key = ImageCacheKeys.actorPhoto(name), url = actorPhotoUrl(name)) }
+            .toList()
         ImageDiscovery.discovered(images)
     }
 
