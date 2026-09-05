@@ -13,11 +13,15 @@ fun interface ItemDetailsPrefetcher {
 }
 
 /**
- * Точка обнаружения вне DI-графа: любой маппер «лёгкого» ответа (`WatchingItemDto`,
- * `HistoryEntryDto` в data:watching и т.п.) сообщает сюда id тайтла без DI-инъекции — аналогично
- * [ImageDiscovery]/[com.filmax.core.domain.common.ErrorReporting]. Тайтлы с уже полными данными
- * (прошедшие через `ItemDto.toDomain()`, см. `ItemDetailsCacheAccess`) сюда слать не нужно —
- * они и так закэшированы; сама реализация к тому же пропускает id, уже свежие в кэше.
+ * Точка обнаружения вне DI-графа: любой маппер «лёгкого» ответа сообщает сюда id тайтла без
+ * DI-инъекции — аналогично [ImageDiscovery]/[com.filmax.core.domain.common.ErrorReporting].
+ * Источники: `WatchingItemDto`/`HistoryEntryDto` в data:watching (история, «в процессе») и
+ * `ItemDto.toDomain()` в data:catalog — она шлёт сюда тайтлы БЕЗ треклиста (списки/поиск/похожее/
+ * подборки отдают их так), потому что такой ответ она сама сознательно не кэширует (см. её
+ * комментарий про `ItemDetailsCacheAccess`) — не слать их сюда значило бы, что эти тайтлы никогда
+ * не получат полных деталей в фоне. Тайтлы, у которых треклист УЖЕ есть (полный `items/{id}`),
+ * сюда посылать не нужно — они и так закэшированы напрямую; сама реализация к тому же пропускает
+ * id, уже свежие в кэше.
  */
 object ItemDiscovery {
     @Volatile
