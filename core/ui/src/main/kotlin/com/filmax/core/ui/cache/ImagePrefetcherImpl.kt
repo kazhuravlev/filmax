@@ -2,6 +2,8 @@ package com.filmax.core.ui.cache
 
 import android.content.Context
 import coil3.SingletonImageLoader
+import coil3.network.NetworkHeaders
+import coil3.network.httpHeaders
 import coil3.request.ImageRequest
 import com.filmax.core.domain.cache.ImageDiscovery
 import com.filmax.core.domain.cache.ImagePrefetcher
@@ -92,6 +94,10 @@ internal class ImagePrefetcherImpl(private val context: Context) : ImagePrefetch
         val imageLoader = SingletonImageLoader.get(context)
         val request = ImageRequest.Builder(context)
             .data(CacheableImage(key = image.key, url = image.url))
+            // Маркер для FilmaxImageLoaderFactory (app): там по нему придушивают скорость именно
+            // фоновой закачки, не трогая обычные запросы — см. BACKGROUND_FETCH_HEADER. До сервера
+            // заголовок не доезжает, интерцептор снимает его перед отправкой.
+            .httpHeaders(NetworkHeaders.Builder().set(BACKGROUND_FETCH_HEADER, "1").build())
             .build()
         imageLoader.execute(request)
     }
