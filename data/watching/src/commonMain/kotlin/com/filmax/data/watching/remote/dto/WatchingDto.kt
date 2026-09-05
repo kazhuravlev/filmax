@@ -8,6 +8,12 @@ data class WatchingListResponseDto(
     val items: List<WatchingItemDto> = emptyList(),
 )
 
+/** Ответ `watching/toggle` — помимо статуса конкретного видео несёт итоговый флаг тайтла. */
+@Serializable
+data class ToggleWatchedResponseDto(
+    val watched: Int = 0,
+)
+
 /**
  * Ответ `api/v1/history` — точный таймкод (`time` по каждому видео), но по СЕРИЯМ, а не тайтлам:
  * один сериал — десятки записей. Источник для `Continuation` (точная позиция одного тайтла),
