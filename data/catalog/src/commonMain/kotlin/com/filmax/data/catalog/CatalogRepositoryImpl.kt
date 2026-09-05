@@ -1,5 +1,6 @@
 package com.filmax.data.catalog
 
+import com.filmax.core.domain.cache.ItemDetailsCache
 import com.filmax.core.domain.catalog.CatalogFilters
 import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.catalog.CatalogSort
@@ -13,9 +14,13 @@ import com.filmax.core.domain.catalog.model.ItemPage
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.safeRequest
+import com.filmax.core.network.networkJson
 import com.filmax.data.catalog.mapper.toDomain
+import com.filmax.data.catalog.mapper.toDomainOnly
 import com.filmax.data.catalog.remote.CatalogApi
 import com.filmax.data.catalog.remote.ItemsQuery
+import com.filmax.data.catalog.remote.dto.ItemDto
+import kotlinx.serialization.decodeFromString
 
 // Значение параметра `quality` для фильтра «только 4K» (kino.watch: 4 = 2160p).
 private const val QUALITY_4K = 4
@@ -24,6 +29,7 @@ private const val QUALITY_4K = 4
 @Suppress("TooManyFunctions")
 internal class CatalogRepositoryImpl(
     private val api: CatalogApi,
+    private val itemCache: ItemDetailsCache,
 ) : CatalogRepository {
 
     override suspend fun getItems(type: ItemType, sort: CatalogSort, page: Int): RequestResult<ItemPage> =
@@ -52,8 +58,17 @@ internal class CatalogRepositoryImpl(
     override suspend fun getNewItems(type: ItemType, page: Int): RequestResult<ItemPage> =
         safeRequest { api.getItemsByShortcut("new", type.apiValue, page).toDomain() }
 
-    override suspend fun getItemDetails(id: Int): RequestResult<Item> =
-        safeRequest { api.getItemDetails(id).item.toDomain() }
+    // Статическая информация о тайтле (название/описание/актёры/режиссёр/трейлер/жанры/рейтинги
+    // и т.п.) почти не меняется — при попадании в кэш ItemDto.toDomain() уже сохранил его туда
+    // (см. CatalogMapper), здесь только читаем: свежая запись — не ходим в сеть вовсе.
+    override suspend fun getItemDetails(id: Int): RequestResult<Item> = safeRequest {
+        val cached = itemCache.get(id)
+        if (cached != null) {
+            networkJson.decodeFromString<ItemDto>(cached).toDomainOnly()
+        } else {
+            api.getItemDetails(id).item.toDomain()
+        }
+    }
 
     // distinctBy(id) здесь и в подборках: сервер может отдать тайтл дважды, а списки уходят
     // в Lazy-контейнеры с key = id — дубликат ключа роняет Compose («Key … was already used»).

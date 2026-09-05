@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.filmax.core.domain.cache.ItemCacheTtl
 import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.domain.user.model.UserProfile
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
@@ -167,6 +168,10 @@ private fun ProfileContent(
             Spacer(Modifier.height(12.dp))
             ImageSettingsRows(state = state, actions = actions)
             Spacer(Modifier.height(26.dp))
+            TvOverline("Информация о тайтлах", color = TvOnSurfaceDim)
+            Spacer(Modifier.height(12.dp))
+            ItemCacheRows(state = state, actions = actions)
+            Spacer(Modifier.height(26.dp))
             FilmaxVersionLabel(color = TvOnSurfaceDim)
         }
     }
@@ -220,6 +225,8 @@ private data class ProfileActions(
     val onClearImageCache: () -> Unit,
     val onToggleImageProxy: () -> Unit,
     val onToggleImagePrefetch: () -> Unit,
+    val onClearItemCache: () -> Unit,
+    val onCycleItemCacheTtl: () -> Unit,
 )
 
 /** Лямбды замыкают текущий [state], поэтому пересобираются вместе с ним — без remember. */
@@ -260,6 +267,10 @@ private fun profileActions(
     },
     onToggleImagePrefetch = {
         screenModel.dispatch(ProfileEvent.SetImagePrefetchEnabled(!state.imagePrefetchEnabled))
+    },
+    onClearItemCache = { screenModel.dispatch(ProfileEvent.ClearItemCache) },
+    onCycleItemCacheTtl = {
+        screenModel.dispatch(ProfileEvent.SetItemCacheTtl(next(ItemCacheTtlOptions, state.itemCacheTtl)))
     },
 )
 
@@ -344,6 +355,33 @@ private fun ImageSettingsRows(state: ProfileState, actions: ProfileActions) {
     }
 }
 
+@Composable
+private fun ItemCacheRows(state: ProfileState, actions: ProfileActions) {
+    val count = state.itemCacheCount
+    val titleWord = when {
+        count % 100 in 11..14 -> "тайтлов"
+        count % 10 == 1 -> "тайтл"
+        count % 10 in 2..4 -> "тайтла"
+        else -> "тайтлов"
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(RowGap)) {
+        SettingRow(
+            spec = SettingRowSpec(
+                label = "Хранить кэш тайтлов",
+                value = itemCacheTtlLabel(state.itemCacheTtl),
+            ),
+            onClick = actions.onCycleItemCacheTtl,
+        )
+        SettingRow(
+            spec = SettingRowSpec(
+                label = "Сбросить кэш ($count $titleWord)",
+                labelColor = TvError,
+            ),
+            onClick = actions.onClearItemCache,
+        )
+    }
+}
+
 // ── Строка настройки ─────────────────────────────────────────────────────────
 
 private data class SettingRowSpec(
@@ -408,9 +446,20 @@ private fun SettingRow(spec: SettingRowSpec, onClick: (() -> Unit)?) {
 // ── Вспомогательное ──────────────────────────────────────────────────────────
 
 /** Следующее значение в списке опций по кругу. */
-private fun next(options: List<String>, current: String): String {
+private fun <T> next(options: List<T>, current: T): T {
     val index = options.indexOf(current)
     return options[(index + 1).mod(options.size)]
+}
+
+/** Порядок цикла кнопки «Хранить кэш тайтлов»: месяц (по умолчанию) → неделя → 3 дня → никогда. */
+private val ItemCacheTtlOptions =
+    listOf(ItemCacheTtl.MONTH, ItemCacheTtl.WEEK, ItemCacheTtl.THREE_DAYS, ItemCacheTtl.NEVER)
+
+private fun itemCacheTtlLabel(ttl: ItemCacheTtl): String = when (ttl) {
+    ItemCacheTtl.MONTH -> "Месяц"
+    ItemCacheTtl.WEEK -> "Неделя"
+    ItemCacheTtl.THREE_DAYS -> "3 дня"
+    ItemCacheTtl.NEVER -> "Не кэшировать"
 }
 
 /** Хост без схемы — короче для строки настройки (`smarttvcdn.online` вместо полного URL). */

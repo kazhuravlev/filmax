@@ -4,6 +4,8 @@ import com.filmax.core.domain.auth.AuthRepository
 import com.filmax.core.domain.cache.ImageCacheRepository
 import com.filmax.core.domain.cache.ImagePrefetcher
 import com.filmax.core.domain.cache.ImageProxyRepository
+import com.filmax.core.domain.cache.ItemCacheTtl
+import com.filmax.core.domain.cache.ItemDetailsCache
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.network.ApiHostRepository
@@ -12,8 +14,8 @@ import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.presentation.BaseScreenModel
 
-// Экран профиля сводит аккаунт, воспроизведение, сервер API и кэш изображений в одной модели —
-// один короткий обработчик на каждую настройку, дробить их по классам ради лимита незачем.
+// Экран профиля сводит аккаунт, воспроизведение, сервер API и кэш изображений/тайтлов в одной
+// модели — один короткий обработчик на каждую настройку, дробить их по классам ради лимита незачем.
 @Suppress("LongParameterList", "TooManyFunctions")
 class ProfileScreenModel(
     private val user: UserRepository,
@@ -25,6 +27,7 @@ class ProfileScreenModel(
     private val imageCache: ImageCacheRepository,
     private val imageProxy: ImageProxyRepository,
     private val imagePrefetcher: ImagePrefetcher,
+    private val itemCache: ItemDetailsCache,
 ) : BaseScreenModel<ProfileState, ProfileSideEffect, ProfileEvent>(ProfileState()) {
 
     init {
@@ -35,6 +38,7 @@ class ProfileScreenModel(
         observeImageProxy()
         observeImagePrefetch()
         observeImageCacheStats()
+        observeItemCache()
     }
 
     private fun observeFavorites() {
@@ -95,6 +99,19 @@ class ProfileScreenModel(
         }
     }
 
+    private fun observeItemCache() {
+        screenModelScope {
+            itemCache.ttl.collect { ttl ->
+                updateState { it.copy(itemCacheTtl = ttl) }
+            }
+        }
+        screenModelScope {
+            itemCache.count.collect { count ->
+                updateState { it.copy(itemCacheCount = count) }
+            }
+        }
+    }
+
     override fun dispatch(event: ProfileEvent) {
         when (event) {
             ProfileEvent.Logout -> logout()
@@ -106,7 +123,17 @@ class ProfileScreenModel(
             ProfileEvent.ClearImageCache -> clearImageCache()
             is ProfileEvent.SetImageProxyEnabled -> setImageProxyEnabled(event.enabled)
             is ProfileEvent.SetImagePrefetchEnabled -> setImagePrefetchEnabled(event.enabled)
+            ProfileEvent.ClearItemCache -> clearItemCache()
+            is ProfileEvent.SetItemCacheTtl -> setItemCacheTtl(event.ttl)
         }
+    }
+
+    private fun clearItemCache() = screenModelScope {
+        itemCache.clear()
+    }
+
+    private fun setItemCacheTtl(ttl: ItemCacheTtl) = screenModelScope {
+        itemCache.setTtl(ttl)
     }
 
     private fun setApiHost(host: String) = screenModelScope {

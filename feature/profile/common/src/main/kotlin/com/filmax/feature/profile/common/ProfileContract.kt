@@ -1,6 +1,7 @@
 package com.filmax.feature.profile.common
 
 import com.filmax.core.domain.cache.ImageCacheStats
+import com.filmax.core.domain.cache.ItemCacheTtl
 import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.domain.user.model.UserProfile
 
@@ -28,6 +29,11 @@ data class ProfileState(
     val imagePrefetchRemaining: Int = 0,
     /** Сколько сейчас лежит в кэше изображений — для подписи на кнопке сброса. */
     val imageCacheStats: ImageCacheStats = ImageCacheStats(),
+    /** Срок жизни кэша статической информации о тайтлах (см. [com.filmax.core.domain.cache.ItemDetailsCache]). */
+    val itemCacheTtl: ItemCacheTtl = ItemCacheTtl.MONTH,
+    /** Сколько тайтлов сейчас в этом кэше — для подписи на кнопке сброса; растёт не сканированием,
+     * а счётчиком в самой реализации (см. `ItemDetailsCacheImpl`). */
+    val itemCacheCount: Int = 0,
     val loading: Boolean = true,
     val error: String? = null,
 )
@@ -42,6 +48,8 @@ sealed interface ProfileEvent {
     data object ClearImageCache : ProfileEvent
     data class SetImageProxyEnabled(val enabled: Boolean) : ProfileEvent
     data class SetImagePrefetchEnabled(val enabled: Boolean) : ProfileEvent
+    data object ClearItemCache : ProfileEvent
+    data class SetItemCacheTtl(val ttl: ItemCacheTtl) : ProfileEvent
 }
 
 sealed interface ProfileSideEffect {

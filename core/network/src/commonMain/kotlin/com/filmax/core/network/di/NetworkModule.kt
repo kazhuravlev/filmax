@@ -1,12 +1,15 @@
 package com.filmax.core.network.di
 
+import com.filmax.core.domain.cache.ItemDetailsCache
 import com.filmax.core.domain.network.ApiHostRepository
 import com.filmax.core.network.ApiHostRepositoryImpl
+import com.filmax.core.network.ItemDetailsCacheImpl
 import com.filmax.core.network.TokenStorage
 import com.filmax.core.network.buildHttpClient
 import com.filmax.core.network.isDebugBuild
 import io.ktor.client.HttpClient
 import org.koin.core.module.Module
+import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
 /**
@@ -16,6 +19,11 @@ import org.koin.dsl.module
 val networkModule = module {
     single { TokenStorage(get()) }
     single<ApiHostRepository> { ApiHostRepositoryImpl(settings = get(), engine = get()) }
+    // createdAtStart — ItemDto.toDomain() (data:catalog) кладёт тайтлы в кэш напрямую через
+    // ItemDetailsCacheAccess, без DI, и должен найти уже готовую реализацию с первого же тайтла.
+    single<ItemDetailsCache>(createdAtStart = true) {
+        ItemDetailsCacheImpl(settings = get(named(ITEM_CACHE_SETTINGS)))
+    }
     single<HttpClient> {
         buildHttpClient(
             engine = get(),

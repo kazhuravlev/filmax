@@ -8,12 +8,20 @@ import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.okhttp.OkHttp
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.Module
+import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
 actual val platformNetworkModule: Module = module {
     single<Settings> {
         SharedPreferencesSettings(
             androidContext().getSharedPreferences("filmax_tokens", Context.MODE_PRIVATE),
+        )
+    }
+    // Отдельный файл, а не общий с токенами: кэш тайтлов может разрастись до сотен записей,
+    // а `Settings.clear()` у ItemDetailsCacheImpl должен чистить только его, не разлогинивая заодно.
+    single<Settings>(named(ITEM_CACHE_SETTINGS)) {
+        SharedPreferencesSettings(
+            androidContext().getSharedPreferences("filmax_item_cache", Context.MODE_PRIVATE),
         )
     }
     single { ChuckerInterceptor.Builder(androidContext()).build() }

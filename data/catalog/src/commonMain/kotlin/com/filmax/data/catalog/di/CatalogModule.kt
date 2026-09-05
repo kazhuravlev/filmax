@@ -7,5 +7,5 @@ import org.koin.dsl.module
 
 val catalogModule = module {
     single { CatalogApi(get()) }
-    single<CatalogRepository> { CatalogRepositoryImpl(api = get()) }
+    single<CatalogRepository> { CatalogRepositoryImpl(api = get(), itemCache = get()) }
 }
