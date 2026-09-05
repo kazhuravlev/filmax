@@ -2,6 +2,7 @@ package com.filmax.feature.profile.common
 
 import com.filmax.core.domain.auth.AuthRepository
 import com.filmax.core.domain.cache.ImageCacheRepository
+import com.filmax.core.domain.cache.ImageProxyRepository
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.network.ApiHostRepository
@@ -21,6 +22,7 @@ class ProfileScreenModel(
     private val playbackSettings: PlaybackSettingsRepository,
     private val apiHost: ApiHostRepository,
     private val imageCache: ImageCacheRepository,
+    private val imageProxy: ImageProxyRepository,
 ) : BaseScreenModel<ProfileState, ProfileSideEffect, ProfileEvent>(ProfileState()) {
 
     init {
@@ -28,6 +30,7 @@ class ProfileScreenModel(
         observeFavorites()
         observePlaybackSettings()
         observeApiHost()
+        observeImageProxy()
     }
 
     private fun observeFavorites() {
@@ -54,6 +57,14 @@ class ProfileScreenModel(
         }
     }
 
+    private fun observeImageProxy() {
+        screenModelScope {
+            imageProxy.enabled.collect { enabled ->
+                updateState { it.copy(imageProxyEnabled = enabled) }
+            }
+        }
+    }
+
     override fun dispatch(event: ProfileEvent) {
         when (event) {
             ProfileEvent.Logout -> logout()
@@ -63,11 +74,16 @@ class ProfileScreenModel(
             ProfileEvent.ResetSubtitlePreferences -> resetSubtitlePreferences()
             is ProfileEvent.SetApiHost -> setApiHost(event.host)
             ProfileEvent.ClearImageCache -> clearImageCache()
+            is ProfileEvent.SetImageProxyEnabled -> setImageProxyEnabled(event.enabled)
         }
     }
 
     private fun setApiHost(host: String) = screenModelScope {
         apiHost.selectHost(host)
+    }
+
+    private fun setImageProxyEnabled(enabled: Boolean) = screenModelScope {
+        imageProxy.setEnabled(enabled)
     }
 
     private fun setQuality(quality: String) = screenModelScope {

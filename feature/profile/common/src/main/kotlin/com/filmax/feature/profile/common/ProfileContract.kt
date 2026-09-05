@@ -17,6 +17,8 @@ data class ProfileState(
     val apiHost: String = "",
     /** Хосты-кандидаты для пункта настроек «Сервер API». */
     val availableApiHosts: List<String> = emptyList(),
+    /** Включён ли прокси изображений (см. [com.filmax.core.domain.cache.ImageProxyRepository]). */
+    val imageProxyEnabled: Boolean = true,
     val loading: Boolean = true,
     val error: String? = null,
 )
@@ -29,6 +31,7 @@ sealed interface ProfileEvent {
     data object ResetSubtitlePreferences : ProfileEvent
     data class SetApiHost(val host: String) : ProfileEvent
     data object ClearImageCache : ProfileEvent
+    data class SetImageProxyEnabled(val enabled: Boolean) : ProfileEvent
 }
 
 sealed interface ProfileSideEffect {

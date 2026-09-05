@@ -9,6 +9,7 @@ import androidx.compose.material.icons.outlined.ImageNotSupported
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,6 +26,10 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import com.filmax.core.designsystem.ShapePoster
+import com.filmax.core.domain.cache.ImageProxyRepository
+import com.filmax.core.ui.cache.CacheableImage
+import com.filmax.core.ui.cache.proxiedImageUrl
+import org.koin.compose.koinInject
 
 /**
  * Постер с ленивой загрузкой через Coil [AsyncImage]. Под обложкой всегда лежит статичный
@@ -36,6 +41,8 @@ import com.filmax.core.designsystem.ShapePoster
  * на каждом + бесконечная shimmer-анимация на каждом грузящемся постере роняли FPS. Плейсхолдер
  * сделан статичным по той же причине — никакой `rememberInfiniteTransition` в hot-path списков.
  */
+// Компонент дизайн-системы: параметры — его публичный API (см. `TvPosterCard` в core:tv-designsystem).
+@Suppress("LongParameterList")
 @Composable
 fun PosterImage(
     url: String,
@@ -46,15 +53,24 @@ fun PosterImage(
     // вызов без явного accentColor красил плейсхолдер мимо схемы — цветное пятно там, где во
     // всём приложении цвет только у постеров.
     accentColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    // Стабильный ключ кэша вида `entityType:entityId:subId` (см. `ImageCacheKeys` в core:ui) —
+    // независим от [url], поэтому смена источника (прямая ссылка/прокси) не рвёт кэш. null —
+    // старое поведение (кэш по url), для мест, которые ещё не завели свой ключ.
+    cacheKey: String? = null,
 ) {
     val placeholder = remember(accentColor) { posterPlaceholderBrush(accentColor) }
+    val proxyEnabled by koinInject<ImageProxyRepository>().enabled.collectAsState()
+    val effectiveUrl = remember(url, proxyEnabled) { proxiedImageUrl(url, proxyEnabled) }
+    val model = remember(cacheKey, effectiveUrl) {
+        if (cacheKey != null) CacheableImage(key = cacheKey, url = effectiveUrl) else effectiveUrl
+    }
     // Битую ссылку помечаем знаком, а не оставляем пустую плашку: kino.watch отдаёт адрес постера
     // всегда, даже когда файла нет (у подборки 967 это честный 404), и голый градиент читается
     // как вечная загрузка. Ключ — url: при переиспользовании карточки в ленте флаг сбрасывается.
     var failed by remember(url) { mutableStateOf(false) }
     Box(modifier.clip(shape).background(placeholder), contentAlignment = Alignment.Center) {
         AsyncImage(
-            model = url,
+            model = model,
             contentDescription = contentDescription,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),

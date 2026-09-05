@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.catalog.model.Item
+import com.filmax.core.ui.cache.ImageCacheKeys
 
 /**
  * Общий бэкдроп героя деталей: постер на всю область + слои градиентов [scrims] поверх него.
@@ -31,6 +32,8 @@ fun HeroBackdrop(
     posterUrl: String = item.posters.big,
     accentColor: Color = BackdropGradients.Accent,
 ) {
+    // Кадр героя — либо широкий (wide), либо запасной (big): подставляем соответствующий subId.
+    val subId = if (posterUrl == item.posters.wide) ImageCacheKeys.WALL else ImageCacheKeys.SIZE_BIG
     Box(modifier) {
         PosterImage(
             url = posterUrl,
@@ -38,6 +41,7 @@ fun HeroBackdrop(
             modifier = Modifier.matchParentSize(),
             shape = RoundedCornerShape(0.dp),
             accentColor = accentColor,
+            cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, subId),
         )
         scrims.forEach { brush ->
             Box(Modifier.matchParentSize().background(brush))

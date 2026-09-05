@@ -128,13 +128,16 @@ class DetailsScreenModel(
 
     /**
      * «Я смотрю»: отдельная от watchlist пометка тайтла (см. [DetailsEvent.ToggleWatching]).
-     * `watching/toggle` возвращает итоговое `watched` — используем его напрямую для кнопки,
-     * а continuation всё равно пересчитываем: иначе «Продолжить»/прогресс на экране молча
-     * оставались бы прежними, будто клик ни на что не повлиял.
+     * Кнопка переключается сразу, оптимистично — не ждём сервер, чтобы клик ощущался мгновенным
+     * (тот же приём, что и в `FavoritesRepositoryImpl.add/remove`). Итоговое `watched` от сервера
+     * всё равно применяем поверх (на случай гонки с другим устройством), но без отдельного отката
+     * при сбое запроса — расхождение исправит следующая загрузка тайтла.
      */
     private fun toggleWatching() {
         val item = state.item ?: return
+        val optimisticWatching = !state.isWatching
         screenModelScope {
+            updateState { it.copy(isWatching = optimisticWatching) }
             val watched = watching.toggleWatched(item.id).getOrNull() ?: return@screenModelScope
             val history = findHistoryEntry()
             updateState { it.copy(isWatching = watched, continuation = calculateContinuation(item, history)) }

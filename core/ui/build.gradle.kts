@@ -19,4 +19,7 @@ dependencies {
 
     implementation(platform(libs.koin.bom))
     implementation(libs.koin.android)
+    // koinInject() внутри @Composable (PosterImage/TvActorCard читают ImageProxyRepository) —
+    // koin-android этого не даёт, нужен именно compose-модуль.
+    implementation(libs.koin.androidx.compose)
 }

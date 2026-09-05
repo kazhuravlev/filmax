@@ -86,6 +86,7 @@ import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.core.tv.designsystem.gridPosterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
+import com.filmax.core.ui.cache.ImageCacheKeys
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.feature.library.common.BookmarkFolderPreview
 import com.filmax.feature.library.common.LibraryEvent
@@ -519,7 +520,13 @@ private fun LazyGridScope.folderPosters(
             kinopoiskRating = ratingLabel(item.rating.kinopoisk),
             advert = item.advert,
             posterContent = { url, posterModifier ->
-                FolderPoster(url, item.title, posterModifier, removeMode = ui.removeMode)
+                FolderPoster(
+                    url,
+                    item.title,
+                    posterModifier,
+                    removeMode = ui.removeMode,
+                    cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, ImageCacheKeys.SIZE_MEDIUM),
+                )
             },
         )
     }
@@ -628,7 +635,8 @@ private fun LibraryTitleCard(
         kinopoiskRating = ratingLabel(details?.rating?.kinopoisk),
         badgeContent = badgeContent,
         posterContent = { url, posterModifier ->
-            TvPoster(url, title, posterModifier, TvMetrics.PosterShape)
+            val cacheKey = details?.let { ImageCacheKeys.poster(it.type.apiValue, it.id, ImageCacheKeys.SIZE_MEDIUM) }
+            TvPoster(url, title, posterModifier, TvMetrics.PosterShape, cacheKey)
         },
     )
 }
@@ -798,9 +806,15 @@ private fun BookmarksEmpty(onNewFolder: () -> Unit) {
 
 /** Постер тайтла в подборке. В режиме удаления поверх — крестик: маркер, что клик уберёт тайтл. */
 @Composable
-private fun FolderPoster(url: String, title: String, modifier: Modifier, removeMode: Boolean) {
+private fun FolderPoster(
+    url: String,
+    title: String,
+    modifier: Modifier,
+    removeMode: Boolean,
+    cacheKey: String? = null,
+) {
     Box(modifier) {
-        TvPoster(url, title, Modifier.fillMaxSize(), TvMetrics.PosterShape)
+        TvPoster(url, title, Modifier.fillMaxSize(), TvMetrics.PosterShape, cacheKey)
         if (removeMode) {
             RemoveBadgeTv(Modifier.align(Alignment.TopStart).padding(6.dp))
         }
@@ -828,13 +842,14 @@ private fun RemoveBadgeTv(modifier: Modifier = Modifier) {
 
 /** Постер для слота карточек дизайн-системы: монохромный плейсхолдер вместо розового по умолчанию. */
 @Composable
-private fun TvPoster(url: String, title: String, modifier: Modifier, shape: Shape) {
+private fun TvPoster(url: String, title: String, modifier: Modifier, shape: Shape, cacheKey: String? = null) {
     PosterImage(
         url = url,
         contentDescription = title,
         modifier = modifier,
         shape = shape,
         accentColor = TvSurfaceContainerHighest,
+        cacheKey = cacheKey,
     )
 }
 

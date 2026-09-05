@@ -161,6 +161,13 @@ private fun ProfileContent(
                 spec = SettingRowSpec(label = "Проверить обновления"),
                 onClick = actions.onCheckUpdates,
             )
+            Spacer(Modifier.height(26.dp))
+            TvOverline("Изображения и постеры", color = TvOnSurfaceDim)
+            Spacer(Modifier.height(12.dp))
+            SettingRow(
+                spec = SettingRowSpec(label = "Прокси изображений", value = onOff(state.imageProxyEnabled)),
+                onClick = actions.onToggleImageProxy,
+            )
             SettingRow(
                 spec = SettingRowSpec(label = "Сбросить кеш изображений", labelColor = TvError),
                 onClick = actions.onClearImageCache,
@@ -217,6 +224,7 @@ private data class ProfileActions(
     val onCheckUpdates: () -> Unit,
     val onCycleApiHost: () -> Unit,
     val onClearImageCache: () -> Unit,
+    val onToggleImageProxy: () -> Unit,
 )
 
 /** Лямбды замыкают текущий [state], поэтому пересобираются вместе с ним — без remember. */
@@ -252,6 +260,9 @@ private fun profileActions(
         }
     },
     onClearImageCache = { screenModel.dispatch(ProfileEvent.ClearImageCache) },
+    onToggleImageProxy = {
+        screenModel.dispatch(ProfileEvent.SetImageProxyEnabled(!state.imageProxyEnabled))
+    },
 )
 
 @Composable
@@ -366,3 +377,5 @@ private fun next(options: List<String>, current: String): String {
 
 /** Хост без схемы — короче для строки настройки (`smarttvcdn.online` вместо полного URL). */
 private fun apiHostLabel(host: String): String = host.removePrefix("https://").removePrefix("http://")
+
+private fun onOff(enabled: Boolean): String = if (enabled) "Вкл" else "Выкл"

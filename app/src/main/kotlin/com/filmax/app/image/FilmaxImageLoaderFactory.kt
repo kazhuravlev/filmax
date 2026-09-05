@@ -4,7 +4,10 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
+import coil3.key.Keyer
+import coil3.map.Mapper
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import com.filmax.core.ui.cache.CacheableImage
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
@@ -22,7 +25,14 @@ class FilmaxImageLoaderFactory : SingletonImageLoader.Factory {
             .addNetworkInterceptor(ImageCacheLifetimeInterceptor())
             .build()
         return ImageLoader.Builder(context)
-            .components { add(OkHttpNetworkFetcherFactory(callFactory = { okHttpClient })) }
+            .components {
+                add(OkHttpNetworkFetcherFactory(callFactory = { okHttpClient }))
+                // CacheableImage кэшируется по entity-ключу, а не по url — Keyer перехватывает
+                // вычисление ключа раньше, чем Mapper развернёт модель обратно в строку для
+                // реальной загрузки через уже зарегистрированный OkHttp-фетчер. См. CacheableImage.
+                add(Keyer<CacheableImage> { data, _ -> data.key })
+                add(Mapper<CacheableImage, String> { data, _ -> data.url })
+            }
             .diskCache {
                 DiskCache.Builder()
                     .directory(context.cacheDir.resolve(IMAGE_DISK_CACHE_DIR).toOkioPath())

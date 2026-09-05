@@ -50,6 +50,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -77,6 +78,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
+import com.filmax.core.domain.cache.ImageProxyRepository
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemRating
 import com.filmax.core.domain.catalog.model.MediaTrack
@@ -108,6 +110,9 @@ import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberDimAlpha
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.tv.designsystem.tvFocusGroup
+import com.filmax.core.ui.cache.CacheableImage
+import com.filmax.core.ui.cache.ImageCacheKeys
+import com.filmax.core.ui.cache.proxiedImageUrl
 import com.filmax.core.ui.components.HeroBackdrop
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.feature.details.common.DetailsEvent
@@ -122,6 +127,7 @@ import com.filmax.feature.details.common.viewsLabel
 import com.filmax.feature.details.common.volumeLabel
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 /** Ширина текстового блока в hero (макет: 600dp из 960) — правее лежит открытый бэкдроп. */
 private val HeroTextWidth = 600.dp
@@ -720,8 +726,15 @@ private fun TvActorCard(member: CastMember, onClick: () -> Unit) {
                 // Ключ — photoUrl: при переиспользовании карточки в ряду флаг сбрасывается.
                 var loadFailed by remember(member.photoUrl) { mutableStateOf(false) }
                 if (photo != null && !loadFailed) {
+                    val proxyEnabled by koinInject<ImageProxyRepository>().enabled.collectAsState()
+                    val model = remember(photo, proxyEnabled) {
+                        CacheableImage(
+                            key = ImageCacheKeys.actorPhoto(member.name),
+                            url = proxiedImageUrl(photo, proxyEnabled),
+                        )
+                    }
                     AsyncImage(
-                        model = photo,
+                        model = model,
                         contentDescription = member.name,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
@@ -895,6 +908,7 @@ private fun EpisodeThumb(url: String, episode: MediaTrack, isResume: Boolean, mo
                 modifier = Modifier.fillMaxSize(),
                 shape = TvMetrics.CardShape,
                 accentColor = TvSurfaceContainerHigh,
+                cacheKey = ImageCacheKeys.episodeThumbnail(episode.id),
             )
         } else {
             Text(
@@ -1146,6 +1160,7 @@ private fun LazyListScope.similarRail(similar: List<Item>, onOpenItem: (Int) -> 
                         modifier = modifier,
                         shape = TvMetrics.PosterShape,
                         accentColor = TvSurfaceContainerHigh,
+                        cacheKey = ImageCacheKeys.poster(simItem.type.apiValue, simItem.id, ImageCacheKeys.SIZE_MEDIUM),
                     )
                 }
             }

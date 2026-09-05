@@ -58,6 +58,7 @@ import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
+import com.filmax.core.ui.cache.ImageCacheKeys
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.core.ui.components.appErrorText
 import com.filmax.core.ui.components.continueMeta
@@ -323,6 +324,11 @@ private fun TvHero(
             modifier = Modifier.fillMaxSize(),
             shape = RectangleShape,
             accentColor = TvSurfaceContainerHigh,
+            cacheKey = ImageCacheKeys.poster(
+                item.type.apiValue,
+                item.id,
+                if (item.posters.wide != null) ImageCacheKeys.WALL else ImageCacheKeys.SIZE_BIG,
+            ),
         )
         Box(Modifier.fillMaxSize().background(HeroScrimHorizontal))
         Box(Modifier.fillMaxSize().background(HeroScrimVertical))
@@ -419,6 +425,7 @@ private fun TvHomePosterCard(item: Item, onClick: () -> Unit, modifier: Modifier
                 modifier = posterModifier,
                 shape = TvMetrics.PosterShape,
                 accentColor = TvSurfaceContainerHigh,
+                cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, ImageCacheKeys.SIZE_MEDIUM),
             )
         },
     )
@@ -439,6 +446,7 @@ private fun TvCollectionCard(collection: Collection, onClick: () -> Unit, modifi
                 modifier = posterModifier,
                 shape = TvMetrics.PosterShape,
                 accentColor = TvSurfaceContainerHigh,
+                cacheKey = ImageCacheKeys.collectionPoster(collection.id, ImageCacheKeys.SIZE_MEDIUM),
             )
         },
     )
@@ -461,6 +469,7 @@ private fun TvContinueCard(history: Continuation, onClick: () -> Unit, modifier:
                 modifier = posterModifier,
                 shape = TvMetrics.CardShape,
                 accentColor = TvSurfaceContainerHigh,
+                cacheKey = ImageCacheKeys.poster(history.item.type.apiValue, history.itemId, ImageCacheKeys.WALL),
             )
         },
     )

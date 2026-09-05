@@ -83,6 +83,7 @@ import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.core.tv.designsystem.gridPosterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
+import com.filmax.core.ui.cache.ImageCacheKeys
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.core.ui.components.VoiceListeningDialog
 import com.filmax.core.ui.components.rememberInAppVoiceSearch
@@ -591,6 +592,7 @@ private fun CatalogPoster(item: Item, modifier: Modifier, onClick: () -> Unit) {
             shape = TvMetrics.PosterShape,
             // Плейсхолдер-градиент по умолчанию розовый; в монохроме под постером — поверхность.
             accentColor = TvSurfaceContainer,
+            cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, ImageCacheKeys.SIZE_MEDIUM),
         )
     }
 }

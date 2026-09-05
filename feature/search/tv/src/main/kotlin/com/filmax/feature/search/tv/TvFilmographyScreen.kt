@@ -36,6 +36,7 @@ import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
+import com.filmax.core.ui.cache.ImageCacheKeys
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.feature.search.common.FilmographyScreenModel
 import com.filmax.feature.search.common.FilmographyState
@@ -159,6 +160,7 @@ private fun FilmographyPoster(
             shape = TvMetrics.PosterShape,
             // Плейсхолдер-градиент по умолчанию цветной; в монохроме под постером — поверхность.
             accentColor = TvSurfaceContainer,
+            cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, ImageCacheKeys.SIZE_MEDIUM),
         )
     }
 }
