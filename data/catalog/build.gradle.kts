@@ -17,5 +17,8 @@ kotlin {
             implementation(koinBom)
             implementation(libs.koin.core)
         }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
     }
 }

@@ -29,6 +29,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 
 // Экран деталей сводит воспроизведение, избранное, загрузки и подборки в одной модели —
 // дробить её ради лимитов нельзя: состояние и обработчики читаются только вместе.
@@ -257,12 +258,30 @@ class DetailsScreenModel(
      * «Watching Now», которую страница «Я смотрю» подмешивает третьим источником), а нативный
      * watchlist — ДОПОЛНИТЕЛЬНО, только для сериалов, чтобы не терять серверный флаг там, где он
      * реально что-то значит.
+     *
+     * Три источника ([watchingNow], [favorites], нативный watchlist сервера) держат один и тот же
+     * флаг независимо, и их `toggle()` переворачивает КАЖДЫЙ как есть, а не выставляет в конкретное
+     * значение. Если источники разошлись между собой (например, у сериала уже стоит нативный
+     * watchlist, но ещё не проставлен локальный [favorites]), слепой вызов `toggle()` на каждом по
+     * отдельности уводил их в РАЗНЫЕ стороны: один включался, другой выключался — и агрегат
+     * [isFav] (`favorites || watchingNow`) после клика оставался тем же самым true, то есть
+     * сериал было НЕВОЗМОЖНО убрать из «Буду смотреть» с этого экрана. Поэтому считаем ОДНУ
+     * целевую цель (обратное текущему [isFav]) и подводим к ней каждый источник отдельно — трогаем
+     * только те, что этой цели ещё не достигли.
      */
     private suspend fun toggleWantToWatchFolder(item: Item) {
-        watchingNow.toggle(item)
+        val target = !isFav
+        if (watchingNow.isMember(item.id).first() != target) {
+            watchingNow.toggle(item)
+        }
         if (item.isSeries()) {
-            favorites.toggle(item.toFavoriteItem())
-            watching.toggleWatchlist(route.itemId)
+            if (favorites.isFavorite(item.id).first() != target) {
+                favorites.toggle(item.toFavoriteItem())
+            }
+            if (item.inWatchlist != target) {
+                val result = watching.toggleWatchlist(route.itemId).getOrNull() ?: target
+                updateState { it.copy(item = it.item?.copy(inWatchlist = result)) }
+            }
         }
         // «Буду смотреть» — это подписка/подборка, которая и формирует список «Я смотрю»
         // в библиотеке, и попутно обычная подборка в счётчиках «Подборок».
