@@ -17,6 +17,9 @@ data class DetailsState(
      */
     val isWantToWatch: Boolean = false,
     val similar: List<Item> = emptyList(),
+    /** true, пока ответ на «Похожее» ещё не пришёл — экран рисует скелетон ряда вместо карточек,
+     * не блокируя [loading] (сам тайтл уже открыт). */
+    val similarLoading: Boolean = false,
     /**
      * Другие тайтлы того же (первого) режиссёра — поиском по имени (`SearchRepository.searchByDirector`),
      * без текущего тайтла в списке. Пустой, пока не пришёл ответ, или когда режиссёр не указан.

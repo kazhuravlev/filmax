@@ -113,6 +113,7 @@ import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.tv.designsystem.tvFocusGroup
 import com.filmax.core.ui.cache.CacheableImage
 import com.filmax.core.ui.cache.proxiedImageUrl
+import com.filmax.core.ui.components.GradientPosterPlaceholder
 import com.filmax.core.ui.components.HeroBackdrop
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.feature.details.common.DetailsEvent
@@ -200,6 +201,7 @@ fun TvDetailsScreen(
             item != null -> DetailsContent(
                 item = item,
                 similar = state.similar,
+                similarLoading = state.similarLoading,
                 directorFilms = state.directorFilms,
                 cast = state.cast,
                 continuation = state.continuation,
@@ -258,6 +260,7 @@ private data class DetailsActions(
 private fun DetailsContent(
     item: Item,
     similar: List<Item>,
+    similarLoading: Boolean,
     directorFilms: List<Item>,
     cast: List<CastMember>,
     continuation: Continuation?,
@@ -350,6 +353,7 @@ private fun DetailsContent(
                 data = DetailsSectionsData(
                     item = item,
                     similar = similar,
+                    similarLoading = similarLoading,
                     directorFilms = directorFilms,
                     people = people,
                     directors = directors,
@@ -424,6 +428,7 @@ private val NoFocusScroll = object : BringIntoViewSpec {
 private data class DetailsSectionsData(
     val item: Item,
     val similar: List<Item>,
+    val similarLoading: Boolean,
     val directorFilms: List<Item>,
     val people: List<CastMember>,
     val directors: List<CastMember>,
@@ -481,7 +486,9 @@ private fun LazyListScope.detailsSections(
             )
         )
     }
-    if (data.similar.isNotEmpty()) {
+    if (data.similarLoading) {
+        item(key = "similar-skeleton") { PosterRailSkeleton(title = "Похожее") }
+    } else if (data.similar.isNotEmpty()) {
         posterRail(key = "similar", title = "Похожее", items = data.similar, onOpenItem = actions.onOpenItem)
     }
 }
@@ -1249,6 +1256,29 @@ private fun LazyListScope.posterRail(
                     )
                 }
             }
+        }
+    }
+}
+
+/** Сколько карточек-заглушек рисовать, пока «Похожее» ещё грузится. */
+private const val SIMILAR_SKELETON_COUNT = 6
+
+/**
+ * «Похожее», пока не пришёл ответ: заголовок уже на месте, вместо карточек — статичные
+ * градиентные плейсхолдеры ([GradientPosterPlaceholder], тот же, что и под непрогруженным
+ * постером). Без shimmer-анимации — см. её обоснование в `PosterImage.kt` (десятки одновременных
+ * shimmer-анимаций на ТВ роняли FPS).
+ */
+@Composable
+private fun PosterRailSkeleton(title: String) {
+    TvRail(title = title, modifier = Modifier.padding(top = 26.dp)) {
+        items(SIMILAR_SKELETON_COUNT) {
+            GradientPosterPlaceholder(
+                accentColor = TvSurfaceContainerHigh,
+                modifier = Modifier
+                    .size(width = TvMetrics.PosterWidth, height = TvMetrics.PosterHeight)
+                    .clip(TvMetrics.PosterShape),
+            )
         }
     }
 }

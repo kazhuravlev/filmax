@@ -80,39 +80,33 @@ class DetailsScreenModel(
         }
     }
 
+    /**
+     * Сам тайтл — единственное, что держит спиннер: он же почти всегда кэш-хит
+     * (`CatalogRepositoryImpl.getItemDetails`), и экран должен открыться МОМЕНТАЛЬНО, если данные
+     * уже есть. «Похожее» и историю (для continuation) раньше ждали здесь же, в одном `Triple` —
+     * оба всегда идут в сеть по-настоящему (не кэшируются), и держали спиннер лишние 1-2 секунды
+     * даже когда сам тайтл уже был на экране готов. Теперь оба — независимые [screenModelScope],
+     * которые доливают своё поверх уже открытого экрана (см. [loadSimilar]/[loadContinuation]),
+     * не блокируя [DetailsState.loading].
+     */
     override fun onFetchData() {
         screenModelScope { _ ->
-            // Три независимых запроса — параллельно, а не по очереди: без этого кэш-хит по
-            // деталям тайтла (см. CatalogRepositoryImpl.getItemDetails) не давал бы никакого
-            // выигрыша в скорости — «похожее» и историю всё равно ждали бы одно за другим.
-            val (itemResult, similarResult, history) = coroutineScope {
-                val itemDeferred = async { catalog.getItemDetails(route.itemId) }
-                val similarDeferred = async { catalog.getSimilarItems(route.itemId) }
-                val historyDeferred = async { findHistoryEntry() }
-                Triple(itemDeferred.await(), similarDeferred.await(), historyDeferred.await())
-            }
-            val similar = similarResult.getOrNull().orEmpty()
-            when (itemResult) {
+            when (val itemResult = catalog.getItemDetails(route.itemId)) {
                 is RequestResult.Success -> {
-                    updateState {
-                        it.copy(
-                            loading = false,
-                            item = itemResult.data,
-                            continuation = calculateContinuation(itemResult.data, history),
-                            similar = similar,
-                        )
-                    }
+                    val item = itemResult.data
+                    updateState { it.copy(loading = false, item = item) }
                     // Down-sync: если на сервере фильм уже в watchlist — заносим в локальный кэш.
-                    if (itemResult.data.inWatchlist) {
-                        favorites.add(itemResult.data.toFavoriteItem())
+                    if (item.inWatchlist) {
+                        favorites.add(item.toFavoriteItem())
                     }
-                    // Постеры (itemResult.data/similar) уже ушли в фоновую закачку из
-                    // ItemDto.toDomain() — тут только фото актёров и режиссёра, угаданные из сырых
-                    // строк cast/director: их эта функция не знает, а строим мы их именно здесь
-                    // (actorPhotoUrl).
-                    prefetchCastPhotos(itemResult.data.cast, itemResult.data.director)
-                    loadCast(itemResult.data.imdbId)
-                    loadDirectorFilms(itemResult.data)
+                    // Постеры (item/similar) уже ушли в фоновую закачку из ItemDto.toDomain() — тут
+                    // только фото актёров и режиссёра, угаданные из сырых строк cast/director: их
+                    // эта функция не знает, а строим мы их именно здесь (actorPhotoUrl).
+                    prefetchCastPhotos(item.cast, item.director)
+                    loadCast(item.imdbId)
+                    loadDirectorFilms(item)
+                    loadSimilar()
+                    loadContinuation(item)
                     // Подборки грузим только теперь: скан принадлежности (см. scanMemberships)
                     // читает state.item, который до этого момента ещё null.
                     reloadBookmarkFolders()
@@ -123,6 +117,27 @@ class DetailsScreenModel(
                     showError(itemResult)
                 }
             }
+        }
+    }
+
+    /** «Похожее» — отдельным запросом (всегда реальная сеть, не кэшируется), не блокируя показ
+     * самого тайтла. [DetailsState.similarLoading] держит скелетон ряда, пока не пришёл ответ. */
+    private fun loadSimilar() {
+        screenModelScope { _ ->
+            updateState { it.copy(similarLoading = true) }
+            val similar = catalog.getSimilarItems(route.itemId).getOrNull().orEmpty()
+            updateState { it.copy(similar = similar, similarLoading = false) }
+        }
+    }
+
+    /** История (для continuation — «Продолжить · SxEy» на кнопке hero) — отдельным запросом, не
+     * блокируя показ самого тайтла. До ответа кнопка играет разумный дефолт (первый недосмотренный
+     * эпизод сезона либо первый вовсе, см. `target` в TvDetailsScreen) и тихо обновляется, если
+     * найдётся реальный прогресс. */
+    private fun loadContinuation(item: Item) {
+        screenModelScope { _ ->
+            val history = findHistoryEntry()
+            updateState { it.copy(continuation = calculateContinuation(item, history)) }
         }
     }
 
