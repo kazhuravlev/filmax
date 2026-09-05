@@ -5,6 +5,8 @@ import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.favorites.model.FavoriteItem
 import com.filmax.core.domain.favorites.model.toFavoriteItem
 import com.filmax.core.domain.user.UserRepository
+import com.filmax.core.domain.user.getDedupedBookmarkItems
+import com.filmax.core.domain.user.isItemInBookmark
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -73,7 +75,12 @@ internal class FavoritesRepositoryImpl(
         // при сбое выправит следующий refresh (источник правды — сервер).
         updateState(state.value.filterNot { it.id == item.id } + item)
         val folderId = ensureFolderId() ?: return
-        userRepository.addToBookmark(item.id, folderId)
+        // Проверка по серверу, а не только по локальному [state]: он мог отстать от реальности
+        // (переустановка, другое устройство, ручной вызов API) — иначе повторный addToBookmark на
+        // уже существующую связь и есть источник дублей в папке.
+        if (!userRepository.isItemInBookmark(item.id, folderId)) {
+            userRepository.addToBookmark(item.id, folderId)
+        }
     }
 
     override suspend fun remove(id: Int) {
@@ -82,20 +89,17 @@ internal class FavoritesRepositoryImpl(
         userRepository.removeFromBookmark(id, folderId)
     }
 
-    /** Перечитывает папку с сервера в кэш. Тихо выходит, если папки/сети нет. */
+    /**
+     * Перечитывает папку с сервера в кэш. Тихо выходит, если папки/сети нет.
+     *
+     * [UserRepository.getDedupedBookmarkItems] чистит дубликаты СЕРВЕРНОЙ связи `(folderId, id)`
+     * до того, как список попадёт в кэш/на экран — иначе накопленные дубли пережили бы любое
+     * количество перезапусков и `distinctBy` в [updateState] прятал бы их только визуально.
+     */
     private suspend fun refresh() {
         val folderId = ensureFolderId() ?: return
-        val collected = mutableListOf<FavoriteItem>()
-        var page = 1
-        var hasMore = true
-        while (hasMore && page <= MAX_PAGES) {
-            val pageResult = userRepository.getBookmarkItems(folderId, page).getOrNull()
-            val items = pageResult?.items.orEmpty()
-            collected += items.map { it.toFavoriteItem() }
-            hasMore = pageResult != null && items.isNotEmpty() && page < pageResult.pagination.total
-            page++
-        }
-        updateState(collected)
+        val items = userRepository.getDedupedBookmarkItems(folderId, MAX_PAGES).getOrNull() ?: return
+        updateState(items.map { it.toFavoriteItem() })
     }
 
     /**

@@ -11,11 +11,11 @@ data class DetailsState(
     /** Рассчитан по history + tracklist, а не по одному `watchStatus` из деталей. */
     val continuation: Continuation? = null,
     /**
-     * Пометка «Я смотрю» (см. [DetailsEvent.ToggleWatching]) — читаем из `tracklist[].watchStatus`
-     * при загрузке (тот же флаг, что переключает `watching/toggle`), а после клика — из ответа
-     * самого toggle, он точнее и не ждёт повторной загрузки тайтла.
+     * Тайтл сейчас в «Буду смотреть» — либо нативный watchlist (сериалы), либо подборка
+     * «Watching Now» (фильмы), см. [DetailsEvent.ToggleWantToWatch]. Синхронизируется с
+     * [folderMemberships] в `updateFolderMemberships`.
      */
-    val isWatching: Boolean = false,
+    val isWantToWatch: Boolean = false,
     val similar: List<Item> = emptyList(),
     /**
      * Другие тайтлы того же (первого) режиссёра — поиском по имени (`SearchRepository.searchByDirector`),
@@ -39,10 +39,12 @@ sealed interface DetailsEvent {
     data object ToggleDownload : DetailsEvent
 
     /**
-     * Переключить пометку «Я смотрю» — отдельная от подборок серверная пометка (`watching/toggle`).
-     * Текущее состояние — [DetailsState.isWatching].
+     * Переключить «Буду смотреть»: нативный `watching/togglewatchlist` для сериалов (у kino.watch
+     * он работает только для них) и всегда подборка «Watching Now» для фильмов — та же логика,
+     * что и выбор строки «Буду смотреть» в диалоге подборок ([ToggleFolder]). Текущее состояние —
+     * [DetailsState.isWantToWatch].
      */
-    data object ToggleWatching : DetailsEvent
+    data object ToggleWantToWatch : DetailsEvent
 
     /**
      * Добавить тайтл в подборку, если его там ещё нет, иначе убрать — состояние читается из

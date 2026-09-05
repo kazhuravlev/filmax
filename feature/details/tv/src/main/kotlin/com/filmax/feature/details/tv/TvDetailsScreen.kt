@@ -39,10 +39,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.outlined.RemoveRedEye
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -102,7 +102,6 @@ import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvProgressCard
 import com.filmax.core.tv.designsystem.TvRail
 import com.filmax.core.tv.designsystem.TvScreenFocus
-import com.filmax.core.tv.designsystem.TvSuccess
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
@@ -204,14 +203,14 @@ fun TvDetailsScreen(
                 directorFilms = state.directorFilms,
                 cast = state.cast,
                 continuation = state.continuation,
-                isWatching = state.isWatching,
+                isWantToWatch = state.isWantToWatch,
                 bookmarkFolders = state.bookmarkFolders,
                 folderMemberships = state.folderMemberships,
                 actions = DetailsActions(
                     onPlay = { season, videoId, resumePositionSeconds ->
                         nav.onPlay(item.id, season, videoId, resumePositionSeconds)
                     },
-                    onToggleWatching = { screenModel.dispatch(DetailsEvent.ToggleWatching) },
+                    onToggleWantToWatch = { screenModel.dispatch(DetailsEvent.ToggleWantToWatch) },
                     onOpenItem = nav.onOpenItem,
                     onOpenPerson = nav.onOpenPerson,
                     onPlayTrailer = nav.onPlayTrailer,
@@ -240,8 +239,8 @@ data class TvDetailsNav(
 private data class DetailsActions(
     /** [season] ≤ 0 — фильм/сезон неизвестен; номер видео уникален только внутри сезона. */
     val onPlay: (season: Int, videoId: Int, resumePositionSeconds: Int) -> Unit,
-    /** «Я смотрю» — отдельная от подборок пометка, без читаемого состояния (см. DetailsEvent). */
-    val onToggleWatching: () -> Unit,
+    /** «Буду смотреть» — тот же тоггл, что и строка «Буду смотреть» в диалоге подборок. */
+    val onToggleWantToWatch: () -> Unit,
     val onOpenItem: (Int) -> Unit,
     val onOpenPerson: (name: String, isDirector: Boolean) -> Unit,
     val onPlayTrailer: (url: String, title: String) -> Unit,
@@ -262,7 +261,7 @@ private fun DetailsContent(
     directorFilms: List<Item>,
     cast: List<CastMember>,
     continuation: Continuation?,
-    isWatching: Boolean,
+    isWantToWatch: Boolean,
     bookmarkFolders: List<BookmarkFolder>,
     folderMemberships: Set<Int>,
     actions: DetailsActions,
@@ -340,8 +339,8 @@ private fun DetailsContent(
                             }
                         },
                         onOpenFolderPicker = { folderPicker.pickerOpen = true },
-                        onToggleWatching = actions.onToggleWatching,
-                        isWatching = isWatching,
+                        onToggleWantToWatch = actions.onToggleWantToWatch,
+                        isWantToWatch = isWantToWatch,
                         onHeroFocusChanged = onHeroFocusChanged,
                         onTrailer = trailerUrl?.let { ::playTrailer },
                     ),
@@ -497,10 +496,10 @@ private data class HeroPlayback(
     val playLabel: String,
     /** Открыть диалог выбора подборки — единственная кнопка «Добавить в подборку» / «В подборках». */
     val onOpenFolderPicker: () -> Unit,
-    /** «Я смотрю» — отдельная пометка тайтла, см. [DetailsActions.onToggleWatching]. */
-    val onToggleWatching: () -> Unit,
-    /** Текущее состояние пометки «Я смотрю» — см. [DetailsState.isWatching]. */
-    val isWatching: Boolean,
+    /** «Буду смотреть», см. [DetailsActions.onToggleWantToWatch]. */
+    val onToggleWantToWatch: () -> Unit,
+    /** Текущее состояние «Буду смотреть» — см. [DetailsState.isWantToWatch]. */
+    val isWantToWatch: Boolean,
     /** Фокус зашёл на кнопки hero или ушёл с них — экран переключает стейт полотна. */
     val onHeroFocusChanged: (Boolean) -> Unit,
     /** null — у тайтла нет играбельного трейлера, кнопки нет. */
@@ -655,14 +654,15 @@ private fun HeroButtons(
                 leadingIcon = if (hasAnyFolder) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
                 leadingIconTint = if (hasAnyFolder) TvError else null,
             )
-            // Отдельная от подборок пометка (см. DetailsEvent.ToggleWatching): зелёный залитый
-            // глаз — тайтл отмечен «Я смотрю», белый контурный — ещё нет («Хочу посмотреть»).
+            // «Буду смотреть»: тот же тоггл, что и строка «Буду смотреть» в диалоге подборок
+            // (см. DetailsEvent.ToggleWantToWatch), но в один клик — та же красная заливка, что и
+            // у кнопки подборок, сигнализирует «уже добавлено».
             TvButton(
-                text = if (playback.isWatching) "Я смотрю" else "Хочу посмотреть",
-                onClick = playback.onToggleWatching,
+                text = if (playback.isWantToWatch) "Буду смотреть" else "Хочу посмотреть",
+                onClick = playback.onToggleWantToWatch,
                 primary = false,
-                leadingIcon = if (playback.isWatching) Icons.Filled.Visibility else Icons.Outlined.RemoveRedEye,
-                leadingIconTint = if (playback.isWatching) TvSuccess else null,
+                leadingIcon = if (playback.isWantToWatch) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                leadingIconTint = if (playback.isWantToWatch) TvError else null,
             )
         }
     }

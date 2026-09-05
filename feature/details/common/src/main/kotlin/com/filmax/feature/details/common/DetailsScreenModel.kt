@@ -16,6 +16,7 @@ import com.filmax.core.domain.favorites.model.toFavoriteItem
 import com.filmax.core.domain.person.CastRepository
 import com.filmax.core.domain.search.SearchRepository
 import com.filmax.core.domain.user.UserRepository
+import com.filmax.core.domain.user.isItemInBookmark
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.WatchingNowRepository
 import com.filmax.core.domain.watching.WatchingRepository
@@ -65,7 +66,7 @@ class DetailsScreenModel(
     override fun dispatch(event: DetailsEvent) {
         when (event) {
             DetailsEvent.ToggleDownload -> toggleDownload()
-            DetailsEvent.ToggleWatching -> toggleWatching()
+            DetailsEvent.ToggleWantToWatch -> toggleWantToWatch()
             is DetailsEvent.ToggleFolder -> toggleFolder(event.folder)
             is DetailsEvent.CreateFolderAndAdd -> createFolderAndAdd(event.title)
         }
@@ -90,7 +91,6 @@ class DetailsScreenModel(
                             loading = false,
                             item = itemResult.data,
                             continuation = calculateContinuation(itemResult.data, history),
-                            isWatching = itemResult.data.tracklist.any { track -> track.watchStatus != NOT_WATCHED },
                             similar = similar,
                         )
                     }
@@ -187,23 +187,12 @@ class DetailsScreenModel(
         watching.getHistory().getOrNull()?.firstOrNull { it.itemId == route.itemId }
 
     /**
-     * «Я смотрю»: отдельная от watchlist пометка тайтла (см. [DetailsEvent.ToggleWatching]).
-     * Кнопка переключается сразу, оптимистично — не ждём сервер, чтобы клик ощущался мгновенным
-     * (тот же приём, что и в `FavoritesRepositoryImpl.add/remove`). Итоговое `watched` от сервера
-     * всё равно применяем поверх (на случай гонки с другим устройством), но без отдельного отката
-     * при сбое запроса — расхождение исправит следующая загрузка тайтла.
+     * «Буду смотреть» — кнопка hero-блока: тот же тоггл, что и выбор строки «Буду смотреть» в
+     * диалоге подборок (см. [toggleFolder]), но в один клик, без диалога.
      */
-    private fun toggleWatching() {
+    private fun toggleWantToWatch() {
         val item = state.item ?: return
-        val optimisticWatching = !state.isWatching
-        screenModelScope {
-            updateState { it.copy(isWatching = optimisticWatching) }
-            val watched = watching.toggleWatched(item.id).getOrNull() ?: return@screenModelScope
-            val history = findHistoryEntry()
-            updateState { it.copy(isWatching = watched, continuation = calculateContinuation(item, history)) }
-            // «Я смотрю»/история — это то же самое, что показывает «Я смотрю» в библиотеке.
-            DataInvalidation.markDirty(DataDomain.WATCHING)
-        }
+        screenModelScope { toggleWantToWatchFolder(item) }
     }
 
     private fun toggleDownload() {
@@ -228,29 +217,13 @@ class DetailsScreenModel(
     /**
      * Добавляет или убирает тайтл из подборки — один и тот же диалог для «Буду смотреть» и для
      * любой другой подборки. «Буду смотреть» распознаём по названию (как и [FavoritesRepository]
-     * внутри себя).
-     *
-     * У kino.watch `watching/togglewatchlist` реально работает только для сериалов — для фильмов
-     * сервер не даёт ручного способа попасть в «Я смотрю» вовсе (проверено запросами к боевому
-     * API: список фильмов там наполняется только реальным прогрессом просмотра). Поэтому строку
-     * «Буду смотреть» ведём в [WatchingNowRepository] всегда (это и есть наша подборка-костыль
-     * «Watching Now», которую страница «Я смотрю» подмешивает третьим источником), а нативный
-     * watchlist — ДОПОЛНИТЕЛЬНО, только для сериалов, чтобы не терять серверный флаг там, где он
-     * реально что-то значит. Остальные подборки — напрямую через [UserRepository].
+     * внутри себя) и делегируем в [toggleWantToWatchFolder]; остальные подборки — напрямую через
+     * [UserRepository].
      */
     private fun toggleFolder(folder: BookmarkFolder) {
         val item = state.item ?: return
         if (folder.title == FAVORITES_FOLDER_TITLE) {
-            screenModelScope {
-                watchingNow.toggle(item)
-                if (item.isSeries()) {
-                    favorites.toggle(item.toFavoriteItem())
-                    watching.toggleWatchlist(route.itemId)
-                }
-                // «Буду смотреть» — это подписка/подборка, которая и формирует список «Я смотрю»
-                // в библиотеке, и попутно обычная подборка в счётчиках «Подборок».
-                DataInvalidation.markDirty(DataDomain.WATCHING, DataDomain.BOOKMARKS)
-            }
+            screenModelScope { toggleWantToWatchFolder(item) }
             return
         }
         val alreadyIn = folder.id in scannedMemberships
@@ -259,13 +232,41 @@ class DetailsScreenModel(
                 user.removeFromBookmark(item.id, folder.id)
                 scannedMemberships = scannedMemberships - folder.id
             } else {
-                user.addToBookmark(item.id, folder.id)
+                // Свежая проверка по серверу, а не только по [scannedMemberships]: локальный скан
+                // мог устареть (другое устройство, прямой вызов API) — повторный addToBookmark на
+                // уже существующую связь и есть источник дублей в подборке.
+                if (!user.isItemInBookmark(item.id, folder.id)) {
+                    user.addToBookmark(item.id, folder.id)
+                }
                 scannedMemberships = scannedMemberships + folder.id
             }
             updateFolderMemberships()
             reloadBookmarkFolders()
             DataInvalidation.markDirty(DataDomain.BOOKMARKS)
         }
+    }
+
+    /**
+     * «Буду смотреть»: общая логика для hero-кнопки ([toggleWantToWatch]) и строки диалога
+     * подборок ([toggleFolder]) — один тот же тоггл, два способа его вызвать.
+     *
+     * У kino.watch `watching/togglewatchlist` реально работает только для сериалов — для фильмов
+     * сервер не даёт ручного способа попасть в «Я смотрю» вовсе (проверено запросами к боевому
+     * API: список фильмов там наполняется только реальным прогрессом просмотра). Поэтому строку
+     * «Буду смотреть» ведём в [WatchingNowRepository] всегда (это и есть наша подборка-костыль
+     * «Watching Now», которую страница «Я смотрю» подмешивает третьим источником), а нативный
+     * watchlist — ДОПОЛНИТЕЛЬНО, только для сериалов, чтобы не терять серверный флаг там, где он
+     * реально что-то значит.
+     */
+    private suspend fun toggleWantToWatchFolder(item: Item) {
+        watchingNow.toggle(item)
+        if (item.isSeries()) {
+            favorites.toggle(item.toFavoriteItem())
+            watching.toggleWatchlist(route.itemId)
+        }
+        // «Буду смотреть» — это подписка/подборка, которая и формирует список «Я смотрю»
+        // в библиотеке, и попутно обычная подборка в счётчиках «Подборок».
+        DataInvalidation.markDirty(DataDomain.WATCHING, DataDomain.BOOKMARKS)
     }
 
     /** Создаёт подборку и сразу заносит в неё текущий тайтл — одно действие в диалоге выбора. */
@@ -284,18 +285,8 @@ class DetailsScreenModel(
         }
     }
 
-    private suspend fun folderContainsItem(folderId: Int, itemId: Int): Boolean {
-        var page = 1
-        var found = false
-        var hasMore = true
-        while (!found && hasMore && page <= FOLDER_SCAN_MAX_PAGES) {
-            val result = user.getBookmarkItems(folderId, page).getOrNull()
-            found = result?.items?.any { it.id == itemId } == true
-            hasMore = result?.pagination?.hasNextPage == true
-            page++
-        }
-        return found
-    }
+    private suspend fun folderContainsItem(folderId: Int, itemId: Int): Boolean =
+        user.isItemInBookmark(itemId, folderId, FOLDER_SCAN_MAX_PAGES)
 
     private suspend fun reloadBookmarkFolders() {
         val folders = user.getBookmarkFolders().getOrNull() ?: return
@@ -321,7 +312,7 @@ class DetailsScreenModel(
     private suspend fun updateFolderMemberships() {
         val favoritesFolderId = state.bookmarkFolders.firstOrNull { it.title == FAVORITES_FOLDER_TITLE }?.id
         val memberships = scannedMemberships + listOfNotNull(favoritesFolderId.takeIf { isFav })
-        updateState { it.copy(folderMemberships = memberships) }
+        updateState { it.copy(folderMemberships = memberships, isWantToWatch = isFav) }
     }
 
     private companion object {
@@ -333,8 +324,5 @@ class DetailsScreenModel(
 
         /** То же название, что и [WatchingNowRepository] использует для поиска/создания своей подборки. */
         const val WATCHING_NOW_FOLDER_TITLE = "Watching Now"
-
-        /** kino.watch `watching.status`: -1 — нет отметки о просмотре. */
-        const val NOT_WATCHED = -1
     }
 }

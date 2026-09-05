@@ -3,8 +3,9 @@ package com.filmax.data.watching
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.getOrNull
-import com.filmax.core.domain.common.safeRequest
 import com.filmax.core.domain.user.UserRepository
+import com.filmax.core.domain.user.getDedupedBookmarkItems
+import com.filmax.core.domain.user.isItemInBookmark
 import com.filmax.core.domain.watching.WatchingNowRepository
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.CoroutineScope
@@ -51,7 +52,12 @@ internal class WatchingNowRepositoryImpl(
         // Оптимистично: значок на экране деталей реагирует мгновенно, сервер догоняет.
         state.value = state.value.filterNot { it.id == item.id } + item
         val folderId = ensureFolderId() ?: return
-        userRepository.addToBookmark(item.id, folderId)
+        // Проверка по серверу, а не только по локальному [state]: он мог отстать от реальности
+        // (переустановка, другое устройство, ручной вызов API) — иначе повторный addToBookmark на
+        // уже существующую связь и есть источник дублей в папке.
+        if (!userRepository.isItemInBookmark(item.id, folderId)) {
+            userRepository.addToBookmark(item.id, folderId)
+        }
     }
 
     private suspend fun remove(id: Int) {
@@ -60,19 +66,18 @@ internal class WatchingNowRepositoryImpl(
         userRepository.removeFromBookmark(id, folderId)
     }
 
-    override suspend fun getAll(): RequestResult<List<Item>> = safeRequest {
-        val folderId = ensureFolderId() ?: return@safeRequest emptyList()
-        val collected = mutableListOf<Item>()
-        var page = 1
-        var hasMore = true
-        while (hasMore && page <= MAX_PAGES) {
-            val pageResult = userRepository.getBookmarkItems(folderId, page).getOrNull()
-            val items = pageResult?.items.orEmpty()
-            collected += items
-            hasMore = pageResult != null && items.isNotEmpty() && page < pageResult.pagination.total
-            page++
-        }
-        collected.distinctBy { it.id }
+    /**
+     * [UserRepository.getDedupedBookmarkItems] чистит дубликаты СЕРВЕРНОЙ связи `(folderId, id)`
+     * до того, как список попадёт в кэш/на экран «Я смотрю» — иначе накопленные дубли пережили бы
+     * любое количество перезапусков.
+     */
+    override suspend fun getAll(): RequestResult<List<Item>> {
+        val folderId = ensureFolderId() ?: return RequestResult.Success(emptyList())
+        val result = userRepository.getDedupedBookmarkItems(folderId, MAX_PAGES)
+        // Кэшированный id мог протухнуть (папку удалили на сервере вручную) — сбрасываем кэш,
+        // чтобы следующий вызов заново нашёл/создал папку, а не бился в мёртвый id вечно.
+        if (result is RequestResult.Error) settings.remove(FOLDER_ID_KEY)
+        return result
     }
 
     /** Перечитывает папку с сервера в кэш. Тихо выходит, если папки/сети нет. */

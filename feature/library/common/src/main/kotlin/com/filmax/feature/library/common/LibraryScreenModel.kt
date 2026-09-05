@@ -2,13 +2,13 @@ package com.filmax.feature.library.common
 
 import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.catalog.model.Item
-import com.filmax.core.domain.catalog.model.ItemPage
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.firstErrorMessage
 import com.filmax.core.domain.common.getOrNull
 import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.user.UserRepository
+import com.filmax.core.domain.user.getDedupedBookmarkItems
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.WatchingNowRepository
 import com.filmax.core.domain.watching.WatchingRepository
@@ -252,7 +252,7 @@ class LibraryScreenModel(
                 )
             }
             val foldersResult = user.getBookmarkFolders()
-            val itemsResult = openedFolder?.let { user.getBookmarkItems(it.id) }
+            val itemsResult = openedFolder?.let { user.getDedupedBookmarkItems(it.id) }
             val error = applyRefreshedBookmarks(openedFolder, foldersResult, itemsResult)
             if (error != null) scheduleServerRetry(::refreshBookmarks)
         }
@@ -261,10 +261,10 @@ class LibraryScreenModel(
     private suspend fun applyRefreshedBookmarks(
         openedFolder: BookmarkFolder?,
         foldersResult: RequestResult<List<BookmarkFolder>>,
-        itemsResult: RequestResult<ItemPage>?,
+        itemsResult: RequestResult<List<Item>>?,
     ): String? {
         val folders = foldersResult.getOrNull()?.withoutWatchingNow()
-        val refreshedPage = itemsResult?.getOrNull()
+        val refreshedItems = itemsResult?.getOrNull()
         val error = if (itemsResult == null) {
             firstErrorMessage(foldersResult)
         } else {
@@ -275,7 +275,7 @@ class LibraryScreenModel(
                 folders?.firstOrNull { it.id == opened.id } ?: opened.takeIf { folders == null }
             }
             val refreshedOpen = refreshedFolder?.let { folder ->
-                refreshedPage?.toFolderPreview()?.toOpenFolder(folder)
+                refreshedItems?.toFolderPreview()?.toOpenFolder(folder)
                     ?: current.openFolder?.copy(folder = folder, loading = false, error = error)
             }
             current.copy(
@@ -283,8 +283,8 @@ class LibraryScreenModel(
                 lists = folders ?: current.lists,
                 folderPreviews = when {
                     error != null -> current.folderPreviews
-                    refreshedFolder != null && refreshedPage != null ->
-                        mapOf(refreshedFolder.id to refreshedPage.toFolderPreview())
+                    refreshedFolder != null && refreshedItems != null ->
+                        mapOf(refreshedFolder.id to refreshedItems.toFolderPreview())
                     else -> emptyMap()
                 },
                 openFolder = refreshedOpen,
@@ -354,7 +354,13 @@ class LibraryScreenModel(
     }
 
     /**
-     * Открывает подборку и грузит первую страницу её содержимого.
+     * Открывает подборку и грузит всё её содержимое разом.
+     *
+     * [UserRepository.getDedupedBookmarkItems] читает все страницы папки и чистит дубликаты
+     * СЕРВЕРНОЙ связи `(folderId, id)`, прежде чем что-либо показать — папки-закладки личные и
+     * небольшие, поэтому загрузка разом (а не по страницам, как раньше) — приемлемая цена за то,
+     * что счётчик и список больше не расходятся из-за копившихся дублей; поэтому же
+     * [loadMoreFolderItems] дальше не нужен ([OpenBookmarkFolder.endReached] сразу `true`).
      *
      * Кэшированное превью (если есть) используем только как мгновенную картинку вместо пустого
      * экрана на время запроса — не как повод пропустить запрос вовсе. Подборку могли изменить
@@ -373,24 +379,22 @@ class LibraryScreenModel(
             }
             // В полёте уже может быть тот же запрос — от видимой плитки. Ждём его, а не дублируем.
             if (previewLoading) return@screenModelScope
-            val result = user.getBookmarkItems(folder.id)
-            val itemPage = result.getOrNull()
+            val result = user.getDedupedBookmarkItems(folder.id)
+            val items = result.getOrNull()
             updateState { current ->
                 val open = current.openFolder ?: return@updateState current
                 // Пока грузили, подборку могли закрыть или открыть другую — чужой ответ не применяем.
                 if (open.folder.id != folder.id) return@updateState current
                 current.copy(
                     openFolder = open.copy(
-                        // distinctBy — та же страховка, что и в loadMoreFolderItems: дубликат id
-                        // в первой же странице уронил бы LazyGrid по key.
-                        items = itemPage?.items?.distinctBy { it.id } ?: open.items,
-                        page = if (itemPage != null) FIRST_PAGE else open.page,
+                        items = items ?: open.items,
+                        page = if (items != null) FIRST_PAGE else open.page,
                         loading = false,
-                        endReached = itemPage?.pagination?.hasNextPage?.not() ?: open.endReached,
+                        endReached = items != null || open.endReached,
                         error = firstErrorMessage(result),
                     ),
-                    folderPreviews = itemPage?.let { page ->
-                        current.folderPreviews + (folder.id to page.toFolderPreview())
+                    folderPreviews = items?.let { list ->
+                        current.folderPreviews + (folder.id to list.toFolderPreview())
                     } ?: current.folderPreviews,
                     loadingFolderPreviews = current.loadingFolderPreviews - folder.id,
                 )
@@ -399,7 +403,7 @@ class LibraryScreenModel(
         }
     }
 
-    /** Загружает начало видимой подборки для плитки, не меняя экран на loader. */
+    /** Загружает содержимое видимой подборки для плитки, не меняя экран на loader. */
     private fun loadFolderPreview(folder: BookmarkFolder) {
         if (folder.count == 0 ||
             folder.id in state.folderPreviews ||
@@ -412,20 +416,20 @@ class LibraryScreenModel(
             updateState { current ->
                 current.copy(loadingFolderPreviews = current.loadingFolderPreviews + folder.id)
             }
-            val result = user.getBookmarkItems(folder.id)
-            val itemPage = result.getOrNull()
+            val result = user.getDedupedBookmarkItems(folder.id)
+            val items = result.getOrNull()
             updateState { current ->
                 val open = current.openFolder
                 val isOpenFolder = open?.folder?.id == folder.id
                 current.copy(
-                    folderPreviews = itemPage?.let { page ->
-                        current.folderPreviews + (folder.id to page.toFolderPreview())
+                    folderPreviews = items?.let { list ->
+                        current.folderPreviews + (folder.id to list.toFolderPreview())
                     } ?: current.folderPreviews,
                     loadingFolderPreviews = current.loadingFolderPreviews - folder.id,
-                    // Если подборку успели открыть, тот же ответ — её первая страница.
+                    // Если подборку успели открыть, тот же ответ — её содержимое целиком.
                     // Так обложки снаружи и тайтлы внутри имеют одинаковый серверный порядок.
                     openFolder = if (isOpenFolder && open.loading) {
-                        itemPage?.let { page -> page.toFolderPreview().toOpenFolder(folder) }
+                        items?.let { list -> list.toFolderPreview().toOpenFolder(folder) }
                             ?: open.copy(loading = false, error = firstErrorMessage(result))
                     } else {
                         open
@@ -440,7 +444,12 @@ class LibraryScreenModel(
         screenModelScope { _ -> updateState { it.copy(openFolder = null) } }
     }
 
-    /** Догружает следующую страницу открытой папки. Вызывается, когда список подходит к концу. */
+    /**
+     * Раньше догружала следующую страницу открытой папки. [openFolder] теперь читает подборку
+     * целиком (см. его doc), поэтому [OpenBookmarkFolder.endReached] уже `true` сразу после
+     * открытия и этот обработчик — no-op; оставлен, чтобы не трогать событие/UI, которое всё ещё
+     * вызывает его по прокрутке к концу списка.
+     */
     private fun loadMoreFolderItems() {
         val open = state.openFolder ?: return
         if (open.loading || open.loadingMore || open.endReached) return
@@ -543,8 +552,9 @@ class LibraryScreenModel(
         }
     }
 
-    private fun ItemPage.toFolderPreview(): BookmarkFolderPreview =
-        BookmarkFolderPreview(items = items.distinctBy { it.id }, endReached = !pagination.hasNextPage)
+    /** [getDedupedBookmarkItems] уже вернул полный, дедуплицированный список — страниц больше нет. */
+    private fun List<Item>.toFolderPreview(): BookmarkFolderPreview =
+        BookmarkFolderPreview(items = this, endReached = true)
 
     private fun BookmarkFolderPreview.toOpenFolder(folder: BookmarkFolder): OpenBookmarkFolder =
         OpenBookmarkFolder(
