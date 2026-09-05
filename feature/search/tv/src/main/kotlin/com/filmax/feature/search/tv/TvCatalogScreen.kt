@@ -570,7 +570,8 @@ private fun CatalogPoster(item: Item, modifier: Modifier, onClick: () -> Unit) {
         modifier = modifier,
         width = TvMetrics.CompactPosterWidth,
         height = TvMetrics.CompactPosterHeight,
-        rating = formatRating(item.rating.external),
+        imdbRating = ratingLabel(item.rating.imdb),
+        kinopoiskRating = ratingLabel(item.rating.kinopoisk),
     ) { url, posterModifier ->
         PosterImage(
             url = url,
@@ -612,12 +613,6 @@ private fun resultsCount(count: Int): String {
     }
     return "$count $word"
 }
-
-/**
- * Усреднённая внешняя оценка как «8.3». Точка, а не локальная запятая: шкала международная.
- * Ноль отсекается в [ratingLabel] — у kino.watch это «оценки нет», а не «ноль баллов».
- */
-internal fun formatRating(rating: Double?): String? = ratingLabel(rating)
 
 private const val TEN = 10
 private const val HUNDRED = 100

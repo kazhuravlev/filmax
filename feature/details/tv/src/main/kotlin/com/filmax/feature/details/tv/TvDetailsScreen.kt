@@ -1115,7 +1115,8 @@ private fun LazyListScope.similarRail(similar: List<Item>, onOpenItem: (Int) -> 
                     meta = posterMeta(typeLabel(simItem.type), simItem.year),
                     posterUrl = simItem.posters.medium.ifEmpty { simItem.posters.big },
                     onClick = { onOpenItem(simItem.id) },
-                    rating = ratingLabel(simItem.rating.kinopoisk),
+                    imdbRating = ratingLabel(simItem.rating.imdb),
+                    kinopoiskRating = ratingLabel(simItem.rating.kinopoisk),
                 ) { url, modifier ->
                     PosterImage(
                         url = url,

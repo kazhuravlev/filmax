@@ -148,7 +148,8 @@ private fun FilmographyPoster(
         posterUrl = item.posters.medium.ifEmpty { item.posters.big },
         onClick = onClick,
         modifier = modifier,
-        rating = ratingLabel(item.rating.external),
+        imdbRating = ratingLabel(item.rating.imdb),
+        kinopoiskRating = ratingLabel(item.rating.kinopoisk),
     ) { url, posterModifier ->
         PosterImage(
             url = url,

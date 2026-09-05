@@ -94,7 +94,8 @@ private fun CollectionPoster(item: Item, modifier: Modifier, onClick: () -> Unit
         onClick = onClick,
         width = TvMetrics.CompactPosterWidth,
         height = TvMetrics.CompactPosterHeight,
-        rating = ratingLabel(item.rating.external),
+        imdbRating = ratingLabel(item.rating.imdb),
+        kinopoiskRating = ratingLabel(item.rating.kinopoisk),
         modifier = modifier,
     ) { url, posterModifier ->
         PosterImage(

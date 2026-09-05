@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,6 +28,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -53,7 +52,8 @@ enum class TvCardSize(val width: Dp, val height: Dp) {
  * цвета, и накрывать его градиентом-скримом с текстом значит гасить единственное, что
  * держит экран. Заодно уходит риск бандинга на сером градиенте.
  *
- * [rating] — уже отформатированная строка (например «8.3»), null — пилюли нет.
+ * [imdbRating]/[kinopoiskRating] — уже отформатированные строки (например «8.3»), каждая своя
+ * пилюля с лого источника; null — эта пилюля не рисуется. Обе null — бейджа нет вовсе.
  */
 // Компонент дизайн-системы: параметры — его публичный API (Compose-конвенция: modifier прямым
 // параметром, хвост — опции с дефолтами). Обёртка в data-класс сломала бы «минимальный API».
@@ -67,7 +67,8 @@ fun TvPosterCard(
     modifier: Modifier = Modifier,
     width: Dp = TvMetrics.PosterWidth,
     height: Dp = TvMetrics.PosterHeight,
-    rating: String? = null,
+    imdbRating: String? = null,
+    kinopoiskRating: String? = null,
     focusRequester: FocusRequester? = null,
     posterContent: @Composable (url: String, modifier: Modifier) -> Unit,
 ) {
@@ -88,12 +89,11 @@ fun TvPosterCard(
         ) {
             Box(Modifier.fillMaxSize().clip(TvMetrics.PosterShape)) {
                 posterContent(posterUrl, Modifier.fillMaxSize())
-                if (rating != null) {
-                    TvRatingPill(
-                        rating = rating,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
-                    )
-                }
+                TvRatingPill(
+                    imdbRating = imdbRating,
+                    kinopoiskRating = kinopoiskRating,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                )
             }
         }
         TvCardCaption(title = title, meta = meta, focused = focused)
@@ -168,28 +168,41 @@ fun TvProgressBar(progress: Float, modifier: Modifier = Modifier) {
 }
 
 /**
- * Пилюля рейтинга поверх постера. Полупрозрачная тёмная подложка вместо цветной: в монохроме
- * оценку не кодируем цветом — число говорит само. Звезда рядом с числом — иначе голая цифра
- * в углу постера читается непонятно чем: рейтингом, годом, счётчиком.
+ * Пилюля рейтинга поверх постера: IMDb и Кинопоиск раздельно, каждый со своим лого — источник
+ * должен быть понятен без подписи текстом, а не только числом. Полупрозрачная тёмная подложка
+ * вместо цветной: в монохроме сам рейтинг не кодируем цветом, число говорит само. Источник без
+ * оценки (null) просто не рисуется; если оба null — пилюли нет вовсе.
  */
 @Composable
-fun TvRatingPill(rating: String, modifier: Modifier = Modifier) {
+fun TvRatingPill(imdbRating: String?, kinopoiskRating: String?, modifier: Modifier = Modifier) {
+    if (imdbRating == null && kinopoiskRating == null) return
     Row(
         modifier
             .clip(TvMetrics.PosterShape)
             .background(TvSurface.copy(alpha = 0.72f))
-            .padding(horizontal = 9.dp, vertical = 4.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (imdbRating != null) TvRatingSource(icon = ImdbLogo, value = imdbRating)
+        if (kinopoiskRating != null) TvRatingSource(icon = KinopoiskLogo, value = kinopoiskRating)
+    }
+}
+
+@Composable
+private fun TvRatingSource(icon: ImageVector, value: String) {
+    Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Icon(
-            Icons.Filled.Star,
+            icon,
             contentDescription = null,
             tint = TvOnSurface,
-            modifier = Modifier.size(11.dp),
+            modifier = Modifier.size(12.dp),
         )
         Text(
-            rating,
+            value,
             style = MaterialTheme.typography.labelSmall,
             color = TvOnSurface,
         )

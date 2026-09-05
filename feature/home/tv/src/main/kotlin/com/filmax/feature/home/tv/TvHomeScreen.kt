@@ -398,7 +398,8 @@ private fun TvHomePosterCard(item: Item, onClick: () -> Unit, modifier: Modifier
         title = item.title,
         meta = posterMeta(type = item.type.label(), year = item.year),
         posterUrl = item.posters.medium.ifEmpty { item.posters.big },
-        rating = ratingLabel(item.rating.kinopoisk),
+        imdbRating = ratingLabel(item.rating.imdb),
+        kinopoiskRating = ratingLabel(item.rating.kinopoisk),
         onClick = onClick,
         posterContent = { url, posterModifier ->
             PosterImage(
