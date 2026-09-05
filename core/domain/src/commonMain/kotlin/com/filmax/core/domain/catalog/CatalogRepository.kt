@@ -46,7 +46,14 @@ interface CatalogRepository {
 
     suspend fun getNewItems(type: ItemType, page: Int = 1): RequestResult<ItemPage>
 
-    suspend fun getItemDetails(id: Int): RequestResult<Item>
+    /**
+     * [forceRefresh] пропускает чтение кэша и всегда идёт в сеть — нужно перед воспроизведением:
+     * `videos`/`seasons` (реальные ссылки на видео) в `ItemDto` кэшируются вместе со статикой
+     * (см. [com.filmax.core.domain.cache.ItemDetailsCache]), а списочные эндпоинты (главная,
+     * поиск, похожее) отдают тайтл БЕЗ этих полей — и, промелькнув карточкой, портят кэш пустым
+     * треклистом ещё до открытия деталей. Свежий запрос перезаписывает кэш актуальным ответом.
+     */
+    suspend fun getItemDetails(id: Int, forceRefresh: Boolean = false): RequestResult<Item>
 
     suspend fun getSimilarItems(id: Int): RequestResult<List<Item>>
 

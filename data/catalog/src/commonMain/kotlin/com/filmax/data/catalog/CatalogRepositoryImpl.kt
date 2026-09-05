@@ -64,8 +64,13 @@ internal class CatalogRepositoryImpl(
     // Статическая информация о тайтле (название/описание/актёры/режиссёр/трейлер/жанры/рейтинги
     // и т.п.) почти не меняется — при попадании в кэш ItemDto.toDomain() уже сохранил его туда
     // (см. CatalogMapper), здесь только читаем: свежая запись — не ходим в сеть вовсе.
-    override suspend fun getItemDetails(id: Int): RequestResult<Item> = safeRequest {
-        val cached = itemCache.get(itemCacheKey(id))
+    //
+    // forceRefresh игнорирует кэш-чтение: списочные эндпоинты кэшируют тайтл БЕЗ videos/seasons
+    // (см. doc CatalogRepository.getItemDetails), поэтому перед воспроизведением нужен гарантированно
+    // свежий ответ с реальными ссылками. toDomain() тут же перезаписывает кэш полными данными —
+    // самолечение: следующий кэш-хит (в т.ч. для Details) уже увидит настоящий треклист.
+    override suspend fun getItemDetails(id: Int, forceRefresh: Boolean): RequestResult<Item> = safeRequest {
+        val cached = if (forceRefresh) null else itemCache.get(itemCacheKey(id))
         if (cached != null) {
             networkJson.decodeFromString<ItemDto>(cached).toDomainOnly()
         } else {

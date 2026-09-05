@@ -134,7 +134,9 @@ class PlayerScreenModel(
             subtitlePreference = playbackSettings.subtitlePreferenceFor(route.itemId)
                 ?: settings.subtitleLanguage
             savedVoiceKey = playbackSettings.voiceKeyFor(route.itemId)
-            when (val result = catalog.getItemDetails(route.itemId)) {
+            // forceRefresh: списочные экраны (главная/поиск/похожее) кэшируют этот тайтл без
+            // ссылок на видео — кэш-чтение здесь легко отдало бы треклист без единого трека.
+            when (val result = catalog.getItemDetails(route.itemId, forceRefresh = true)) {
                 is RequestResult.Success -> {
                     val item = result.data
                     // Сериал: играем выбранный эпизод. `videoId` — это НОМЕР видео (`number` из

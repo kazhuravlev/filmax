@@ -6,6 +6,7 @@ import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.cache.ImageDiscovery
 import com.filmax.core.domain.cache.PrefetchImage
 import com.filmax.core.domain.catalog.CatalogRepository
+import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.getOrNull
 import com.filmax.core.domain.downloads.DownloadsRepository
@@ -13,6 +14,7 @@ import com.filmax.core.domain.downloads.model.DownloadedItem
 import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.favorites.model.toFavoriteItem
 import com.filmax.core.domain.person.CastRepository
+import com.filmax.core.domain.search.SearchRepository
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.WatchingNowRepository
@@ -39,6 +41,7 @@ class DetailsScreenModel(
     private val watchingNow: WatchingNowRepository,
     private val cast: CastRepository,
     private val user: UserRepository,
+    private val search: SearchRepository,
 ) : BaseScreenModel<DetailsState, DetailsSideEffect, DetailsEvent>(DetailsState()) {
 
     private val route = savedStateHandle.toRoute<DetailsRoute>()
@@ -101,6 +104,7 @@ class DetailsScreenModel(
                     // (actorPhotoUrl).
                     prefetchCastPhotos(itemResult.data.cast, itemResult.data.director)
                     loadCast(itemResult.data.imdbId)
+                    loadDirectorFilms(itemResult.data)
                     // Подборки грузим только теперь: скан принадлежности (см. scanMemberships)
                     // читает state.item, который до этого момента ещё null.
                     reloadBookmarkFolders()
@@ -139,6 +143,22 @@ class DetailsScreenModel(
             val members = cast.getCast(imdbId)
             if (members.isNotEmpty()) {
                 updateState { it.copy(cast = members) }
+            }
+        }
+    }
+
+    /**
+     * «От режиссёра»: другие тайтлы того же человека, поиском по имени. Только ПЕРВОЕ имя из
+     * `item.director` — тот же приём, что и у клика по чипу режиссёра ([resolveDirectors]):
+     * kino.watch ищет по одному имени, а не по всей строке соавторов. Отдельным запросом ПОСЛЕ
+     * показа тайтла — как и [loadCast], это украшение, а не основа экрана.
+     */
+    private fun loadDirectorFilms(item: Item) {
+        val director = item.director.substringBefore(",").trim().takeIf { it.isNotBlank() } ?: return
+        screenModelScope { _ ->
+            val films = search.searchByDirector(director).getOrNull().orEmpty().filterNot { it.id == item.id }
+            if (films.isNotEmpty()) {
+                updateState { it.copy(directorFilms = films) }
             }
         }
     }

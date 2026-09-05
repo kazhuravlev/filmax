@@ -18,6 +18,11 @@ data class DetailsState(
     val isWatching: Boolean = false,
     val similar: List<Item> = emptyList(),
     /**
+     * Другие тайтлы того же (первого) режиссёра — поиском по имени (`SearchRepository.searchByDirector`),
+     * без текущего тайтла в списке. Пустой, пока не пришёл ответ, или когда режиссёр не указан.
+     */
+    val directorFilms: List<Item> = emptyList(),
+    /**
      * Актёры с фото (TMDB) — украшение поверх строки имён от kino.watch. Пустой список, когда фото
      * недоступны (нет ключа TMDB, нет совпадения по IMDb, сбой): экран падает на строку `item.cast`.
      */

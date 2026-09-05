@@ -14,6 +14,8 @@ import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -132,6 +134,9 @@ import org.koin.compose.koinInject
 /** Ширина текстового блока в hero (макет: 600dp из 960) — правее лежит открытый бэкдроп. */
 private val HeroTextWidth = 600.dp
 
+/** Ширина меты/рейтинга в hero: уже заголовка — рядом теперь постер (см. [HeroPoster]). */
+private val HeroInfoWidth = 420.dp
+
 /** Максимальная ширина описания и строки состава: длинная строка на 3 метрах не читается. */
 private val ReadableTextWidth = 760.dp
 
@@ -144,9 +149,15 @@ private const val CONTENT_START_INDEX = 1
 /** Сколько кадров пропустить перед прокруткой к стейту (см. [rememberHeroFocusScroller]). */
 private const val FRAMES_BEFORE_STATE_SCROLL = 2
 
-/** Ширина карточки актёра и диаметр круглого аватара в ряду «Актёры» (крупнее мобильных — 10-foot UI). */
-private val TvActorCardWidth = 120.dp
-private val TvActorAvatarSize = 104.dp
+/** Чип человека (актёр/режиссёр, см. [TvPersonChip]): высота, круглый аватар, макс. ширина и зазор в ряду. */
+private val PersonChipHeight = 56.dp
+private val PersonChipAvatarSize = 40.dp
+private val PersonChipMaxWidth = 260.dp
+private val PersonChipGap = 12.dp
+
+/** Размер постера-обложки в hero (см. [HeroPoster]) — компактнее каталожного, рядом с бэкдропом. */
+private val HeroPosterWidth = 140.dp
+private val HeroPosterHeight = 210.dp
 
 private const val EPISODES_TITLE = "Эпизоды"
 
@@ -190,6 +201,7 @@ fun TvDetailsScreen(
             item != null -> DetailsContent(
                 item = item,
                 similar = state.similar,
+                directorFilms = state.directorFilms,
                 cast = state.cast,
                 continuation = state.continuation,
                 isWatching = state.isWatching,
@@ -247,6 +259,7 @@ private data class DetailsActions(
 private fun DetailsContent(
     item: Item,
     similar: List<Item>,
+    directorFilms: List<Item>,
     cast: List<CastMember>,
     continuation: Continuation?,
     isWatching: Boolean,
@@ -306,6 +319,7 @@ private fun DetailsContent(
                     hasAnyFolder = folderMemberships.isNotEmpty(),
                     playback = HeroPlayback(
                         playModifier = focus.item(HERO_PLAY_KEY),
+                        playLabel = remember(series?.resume, target) { playLabel(series?.resume, target) },
                         // Фильм играется целиком (videoId = -1), сериал — конкретной серией. Сериал
                         // без серий играть нечем — кнопка молчит. В плеер уходят НОМЕР серии и
                         // СЕЗОН: номер уникален только внутри сезона.
@@ -334,7 +348,16 @@ private fun DetailsContent(
                 )
             }
             detailsSections(
-                data = DetailsSectionsData(item, similar, people, directors, series, episodes, selectedSeason),
+                data = DetailsSectionsData(
+                    item = item,
+                    similar = similar,
+                    directorFilms = directorFilms,
+                    people = people,
+                    directors = directors,
+                    series = series,
+                    episodes = episodes,
+                    selectedSeason = selectedSeason,
+                ),
                 actions = actions,
                 onSelectSeason = { selectedSeason = it },
                 focus = focus,
@@ -402,6 +425,7 @@ private val NoFocusScroll = object : BringIntoViewSpec {
 private data class DetailsSectionsData(
     val item: Item,
     val similar: List<Item>,
+    val directorFilms: List<Item>,
     val people: List<CastMember>,
     val directors: List<CastMember>,
     val series: SeriesData?,
@@ -409,7 +433,11 @@ private data class DetailsSectionsData(
     val selectedSeason: Int,
 )
 
-/** Секции полотна под hero: описание, актёры, режиссёр, эпизоды, «Похожее». */
+/**
+ * Секции полотна под hero: описание, режиссёр (+ «От режиссёра»), актёры, эпизоды, «Похожее».
+ * Режиссёр и его фильмография — первыми среди состава и рядов похожего: это то, ради чего люди
+ * чаще всего открывают карточку конкретного человека, а не разгребают весь состав сначала.
+ */
 private fun LazyListScope.detailsSections(
     data: DetailsSectionsData,
     actions: DetailsActions,
@@ -417,11 +445,29 @@ private fun LazyListScope.detailsSections(
     focus: TvScreenFocus,
 ) {
     item(key = "about") { DetailsAbout(data.item) }
-    if (data.people.isNotEmpty()) {
-        castRail(people = data.people, onOpenPerson = actions.onOpenPerson)
-    }
     if (data.directors.isNotEmpty()) {
-        directorSection(directors = data.directors, onOpenPerson = actions.onOpenPerson)
+        peopleSection(
+            key = "directors",
+            title = if (data.directors.size > 1) "Режиссёры" else "Режиссёр",
+            people = data.directors,
+            onOpenPerson = { name -> actions.onOpenPerson(name, true) },
+        )
+    }
+    if (data.directorFilms.isNotEmpty()) {
+        posterRail(
+            key = "director-films",
+            title = "От режиссёра",
+            items = data.directorFilms,
+            onOpenItem = actions.onOpenItem,
+        )
+    }
+    if (data.people.isNotEmpty()) {
+        peopleSection(
+            key = "cast",
+            title = "В ролях",
+            people = data.people,
+            onOpenPerson = { name -> actions.onOpenPerson(name, false) },
+        )
     }
     if (data.episodes.isNotEmpty()) {
         episodesSection(
@@ -437,7 +483,7 @@ private fun LazyListScope.detailsSections(
         )
     }
     if (data.similar.isNotEmpty()) {
-        similarRail(similar = data.similar, onOpenItem = actions.onOpenItem)
+        posterRail(key = "similar", title = "Похожее", items = data.similar, onOpenItem = actions.onOpenItem)
     }
 }
 
@@ -447,6 +493,8 @@ private fun LazyListScope.detailsSections(
 private data class HeroPlayback(
     val playModifier: Modifier,
     val onPlay: () -> Unit,
+    /** Текст кнопки «Смотреть» — уже с сезоном/серией, если применимо, см. [playLabel]. */
+    val playLabel: String,
     /** Открыть диалог выбора подборки — единственная кнопка «Добавить в подборку» / «В подборках». */
     val onOpenFolderPicker: () -> Unit,
     /** «Я смотрю» — отдельная пометка тайтла, см. [DetailsActions.onToggleWatching]. */
@@ -460,7 +508,9 @@ private data class HeroPlayback(
 )
 
 /**
- * Hero: бэкдроп во всю ширину, текстовый блок прижат к низу слева (вариант A макета).
+ * Hero: бэкдроп во всю ширину, название сверху слева (а не над кнопками внизу — рядом с постером
+ * и составом теперь просится подпись экрана, а не заголовок-плакат), под ним постер 2:3 и рядом с
+ * ним мета/рейтинг/кнопки.
  *
  * Высота фиксированная: hero — первый элемент единого полотна и скрывается обычной прокруткой,
  * когда фокус уходит в контент, а не сжимается поверх него. Так постер всегда либо виден
@@ -489,40 +539,55 @@ private fun DetailsHero(
 
         Column(
             Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = TvMetrics.SafeHorizontal, bottom = 22.dp),
+                .fillMaxSize()
+                .padding(start = TvMetrics.SafeHorizontal, end = TvMetrics.SafeHorizontal, bottom = 22.dp),
         ) {
             Text(
                 item.title,
-                style = MaterialTheme.typography.displaySmall,
+                style = MaterialTheme.typography.headlineMedium,
                 color = TvOnSurface,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.width(HeroTextWidth),
+                modifier = Modifier.widthIn(max = HeroTextWidth),
             )
-            TvMetaRow(
-                parts = remember(item, series) { metaParts(item, series) },
-                modifier = Modifier
-                    .width(HeroTextWidth)
-                    .padding(top = 11.dp),
-            )
-            RatingsRow(
-                rating = item.rating,
-                views = item.views,
-                modifier = Modifier
-                    .width(HeroTextWidth)
-                    .padding(top = 9.dp),
-            )
-            // Ряд кнопок не зажат в HeroTextWidth: с трейлером их четыре, и в 600dp они не
-            // помещаются — последняя кнопка обрезалась бы почти до одной иконки.
-            HeroButtons(
-                hasAnyFolder = hasAnyFolder,
-                resume = series?.resume,
-                playback = playback,
-                modifier = Modifier.padding(top = 18.dp),
-            )
+            Row(Modifier.weight(1f).padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                HeroPoster(item)
+                Column {
+                    TvMetaRow(
+                        parts = remember(item, series) { metaParts(item, series) },
+                        modifier = Modifier.width(HeroInfoWidth),
+                    )
+                    RatingsRow(
+                        rating = item.rating,
+                        views = item.views,
+                        modifier = Modifier
+                            .width(HeroInfoWidth)
+                            .padding(top = 9.dp),
+                    )
+                    // Кнопки НЕ зажаты в HeroInfoWidth: в узкой колонке подборки/«хочу
+                    // посмотреть» обрезались бы почти до одной иконки.
+                    HeroButtons(
+                        hasAnyFolder = hasAnyFolder,
+                        playback = playback,
+                        modifier = Modifier.padding(top = 18.dp),
+                    )
+                }
+            }
         }
     }
+}
+
+/** Обложка 2:3 рядом с бэкдропом — «обычный постер» тайтла, а не только широкий фон hero. */
+@Composable
+private fun HeroPoster(item: Item) {
+    PosterImage(
+        url = item.posters.medium.ifEmpty { item.posters.big },
+        contentDescription = item.title,
+        modifier = Modifier.width(HeroPosterWidth).height(HeroPosterHeight),
+        shape = TvMetrics.PosterShape,
+        accentColor = TvSurfaceContainerHigh,
+        cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, ImageCacheKeys.SIZE_MEDIUM),
+    )
 }
 
 /**
@@ -548,49 +613,56 @@ private fun heroScrims(): List<Brush> = remember {
     )
 }
 
+/**
+ * Кнопки hero — двумя рядами: сверху «Смотреть»/«Трейлер» (собственно воспроизведение), под
+ * ними — наши пометки тайтла (подборки, «Хочу посмотреть»). `onFocusChanged` висит на общем
+ * контейнере: фокус в любом из двух рядов одинаково держит полотно в стейте hero.
+ */
 @Composable
 private fun HeroButtons(
     hasAnyFolder: Boolean,
-    resume: MediaTrack?,
     playback: HeroPlayback,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    Column(
         modifier.onFocusChanged { playback.onHeroFocusChanged(it.hasFocus) },
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        TvButton(
-            text = playLabel(resume),
-            onClick = playback.onPlay,
-            leadingIcon = Icons.Filled.PlayArrow,
-            modifier = playback.playModifier,
-        )
-        // Единственная кнопка подборок: тайтл либо нигде не сохранён, либо уже в одной или
-        // нескольких (включая «Буду смотреть» — для сервера это обычная подборка). Красная
-        // заливка иконки — сигнал «уже добавлено», клик всегда открывает диалог выбора.
-        TvButton(
-            text = if (hasAnyFolder) "В подборках" else "Добавить в подборку",
-            onClick = playback.onOpenFolderPicker,
-            primary = false,
-            leadingIcon = if (hasAnyFolder) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-            leadingIconTint = if (hasAnyFolder) TvError else null,
-        )
-        // Отдельная от подборок пометка (см. DetailsEvent.ToggleWatching): зелёный залитый глаз —
-        // тайтл отмечен «Я смотрю», белый контурный — ещё нет («Хочу посмотреть»).
-        TvButton(
-            text = if (playback.isWatching) "Я смотрю" else "Хочу посмотреть",
-            onClick = playback.onToggleWatching,
-            primary = false,
-            leadingIcon = if (playback.isWatching) Icons.Filled.Visibility else Icons.Outlined.RemoveRedEye,
-            leadingIconTint = if (playback.isWatching) TvSuccess else null,
-        )
-        playback.onTrailer?.let { onTrailer ->
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             TvButton(
-                text = "Трейлер",
-                onClick = onTrailer,
+                text = playback.playLabel,
+                onClick = playback.onPlay,
+                leadingIcon = Icons.Filled.PlayArrow,
+                modifier = playback.playModifier,
+            )
+            playback.onTrailer?.let { onTrailer ->
+                TvButton(
+                    text = "Трейлер",
+                    onClick = onTrailer,
+                    primary = false,
+                    leadingIcon = Icons.Filled.Movie,
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Единственная кнопка подборок: тайтл либо нигде не сохранён, либо уже в одной или
+            // нескольких (включая «Буду смотреть» — для сервера это обычная подборка). Красная
+            // заливка иконки — сигнал «уже добавлено», клик всегда открывает диалог выбора.
+            TvButton(
+                text = if (hasAnyFolder) "В подборках" else "Добавить в подборку",
+                onClick = playback.onOpenFolderPicker,
                 primary = false,
-                leadingIcon = Icons.Filled.Movie,
+                leadingIcon = if (hasAnyFolder) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                leadingIconTint = if (hasAnyFolder) TvError else null,
+            )
+            // Отдельная от подборок пометка (см. DetailsEvent.ToggleWatching): зелёный залитый
+            // глаз — тайтл отмечен «Я смотрю», белый контурный — ещё нет («Хочу посмотреть»).
+            TvButton(
+                text = if (playback.isWatching) "Я смотрю" else "Хочу посмотреть",
+                onClick = playback.onToggleWatching,
+                primary = false,
+                leadingIcon = if (playback.isWatching) Icons.Filled.Visibility else Icons.Outlined.RemoveRedEye,
+                leadingIconTint = if (playback.isWatching) TvSuccess else null,
             )
         }
     }
@@ -663,101 +735,103 @@ private fun DetailsAbout(item: Item) {
 // ─────────────────────────────── Актёры и режиссёр ────────────────────────────
 
 /**
- * Ряд актёров карточками с круглым аватаром. Фото приходят из TMDB ([DetailsState.cast]); пока
- * их нет — те же карточки с инициалами (имена всегда есть от kino.watch). Каждая карточка ведёт в
- * фильмографию человека, поэтому каст на TV наконец фокусируемый и кликабельный, а не мёртвая строка.
+ * Ряд людей (актёры ИЛИ режиссёры — один и тот же компонент для обоих, только заголовок и цель
+ * клика отличаются): круглый аватар + имя рядом, чипами, с переносом на новую строку — как в
+ * веб-версии kino.watch. Раньше это была вертикальная карточка (аватар над именем) в
+ * горизонтальном ряду со скроллом; теперь — компактные подписанные чипы, из которых на экран
+ * помещается сразу весь состав, без скролла вбок.
  */
-private fun LazyListScope.castRail(people: List<CastMember>, onOpenPerson: (String, Boolean) -> Unit) {
-    item(key = "cast") {
-        TvRail(title = "Актёры", modifier = Modifier.padding(top = 24.dp)) {
-            // Без key: имена в составе могут повторяться, позиционного ключа достаточно.
-            items(people) { member ->
-                TvActorCard(
-                    member = member,
-                    onClick = { onOpenPerson(member.name, false) },
-                )
+@OptIn(ExperimentalLayoutApi::class)
+private fun LazyListScope.peopleSection(
+    key: String,
+    title: String,
+    people: List<CastMember>,
+    onOpenPerson: (String) -> Unit,
+) {
+    item(key = key) {
+        Column(Modifier.padding(top = 24.dp)) {
+            SectionTitle(title)
+            FlowRow(
+                modifier = Modifier
+                    .tvFocusGroup()
+                    .padding(start = TvMetrics.SafeHorizontal, end = TvMetrics.SafeHorizontal),
+                horizontalArrangement = Arrangement.spacedBy(PersonChipGap),
+                verticalArrangement = Arrangement.spacedBy(PersonChipGap),
+            ) {
+                // Без key: имена в составе могут повторяться, позиционного ключа достаточно.
+                people.forEach { member ->
+                    TvPersonChip(member = member, onClick = { onOpenPerson(member.name) })
+                }
             }
+        }
+    }
+}
+
+/** Чип человека: круглый аватар (фото TMDB/угаданное или инициалы) + имя рядом, одной строкой. */
+@Composable
+private fun TvPersonChip(member: CastMember, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val dim = rememberDimAlpha(focused)
+    TvFocusCard(
+        onClick = onClick,
+        shape = TvMetrics.ChipShape,
+        modifier = Modifier
+            .height(PersonChipHeight)
+            .widthIn(max = PersonChipMaxWidth)
+            .onFocusChanged { focused = it.hasFocus }
+            .alpha(dim),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(TvMetrics.ChipShape)
+                .background(TvSurfaceContainerHigh)
+                .padding(end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            PersonAvatar(member)
+            Text(
+                member.name,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TvOnSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
 
 /**
- * Ряд режиссёров — та же карточка, что и у актёров (см. [castRail]): у kino.watch `director` тоже
- * строка имён через запятую, а не одно значение, поэтому раньше весь список садился в один чип.
+ * Круглый аватар чипа: фото (TMDB надёжное, угаданное по MD5 имени на kino.watch CDN — нет, часть
+ * ссылок честно 404) или инициалы. Здесь нужен именно `AsyncImage`, а не общий `PosterImage`: тот
+ * при ошибке загрузки рисует значок «фото нет» (правильно для настоящих постеров), а для
+ * угаданного аватара лучше молча откатиться на инициалы. Ключ ремембера — photoUrl: при
+ * переиспользовании чипа в ряду флаг ошибки сбрасывается.
  */
-private fun LazyListScope.directorSection(directors: List<CastMember>, onOpenPerson: (String, Boolean) -> Unit) {
-    item(key = "director") {
-        TvRail(title = "Режиссёр", modifier = Modifier.padding(top = 24.dp)) {
-            items(directors) { member ->
-                TvActorCard(
-                    member = member,
-                    onClick = { onOpenPerson(member.name, true) },
-                )
-            }
-        }
-    }
-}
-
-/** Карточка актёра: круглый аватар (фото TMDB или инициалы) + имя. Фокус/скейл — как у медиа-карточек. */
 @Composable
-private fun TvActorCard(member: CastMember, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    val dim = rememberDimAlpha(focused)
-    Column(
-        modifier = Modifier
-            .width(TvActorCardWidth)
-            .onFocusChanged { focused = it.hasFocus }
-            .alpha(dim),
-        horizontalAlignment = Alignment.CenterHorizontally,
+private fun PersonAvatar(member: CastMember) {
+    Box(
+        Modifier.size(PersonChipAvatarSize).clip(CircleShape).background(TvSurfaceContainerHighest),
+        contentAlignment = Alignment.Center,
     ) {
-        TvFocusCard(
-            onClick = onClick,
-            shape = CircleShape,
-            modifier = Modifier.size(TvActorAvatarSize),
-        ) {
-            Box(
-                Modifier.fillMaxSize().clip(CircleShape).background(TvSurfaceContainerHigh),
-                contentAlignment = Alignment.Center,
-            ) {
-                val photo = member.photoUrl
-                // Фото из TMDB надёжное, а угаданное по MD5 имени (kino.watch CDN) — нет: часть
-                // ссылок честно 404. Здесь нужен именно `AsyncImage`, а не общий `PosterImage`:
-                // тот при ошибке загрузки рисует значок «фото нет» (правильно для настоящих
-                // постеров), а для угаданного аватара актёра лучше молча откатиться на инициалы.
-                // Ключ — photoUrl: при переиспользовании карточки в ряду флаг сбрасывается.
-                var loadFailed by remember(member.photoUrl) { mutableStateOf(false) }
-                if (photo != null && !loadFailed) {
-                    val proxyEnabled by koinInject<ImageProxyRepository>().enabled.collectAsState()
-                    val model = remember(photo, proxyEnabled) {
-                        CacheableImage(
-                            key = ImageCacheKeys.actorPhoto(member.name),
-                            url = proxiedImageUrl(photo, proxyEnabled),
-                        )
-                    }
-                    AsyncImage(
-                        model = model,
-                        contentDescription = member.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                        onState = { state -> loadFailed = state is AsyncImagePainter.State.Error },
-                    )
-                } else {
-                    Text(
-                        initials(member.name),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = TvOnSurfaceVariant,
-                    )
-                }
+        val photo = member.photoUrl
+        var loadFailed by remember(member.photoUrl) { mutableStateOf(false) }
+        if (photo != null && !loadFailed) {
+            val proxyEnabled by koinInject<ImageProxyRepository>().enabled.collectAsState()
+            val model = remember(photo, proxyEnabled) {
+                CacheableImage(key = ImageCacheKeys.actorPhoto(member.name), url = proxiedImageUrl(photo, proxyEnabled))
             }
+            AsyncImage(
+                model = model,
+                contentDescription = member.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                onState = { state -> loadFailed = state is AsyncImagePainter.State.Error },
+            )
+        } else {
+            Text(initials(member.name), style = MaterialTheme.typography.labelLarge, color = TvOnSurfaceVariant)
         }
-        Text(
-            member.name,
-            style = MaterialTheme.typography.bodyMedium,
-            color = TvOnSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 8.dp),
-        )
     }
 }
 
@@ -1140,28 +1214,38 @@ private fun bookmarkCountLabel(count: Int): String {
 private val FolderDialogWidth = 420.dp
 private val FolderRowHeight = 56.dp
 
-// ─────────────────────────────────── Похожее ─────────────────────────────────
+// ────────────────────────── Похожее / От режиссёра ───────────────────────────
 
-private fun LazyListScope.similarRail(similar: List<Item>, onOpenItem: (Int) -> Unit) {
-    item(key = "similar") {
-        TvRail(title = "Похожее", modifier = Modifier.padding(top = 26.dp)) {
-            items(similar, key = { simItem -> simItem.id }) { simItem ->
+/** Ряд постеров тайтлов — общий для «От режиссёра» и «Похожего»: карточка та же, что и в каталоге. */
+private fun LazyListScope.posterRail(
+    key: String,
+    title: String,
+    items: List<Item>,
+    onOpenItem: (Int) -> Unit,
+) {
+    item(key = key) {
+        TvRail(title = title, modifier = Modifier.padding(top = 26.dp)) {
+            items(items, key = { railItem -> railItem.id }) { railItem ->
                 TvPosterCard(
-                    title = simItem.title,
-                    meta = posterMeta(typeLabel(simItem.type), simItem.year),
-                    posterUrl = simItem.posters.medium.ifEmpty { simItem.posters.big },
-                    onClick = { onOpenItem(simItem.id) },
-                    imdbRating = ratingLabel(simItem.rating.imdb),
-                    kinopoiskRating = ratingLabel(simItem.rating.kinopoisk),
-                    advert = simItem.advert,
+                    title = railItem.title,
+                    meta = posterMeta(typeLabel(railItem.type), railItem.year),
+                    posterUrl = railItem.posters.medium.ifEmpty { railItem.posters.big },
+                    onClick = { onOpenItem(railItem.id) },
+                    imdbRating = ratingLabel(railItem.rating.imdb),
+                    kinopoiskRating = ratingLabel(railItem.rating.kinopoisk),
+                    advert = railItem.advert,
                 ) { url, modifier ->
                     PosterImage(
                         url = url,
-                        contentDescription = simItem.title,
+                        contentDescription = railItem.title,
                         modifier = modifier,
                         shape = TvMetrics.PosterShape,
                         accentColor = TvSurfaceContainerHigh,
-                        cacheKey = ImageCacheKeys.poster(simItem.type.apiValue, simItem.id, ImageCacheKeys.SIZE_MEDIUM),
+                        cacheKey = ImageCacheKeys.poster(
+                            railItem.type.apiValue,
+                            railItem.id,
+                            ImageCacheKeys.SIZE_MEDIUM,
+                        ),
                     )
                 }
             }
@@ -1182,12 +1266,19 @@ private fun metaParts(item: Item, series: SeriesData?): List<String> = buildList
     }
 }
 
-/** «Продолжить · S2E5» — сериал с недосмотренной серией; иначе «Смотреть». */
-private fun playLabel(resume: MediaTrack?): String = when {
-    resume == null -> "Смотреть"
-    resume.seasonNumber > 0 -> "Продолжить · S${resume.seasonNumber}E${resume.number}"
-    else -> "Продолжить · Серия ${resume.number}"
+/**
+ * «Продолжить · S2E5» — сериал с недосмотренной серией; «Смотреть · S1E1» — сериал без
+ * continuation (кнопка всё равно сыграет конкретную серию — первую недосмотренную сезона или
+ * первую серию вовсе, см. `target` в [DetailsContent]); «Смотреть» — фильм, где сезона/серии нет.
+ */
+private fun playLabel(resume: MediaTrack?, target: MediaTrack?): String = when {
+    resume != null -> "Продолжить · ${episodeTag(resume)}"
+    target != null -> "Смотреть · ${episodeTag(target)}"
+    else -> "Смотреть"
 }
+
+private fun episodeTag(track: MediaTrack): String =
+    if (track.seasonNumber > 0) "S${track.seasonNumber}E${track.number}" else "Серия ${track.number}"
 
 /** Мета карточки серии: «Серия 3 · 45 мин». Номер опускаем, если он уже стал заголовком. */
 private fun episodeMeta(episode: MediaTrack): String? = buildList {
