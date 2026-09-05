@@ -104,6 +104,11 @@ private fun playerMenu(
     onNextEpisode = {
         state.nextTrack?.let { next -> onPlayEpisode?.invoke(next.seasonNumber, next.number) }
     },
+    onPreviousEpisode = if (state.previousTrack != null && onPlayEpisode != null) {
+        { state.previousTrack?.let { previous -> onPlayEpisode.invoke(previous.seasonNumber, previous.number) } }
+    } else {
+        null
+    },
     episodes = episodesPanel,
     enabled = { action ->
         when (action) {

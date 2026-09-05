@@ -127,8 +127,11 @@ object PlaybackSpeeds {
 data class PlayerState(
     val loading: Boolean = true,
     val item: Item? = null,
-    /** Играющий трек и следующий за ним по плейлисту — модель выбирает их по маршруту, UI не ищет заново. */
+    /**
+     * Играющий трек и его соседи по плейлисту — модель выбирает их по маршруту, UI не ищет заново.
+     */
     val track: MediaTrack? = null,
+    val previousTrack: MediaTrack? = null,
     val nextTrack: MediaTrack? = null,
     val streamUrl: String? = null,
     val qualities: List<StreamQuality> = emptyList(),

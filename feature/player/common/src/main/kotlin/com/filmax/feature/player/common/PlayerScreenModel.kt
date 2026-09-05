@@ -154,6 +154,7 @@ class PlayerScreenModel(
                             loading = false,
                             item = item,
                             track = track,
+                            previousTrack = item.tracklist.getOrNull(trackIndex - 1),
                             nextTrack = item.tracklist.getOrNull(trackIndex + 1),
                             streamUrl = initial?.url,
                             qualities = qualities,

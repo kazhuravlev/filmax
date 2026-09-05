@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -36,6 +38,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -253,6 +256,16 @@ private fun PlayerTransport(ui: TvPlayerUiState, menu: PlayerActions, modifier: 
                 isPlaying = ui.isPlaying,
                 // Виртуальный фокус транспорта: кнопка Play/Pause активна до перехода на прогресс-бар.
                 focused = ui.mode == PlayerMode.Transport,
+                episodeNav = if (menu.hasPreviousEpisode || menu.hasNextEpisode) {
+                    EpisodeNavHints(
+                        hasPrevious = menu.hasPreviousEpisode,
+                        hasNext = menu.hasNextEpisode,
+                        active = ui.mode == PlayerMode.EpisodeNav,
+                        selected = ui.episodeNavArrow,
+                    )
+                } else {
+                    null
+                },
             )
             SettingsGrid(ui = ui, menu = menu)
         }
@@ -340,12 +353,30 @@ private fun RowScope.ScrubTrack(fraction: Float, active: Boolean) {
 }
 
 /**
+ * Данные стрелок соседних серий под Play. [active] — сейчас ли D-pad на них (см. [PlayerMode.EpisodeNav]),
+ * [selected] — какая из двух выбрана; недоступная серия (нет предыдущей/следующей) стрелку не убирает,
+ * а лишь гасит — так видно, что переключение вообще есть, даже когда одна из сторон недоступна.
+ */
+internal data class EpisodeNavHints(
+    val hasPrevious: Boolean,
+    val hasNext: Boolean,
+    val active: Boolean,
+    val selected: EpisodeNavArrow,
+)
+
+/**
  * Подсказки транспорта. Это именно подсказки, а не кнопки: перемотку и паузу ведёт D-pad,
  * фокусу тут ходить не по чему. [focused] — виртуальный фокус транспорта на кнопке OK:
  * белое кольцо с тёмным зазором (белая рамка на белой кнопке иначе не видна, как у TvButton).
+ * [episodeNav] == null — соседних серий нет вовсе, ряд стрелок под Play не рисуем.
  */
 @Composable
-private fun TransportHints(isPlaying: Boolean, focused: Boolean, modifier: Modifier = Modifier) {
+private fun TransportHints(
+    isPlaying: Boolean,
+    focused: Boolean,
+    episodeNav: EpisodeNavHints?,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier,
         horizontalArrangement = Arrangement.spacedBy(26.dp),
@@ -365,6 +396,51 @@ private fun TransportHints(isPlaying: Boolean, focused: Boolean, modifier: Modif
                         )
                     }
                 }
+            }
+            if (episodeNav != null) {
+                Row(
+                    modifier = Modifier.padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    EpisodeNavButton(
+                        icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                        contentDescription = "Предыдущая серия",
+                        enabled = episodeNav.hasPrevious,
+                        focused = episodeNav.active && episodeNav.selected == EpisodeNavArrow.Previous,
+                    )
+                    EpisodeNavButton(
+                        icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = "Следующая серия",
+                        enabled = episodeNav.hasNext,
+                        focused = episodeNav.active && episodeNav.selected == EpisodeNavArrow.Next,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Одна стрелка ряда переключения серий — тот же приём кольца виртуального фокуса, что у Play/Pause. */
+@Composable
+private fun EpisodeNavButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    focused: Boolean,
+) {
+    CircleBox(
+        size = EpisodeNavFocusOuter,
+        color = if (focused) TvFocus else TvFocus.copy(alpha = 0f),
+        modifier = Modifier.alpha(if (enabled) 1f else 0.4f),
+    ) {
+        CircleBox(size = EpisodeNavFocusInner, color = if (focused) TvFocusHalo else TvFocusHalo.copy(alpha = 0f)) {
+            CircleBox(size = EpisodeNavButtonSize, color = TvSurfaceContainerHigh) {
+                Icon(
+                    icon,
+                    contentDescription = contentDescription,
+                    tint = TvOnSurface,
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }
@@ -546,6 +622,11 @@ private val ScrubFocusRingExtra = 6.dp
 private val PauseButtonSize = 50.dp
 private val PauseFocusOuter = 62.dp
 private val PauseFocusInner = 56.dp
+
+/** Стрелки серий под Play — заметно мельче самой кнопки, это второстепенное управление. */
+private val EpisodeNavButtonSize = 34.dp
+private val EpisodeNavFocusOuter = 44.dp
+private val EpisodeNavFocusInner = 40.dp
 private const val SettingsGridRows = 2
 private val SettingsGridGap = 8.dp
 private val SettingsButtonWidth = 136.dp

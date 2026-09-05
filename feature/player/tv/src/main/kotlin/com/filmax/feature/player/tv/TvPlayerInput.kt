@@ -11,8 +11,14 @@ import androidx.compose.ui.input.key.Key
 import androidx.media3.common.Player
 import com.filmax.core.domain.catalog.model.MediaTrack
 
-/** Что сейчас ведёт D-pad: Play/Pause, прогресс-бар или сетка настроек справа от него. */
-internal enum class PlayerMode { Transport, Progress, Settings }
+/**
+ * Что сейчас ведёт D-pad: Play/Pause, прогресс-бар, ряд стрелок соседних серий под Play или
+ * сетка настроек справа от него.
+ */
+internal enum class PlayerMode { Transport, Progress, EpisodeNav, Settings }
+
+/** Какая из двух стрелок под Play выбрана сейчас в [PlayerMode.EpisodeNav]. */
+internal enum class EpisodeNavArrow { Previous, Next }
 
 /**
  * Пункт сетки настроек. Первые четыре открывают поповер выбора, [Episodes] — панель сезонов
@@ -51,11 +57,16 @@ internal class PlayerActions(
     val selected: (SettingsAction) -> String,
     val onSelect: (SettingsAction, String) -> Unit,
     val onNextEpisode: () -> Unit,
+    /** null — предыдущей серии нет (первый эпизод) или граф не дал навигацию по сериям. */
+    val onPreviousEpisode: (() -> Unit)? = null,
     val episodes: EpisodesPanelData? = null,
     val enabled: (SettingsAction) -> Boolean = { true },
 ) {
     /** Есть ли следующая серия и навигация к ней — условие автоперехода и пункта в ряду. */
     val hasNextEpisode: Boolean get() = SettingsAction.NextEpisode in items
+
+    /** Есть ли предыдущая серия — условие показа стрелки «влево» под Play. */
+    val hasPreviousEpisode: Boolean get() = onPreviousEpisode != null
 
     fun selectedIndex(action: SettingsAction): Int =
         options(action).indexOf(selected(action)).coerceAtLeast(0)
@@ -85,6 +96,9 @@ internal class TvPlayerUiState(val player: Player) {
     var submenu by mutableStateOf<SettingsAction?>(null)
     var settingsCursor by mutableIntStateOf(0)
     var submenuCursor by mutableIntStateOf(0)
+
+    /** Выбранная стрелка в [PlayerMode.EpisodeNav] — что сделает OK. */
+    var episodeNavArrow by mutableStateOf(EpisodeNavArrow.Next)
 
     /** Открыта ли боковая панель серий; курсоры — выбранный сезон и серия внутри него. */
     var episodesOpen by mutableStateOf(false)
@@ -155,8 +169,10 @@ internal class TvPlayerUiState(val player: Player) {
 
     /**
      * Раскладка D-pad — дословно по гайдлайну Google: Center — пауза/воспроизведение, Left/Right —
-     * перемотка доступна только после перехода на прогресс-бар клавишей Up; Right и Down ведут
-     * в сетку справа от Play. Неизвестные клавиши не трогаем — иначе съедим громкость и системные.
+     * перемотка доступна только после перехода на прогресс-бар клавишей Up; Right ведёт в сетку
+     * справа от Play, а Down — сперва на стрелки соседних серий под Play (если хоть одна есть),
+     * и уже с них дальше вниз — в ту же сетку. Неизвестные клавиши не трогаем — иначе съедим
+     * громкость и системные.
      */
     fun onKey(key: Key, menu: PlayerActions): Boolean = when {
         // OK при видимой плашке автоперехода (и только в транспорте) — следующая серия сразу.
@@ -169,6 +185,7 @@ internal class TvPlayerUiState(val player: Player) {
         episodesOpen -> onEpisodesKey(key, menu)
         submenu != null -> onSubmenuKey(key, menu)
         mode == PlayerMode.Settings -> onSettingsKey(key, menu)
+        mode == PlayerMode.EpisodeNav -> onEpisodeNavKey(key, menu)
         else -> onTransportKey(key, menu)
     }
 
@@ -233,7 +250,12 @@ internal class TvPlayerUiState(val player: Player) {
             Key.DirectionLeft -> moveInSettingsGrid(menu, -SETTINGS_GRID_ROWS, returnToTransport = true)
             Key.DirectionRight -> moveInSettingsGrid(menu, SETTINGS_GRID_ROWS)
             Key.DirectionUp -> if (settingsCursor % SETTINGS_GRID_ROWS == 0) {
-                mode = PlayerMode.Transport
+                // Если под Play есть стрелки серий — они между Play и настройками, а не Play напрямую.
+                mode = if (menu.hasPreviousEpisode || menu.hasNextEpisode) {
+                    PlayerMode.EpisodeNav
+                } else {
+                    PlayerMode.Transport
+                }
             } else {
                 moveInSettingsGrid(menu, -1)
             }
@@ -251,7 +273,12 @@ internal class TvPlayerUiState(val player: Player) {
             Key.DirectionRight -> if (mode == PlayerMode.Progress) scrub(1) else openSettings(menu)
             Key.MediaFastForward -> if (mode == PlayerMode.Progress) scrub(1) else touch()
             Key.DirectionCenter, Key.Enter, Key.MediaPlayPause -> togglePlay()
-            Key.DirectionDown -> openSettings(menu)
+            // Есть соседняя серия — вниз сперва идут стрелки под Play, а не сразу настройки.
+            Key.DirectionDown -> if (menu.hasPreviousEpisode || menu.hasNextEpisode) {
+                openEpisodeNav(menu)
+            } else {
+                openSettings(menu)
+            }
             Key.DirectionUp -> {
                 mode = PlayerMode.Progress
                 seekLabel = null
@@ -259,6 +286,36 @@ internal class TvPlayerUiState(val player: Player) {
             }
             else -> return false
         }
+        return true
+    }
+
+    /**
+     * Стрелки соседних серий под Play. Курсор встаёт на «Следующая», если она есть — это
+     * основной сценарий (долистать сериал), «Предыдущая» — только когда следующей нет.
+     */
+    private fun openEpisodeNav(menu: PlayerActions) {
+        if (!menu.hasPreviousEpisode && !menu.hasNextEpisode) return
+        mode = PlayerMode.EpisodeNav
+        episodeNavArrow = if (menu.hasNextEpisode) EpisodeNavArrow.Next else EpisodeNavArrow.Previous
+        seekLabel = null
+        touch()
+    }
+
+    // Тот же каркас, что у onSettingsKey/onEpisodesKey: ветка «клавиша не наша» обязана вернуть false.
+    @Suppress("ReturnCount")
+    private fun onEpisodeNavKey(key: Key, menu: PlayerActions): Boolean {
+        when (key) {
+            Key.DirectionLeft -> if (menu.hasPreviousEpisode) episodeNavArrow = EpisodeNavArrow.Previous
+            Key.DirectionRight -> if (menu.hasNextEpisode) episodeNavArrow = EpisodeNavArrow.Next
+            Key.DirectionUp -> mode = PlayerMode.Transport
+            Key.DirectionDown -> openSettings(menu)
+            Key.DirectionCenter, Key.Enter -> when (episodeNavArrow) {
+                EpisodeNavArrow.Previous -> menu.onPreviousEpisode?.invoke()
+                EpisodeNavArrow.Next -> menu.onNextEpisode()
+            }
+            else -> return false
+        }
+        touch()
         return true
     }
 
