@@ -470,8 +470,7 @@ private fun DetailsHero(
         Column(
             Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = TvMetrics.SafeHorizontal, bottom = 22.dp)
-                .width(HeroTextWidth),
+                .padding(start = TvMetrics.SafeHorizontal, bottom = 22.dp),
         ) {
             Text(
                 item.title,
@@ -479,12 +478,22 @@ private fun DetailsHero(
                 color = TvOnSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.width(HeroTextWidth),
             )
             TvMetaRow(
                 parts = remember(item, series) { metaParts(item, series) },
-                modifier = Modifier.padding(top = 11.dp),
+                modifier = Modifier
+                    .width(HeroTextWidth)
+                    .padding(top = 11.dp),
             )
-            RatingsRow(rating = item.rating, modifier = Modifier.padding(top = 9.dp))
+            RatingsRow(
+                rating = item.rating,
+                modifier = Modifier
+                    .width(HeroTextWidth)
+                    .padding(top = 9.dp),
+            )
+            // Ряд кнопок не зажат в HeroTextWidth: с трейлером их четыре, и в 600dp они не
+            // помещаются — последняя кнопка обрезалась бы почти до одной иконки.
             HeroButtons(
                 hasAnyFolder = hasAnyFolder,
                 resume = series?.resume,
