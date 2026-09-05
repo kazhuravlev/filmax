@@ -75,17 +75,32 @@ private fun durationLabel(minutes: Int): String {
     return if (hours > 0) "$hours ч $rest мин" else "$rest мин"
 }
 
+private const val GROUPING_SIZE = 3
+
+/**
+ * «12 345» — число просмотров с разрядами через пробел (аналог JS `toLocaleString()` в
+ * ru-локали). 0 — это «данных нет», а не «ноль просмотров», поэтому такие тайтлы без подписи.
+ */
+fun viewsLabel(views: Int): String? = views.takeIf { it > 0 }
+    ?.toString()
+    ?.reversed()
+    ?.chunked(GROUPING_SIZE)
+    ?.joinToString(" ")
+    ?.reversed()
+
 /**
  * Люди для секции «Актёры»: если фото из TMDB доехали — берём их (с ролями), иначе строим карточки
- * из строки имён kino.watch (`item.cast`, имена через запятую) без фото. Так каст кликабелен всегда,
- * а фото — приятное дополнение, а не условие.
+ * из строки имён kino.watch (`item.cast`, имена через запятую) и пробуем угадать фото на CDN
+ * kino.watch ([actorPhotoUrl]). Так каст кликабелен всегда, а фото — приятное дополнение: угаданная
+ * ссылка есть не у каждого актёра (бывает честный 404), поэтому рендер обязан сам откатываться на
+ * инициалы при ошибке загрузки — см. `TvActorCard`.
  */
 fun resolveCast(cast: List<CastMember>, rawCast: String): List<CastMember> =
     cast.ifEmpty {
         rawCast.split(",")
             .map { it.trim() }
             .filter { it.isNotBlank() }
-            .map { name -> CastMember(name = name, character = null, photoUrl = null) }
+            .map { name -> CastMember(name = name, character = null, photoUrl = actorPhotoUrl(name)) }
     }
 
 /** Инициалы для заглушки без фото: до двух заглавных букв из имени. */

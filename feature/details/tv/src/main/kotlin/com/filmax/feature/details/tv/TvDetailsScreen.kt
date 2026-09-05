@@ -69,10 +69,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemRating
 import com.filmax.core.domain.catalog.model.MediaTrack
@@ -113,6 +116,7 @@ import com.filmax.feature.details.common.initials
 import com.filmax.feature.details.common.isSeries
 import com.filmax.feature.details.common.resolveCast
 import com.filmax.feature.details.common.typeLabel
+import com.filmax.feature.details.common.viewsLabel
 import com.filmax.feature.details.common.volumeLabel
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
@@ -488,6 +492,7 @@ private fun DetailsHero(
             )
             RatingsRow(
                 rating = item.rating,
+                views = item.views,
                 modifier = Modifier
                     .width(HeroTextWidth)
                     .padding(top = 9.dp),
@@ -577,14 +582,16 @@ private fun HeroButtons(
 /**
  * КП и IMDb показываем РАЗДЕЛЬНО: `rating.external` усредняет их, а расхождение оценок — это
  * и есть причина смотреть обе. Цветового кодирования нет: в монохроме оценку несёт число.
+ * Число просмотров — тот же формат пилюли, третьим элементом ряда.
  */
 @Composable
-private fun RatingsRow(rating: ItemRating, modifier: Modifier = Modifier) {
+private fun RatingsRow(rating: ItemRating, views: Int, modifier: Modifier = Modifier) {
     // ratingLabel режет «0» (у kino.watch это «оценки нет») и приводит «8.312» к одному знаку.
-    val sources = remember(rating) {
+    val sources = remember(rating, views) {
         buildList {
             ratingLabel(rating.kinopoisk)?.let { add(it to "КиноПоиск") }
             ratingLabel(rating.imdb)?.let { add(it to "IMDb") }
+            viewsLabel(views)?.let { add(it to "просмотров") }
         }
     }
     if (sources.isEmpty()) return
@@ -698,13 +705,19 @@ private fun TvActorCard(member: CastMember, onClick: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 val photo = member.photoUrl
-                if (photo != null) {
-                    PosterImage(
-                        url = photo,
+                // Фото из TMDB надёжное, а угаданное по MD5 имени (kino.watch CDN) — нет: часть
+                // ссылок честно 404. Здесь нужен именно `AsyncImage`, а не общий `PosterImage`:
+                // тот при ошибке загрузки рисует значок «фото нет» (правильно для настоящих
+                // постеров), а для угаданного аватара актёра лучше молча откатиться на инициалы.
+                // Ключ — photoUrl: при переиспользовании карточки в ряду флаг сбрасывается.
+                var loadFailed by remember(member.photoUrl) { mutableStateOf(false) }
+                if (photo != null && !loadFailed) {
+                    AsyncImage(
+                        model = photo,
                         contentDescription = member.name,
+                        contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
-                        shape = CircleShape,
-                        accentColor = TvSurfaceContainerHigh,
+                        onState = { state -> loadFailed = state is AsyncImagePainter.State.Error },
                     )
                 } else {
                     Text(
@@ -1117,6 +1130,7 @@ private fun LazyListScope.similarRail(similar: List<Item>, onOpenItem: (Int) -> 
                     onClick = { onOpenItem(simItem.id) },
                     imdbRating = ratingLabel(simItem.rating.imdb),
                     kinopoiskRating = ratingLabel(simItem.rating.kinopoisk),
+                    advert = simItem.advert,
                 ) { url, modifier ->
                     PosterImage(
                         url = url,

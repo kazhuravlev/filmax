@@ -54,6 +54,9 @@ enum class TvCardSize(val width: Dp, val height: Dp) {
  *
  * [imdbRating]/[kinopoiskRating] — уже отформатированные строки (например «8.3»), каждая своя
  * пилюля с лого источника; null — эта пилюля не рисуется. Обе null — бейджа нет вовсе.
+ *
+ * [advert] — в видео тайтла есть реклама (kino.watch `advert`): рисуем маленький бейдж-предупреждение
+ * в противоположном от рейтинга углу (TopStart), чтобы они никогда не накладывались друг на друга.
  */
 // Компонент дизайн-системы: параметры — его публичный API (Compose-конвенция: modifier прямым
 // параметром, хвост — опции с дефолтами). Обёртка в data-класс сломала бы «минимальный API».
@@ -69,6 +72,7 @@ fun TvPosterCard(
     height: Dp = TvMetrics.PosterHeight,
     imdbRating: String? = null,
     kinopoiskRating: String? = null,
+    advert: Boolean = false,
     focusRequester: FocusRequester? = null,
     posterContent: @Composable (url: String, modifier: Modifier) -> Unit,
 ) {
@@ -94,6 +98,9 @@ fun TvPosterCard(
                     kinopoiskRating = kinopoiskRating,
                     modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
                 )
+                if (advert) {
+                    TvAdvertBadge(modifier = Modifier.align(Alignment.TopStart).padding(8.dp))
+                }
             }
         }
         TvCardCaption(title = title, meta = meta, focused = focused)
@@ -207,6 +214,24 @@ private fun TvRatingSource(icon: ImageVector, value: String) {
             color = TvOnSurface,
         )
     }
+}
+
+/**
+ * Бейдж «в видео есть реклама» (kino.watch `advert`) — тот же визуальный язык, что у
+ * [TvRatingPill] (полупрозрачная тёмная подложка, форма постера), но без иконки источника:
+ * здесь важен сам факт, а не число. Маленькая пилюля, а не баннер — карточка узкая (2:3).
+ */
+@Composable
+fun TvAdvertBadge(modifier: Modifier = Modifier) {
+    Text(
+        "Реклама",
+        style = MaterialTheme.typography.labelSmall,
+        color = TvOnSurface,
+        modifier = modifier
+            .clip(TvMetrics.PosterShape)
+            .background(TvSurface.copy(alpha = 0.72f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    )
 }
 
 /**

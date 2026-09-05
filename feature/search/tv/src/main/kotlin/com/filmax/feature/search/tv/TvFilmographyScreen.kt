@@ -150,6 +150,7 @@ private fun FilmographyPoster(
         modifier = modifier,
         imdbRating = ratingLabel(item.rating.imdb),
         kinopoiskRating = ratingLabel(item.rating.kinopoisk),
+        advert = item.advert,
     ) { url, posterModifier ->
         PosterImage(
             url = url,

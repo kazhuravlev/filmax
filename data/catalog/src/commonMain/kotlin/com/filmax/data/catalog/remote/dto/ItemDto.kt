@@ -32,9 +32,12 @@ data class ItemDto(
     // Числовой IMDb-id (не рейтинг!) — для сопоставления с TMDB ради фото актёров.
     @SerialName("imdb") val imdb: Int? = null,
     val finished: Boolean = false,
+    // Флаг «в видео есть реклама» — карточка постера рисует по нему предупреждающий бейдж.
+    val advert: Boolean = false,
     @SerialName("in_watchlist") val inWatchlist: Boolean = false,
     @SerialName("posters") val posters: PostersDto? = null,
     val duration: DurationDto = DurationDto(),
+    val views: Int = 0,
     val genres: List<GenreDto> = emptyList(),
     val countries: List<CountryDto> = emptyList(),
     // Фильмы отдают список видео в `videos`, сериалы — сезоны с эпизодами в `seasons`.

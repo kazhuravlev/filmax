@@ -406,6 +406,13 @@ class PlayerScreenModel(
         }
     }
 
+    // Финальный SaveProgress на выход с экрана уходит из Compose (TvPlayerScreen.PlayerEffects,
+    // DisposableEffect.onDispose), а НЕ отсюда: androidx.lifecycle.viewmodel.internal.ViewModelImpl
+    // закрывает viewModelScope (JOB_KEY-closeable) ДО вызова onCleared() у самого ViewModel —
+    // к моменту, когда этот метод выполняется, job screenModelScope уже отменён, и
+    // screenModelScope.launch{} внутри saveProgress() молча не выполнил бы своё тело (запуск
+    // корутины на отменённом родителе). Вызов saveProgress() здесь был бы «мёртвым кодом»,
+    // который выглядит рабочим, но никогда не долетает до сети — поэтому его нет.
     override fun onCleared() {
         player.release()
         super.onCleared()

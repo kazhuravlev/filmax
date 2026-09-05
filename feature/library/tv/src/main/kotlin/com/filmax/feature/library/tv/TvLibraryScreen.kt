@@ -466,6 +466,7 @@ private fun LazyGridScope.folderPosters(
             height = TvMetrics.CompactPosterHeight,
             imdbRating = ratingLabel(item.rating.imdb),
             kinopoiskRating = ratingLabel(item.rating.kinopoisk),
+            advert = item.advert,
             posterContent = { url, posterModifier ->
                 FolderPoster(url, item.title, posterModifier, removeMode = ui.removeMode)
             },

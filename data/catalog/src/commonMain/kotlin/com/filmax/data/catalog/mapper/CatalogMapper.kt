@@ -62,6 +62,8 @@ fun ItemDto.toDomain(): Item = Item(
     inWatchlist = inWatchlist,
     finished = finished,
     imdbId = imdb?.toString(),
+    views = views,
+    advert = advert,
 )
 
 fun GenreDto.toDomain() = Genre(id = id, title = title, type = type)
