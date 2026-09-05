@@ -1,4 +1,4 @@
-name: Release (tag v*) → GitHub Release + Telegram
+name: Release
 
 # Триггер — пуш git-тега вида v1.2.3. Собирает ПОДПИСАННЫЙ release-APK
 # (R8 + shrinkResources), публикует его в GitHub Release с авто-changelog
@@ -11,18 +11,10 @@ name: Release (tag v*) → GitHub Release + Telegram
 #   KEY_PASSWORD      — пароль ключа
 #   GOOGLE_SERVICES_JSON_BASE64 — app/google-services.json (Firebase Crashlytics), base64;
 #                                 не задан — релиз собирается без крэш-репортинга
-#   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID — уже используются debug-workflow
+#   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID — доставка релиза в Telegram
 on:
   push:
-    tags: [ "v*" ]
-  # Ручной перезапуск для уже существующего тега: удобно, когда Release создан заранее
-  # (например, через UI) и `gh release create` упал бы с «tag already exists», или когда
-  # нужно доложить APK к готовому релизу. Собирает ровно код тега `tag`.
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Тег для сборки/публикации (например v1.7.1)"
-        required: true
+    tags: [ "v[0-9]+.[0-9]+.[0-9]+" ]
 
 permissions:
   contents: write   # нужно для создания GitHub Release
@@ -30,16 +22,14 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    # Единый источник имени тега: пуш даёт github.ref_name, ручной запуск — inputs.tag.
     env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      TAG: ${{ github.ref_name }}
     steps:
       - name: Checkout (полная история + теги)
         uses: actions/checkout@v4
         with:
           # versionCode = число коммитов, versionName = из тега — нужна вся история.
-          # ref: собираем именно код тега (важно для ручного запуска с ветки master).
-          ref: ${{ github.event.inputs.tag || github.ref_name }}
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
 
       - name: Set up JDK 17
