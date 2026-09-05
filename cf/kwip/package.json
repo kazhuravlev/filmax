@@ -1,0 +1,13 @@
+{
+  "name": "kwip",
+  "private": true,
+  "version": "0.0.1",
+  "description": "kino.watch image proxy - Cloudflare Worker",
+  "scripts": {
+    "dev": "wrangler dev --config wrangler.toml",
+    "deploy": "wrangler deploy --config wrangler.toml"
+  },
+  "devDependencies": {
+    "wrangler": "^4.29.0"
+  }
+}

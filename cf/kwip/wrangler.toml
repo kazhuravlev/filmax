@@ -1,0 +1,7 @@
+name = "kwip"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+# No routes/custom domain configured on purpose: the worker is served on the
+# free "*.workers.dev" subdomain (workers_dev = true is the default), which
+# keeps this on Cloudflare's free plan (100k requests/day, no billing).
