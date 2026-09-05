@@ -10,7 +10,10 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
 
 val coreUiModule = module {
-    single<ImageCacheRepository> { ImageCacheRepositoryImpl(androidContext()) }
+    // createdAtStart — ImageCacheRepositoryImpl подставляет себя в ImageCacheStatsRecording при
+    // создании, а этот держатель должен быть готов ДО первой реальной закачки картинки: иначе
+    // network-interceptor в app-модуле пишет статистику в no-op и она теряется.
+    single<ImageCacheRepository>(createdAtStart = true) { ImageCacheRepositoryImpl(androidContext()) }
     single<ImageProxyRepository> { ImageProxyRepositoryImpl(androidContext()) }
     // createdAtStart — очередь обнаружения (ImageDiscovery) должна быть готова ДО первого списка
     // тайтлов: CatalogMapper.toDomain() зовёт её напрямую, без DI, и без этого флага синглтон

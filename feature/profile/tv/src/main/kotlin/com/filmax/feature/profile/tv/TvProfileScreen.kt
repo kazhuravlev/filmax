@@ -56,6 +56,7 @@ import com.filmax.feature.profile.common.ProfileState
 import com.filmax.feature.profile.common.initialsOrFallback
 import com.filmax.feature.profile.common.label
 import org.koin.androidx.compose.koinViewModel
+import java.util.Locale
 
 /** Ширина колонки настроек. Читать строку длиной во весь экран с 3 метров невозможно. */
 private val ContentMaxWidth = 640.dp
@@ -164,14 +165,7 @@ private fun ProfileContent(
             Spacer(Modifier.height(26.dp))
             TvOverline("Изображения и постеры", color = TvOnSurfaceDim)
             Spacer(Modifier.height(12.dp))
-            SettingRow(
-                spec = SettingRowSpec(label = "Прокси изображений", value = onOff(state.imageProxyEnabled)),
-                onClick = actions.onToggleImageProxy,
-            )
-            SettingRow(
-                spec = SettingRowSpec(label = "Сбросить кеш изображений", labelColor = TvError),
-                onClick = actions.onClearImageCache,
-            )
+            ImageSettingsRows(state = state, actions = actions)
             Spacer(Modifier.height(26.dp))
             FilmaxVersionLabel(color = TvOnSurfaceDim)
         }
@@ -225,6 +219,7 @@ private data class ProfileActions(
     val onCycleApiHost: () -> Unit,
     val onClearImageCache: () -> Unit,
     val onToggleImageProxy: () -> Unit,
+    val onToggleImagePrefetch: () -> Unit,
 )
 
 /** Лямбды замыкают текущий [state], поэтому пересобираются вместе с ним — без remember. */
@@ -262,6 +257,9 @@ private fun profileActions(
     onClearImageCache = { screenModel.dispatch(ProfileEvent.ClearImageCache) },
     onToggleImageProxy = {
         screenModel.dispatch(ProfileEvent.SetImageProxyEnabled(!state.imageProxyEnabled))
+    },
+    onToggleImagePrefetch = {
+        screenModel.dispatch(ProfileEvent.SetImagePrefetchEnabled(!state.imagePrefetchEnabled))
     },
 )
 
@@ -302,6 +300,46 @@ private fun AccountRows(state: ProfileState, actions: ProfileActions) {
         SettingRow(
             spec = SettingRowSpec(label = "Выйти из аккаунта", labelColor = TvError),
             onClick = actions.onLogout,
+        )
+    }
+}
+
+@Composable
+private fun ImageSettingsRows(state: ProfileState, actions: ProfileActions) {
+    val stats = state.imageCacheStats
+    val megabytes = stats.totalBytes / (1024.0 * 1024.0)
+    val sizeLabel = String.format(Locale.US, "%.1f МБ", megabytes)
+    val imageWord = when {
+        stats.fileCount % 100 in 11..14 -> "изображений"
+        stats.fileCount % 10 == 1 -> "изображение"
+        stats.fileCount % 10 in 2..4 -> "изображения"
+        else -> "изображений"
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(RowGap)) {
+        SettingRow(
+            spec = SettingRowSpec(label = "Прокси изображений", value = onOff(state.imageProxyEnabled)),
+            onClick = actions.onToggleImageProxy,
+        )
+        SettingRow(
+            spec = SettingRowSpec(
+                label = "Фоновая загрузка изображений",
+                value = onOff(state.imagePrefetchEnabled),
+            ),
+            onClick = actions.onToggleImagePrefetch,
+        )
+        SettingRow(
+            spec = SettingRowSpec(
+                label = "Прогресс фоновой загрузки",
+                value = "Скачано ${state.imagePrefetchDownloaded}, осталось ${state.imagePrefetchRemaining}",
+            ),
+            onClick = null,
+        )
+        SettingRow(
+            spec = SettingRowSpec(
+                label = "Сбросить кеш изображений ($sizeLabel, ${stats.fileCount} $imageWord)",
+                labelColor = TvError,
+            ),
+            onClick = actions.onClearImageCache,
         )
     }
 }

@@ -7,6 +7,7 @@ import coil3.disk.DiskCache
 import coil3.key.Keyer
 import coil3.map.Mapper
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import com.filmax.core.domain.cache.ImageCacheStatsRecording
 import com.filmax.core.ui.cache.CacheableImage
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -49,10 +50,21 @@ class FilmaxImageLoaderFactory : SingletonImageLoader.Factory {
  * так дисковый кэш Coil реально держит картинки этот срок, а не перекачивает их на каждый холодный
  * старт. `addNetworkInterceptor`, а не `addInterceptor` — переписывать нужно ответ РЕАЛЬНОЙ сети,
  * до того как OkHttp/Coil решат, что с ним кэшировать.
+ *
+ * Заодно это же единственное место, где виден каждый факт реальной сетевой закачки картинки
+ * (а не попадания в память/диск из уже тёплого кэша) — здесь же учитываем его в статистику кэша
+ * для настроек ([ImageCacheStatsRecording]). `304 Not Modified` не считаем: байт не переписано,
+ * значит запись в кэше та же, что уже учтена.
  */
 private class ImageCacheLifetimeInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val response = chain.proceed(chain.request())
+
+        val contentLength = response.body?.contentLength() ?: -1L
+        if (response.code == HTTP_OK && contentLength > 0) {
+            ImageCacheStatsRecording.recorder.recordCached(contentLength)
+        }
+
         return response.newBuilder()
             .removeHeader(HEADER_PRAGMA)
             .removeHeader(HEADER_CACHE_CONTROL)
@@ -61,6 +73,7 @@ private class ImageCacheLifetimeInterceptor : Interceptor {
     }
 }
 
+private const val HTTP_OK = 200
 private const val HEADER_PRAGMA = "Pragma"
 private const val HEADER_CACHE_CONTROL = "Cache-Control"
 

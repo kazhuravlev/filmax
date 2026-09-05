@@ -2,6 +2,7 @@ package com.filmax.feature.profile.common
 
 import com.filmax.core.domain.auth.AuthRepository
 import com.filmax.core.domain.cache.ImageCacheRepository
+import com.filmax.core.domain.cache.ImagePrefetcher
 import com.filmax.core.domain.cache.ImageProxyRepository
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.favorites.FavoritesRepository
@@ -23,6 +24,7 @@ class ProfileScreenModel(
     private val apiHost: ApiHostRepository,
     private val imageCache: ImageCacheRepository,
     private val imageProxy: ImageProxyRepository,
+    private val imagePrefetcher: ImagePrefetcher,
 ) : BaseScreenModel<ProfileState, ProfileSideEffect, ProfileEvent>(ProfileState()) {
 
     init {
@@ -31,6 +33,8 @@ class ProfileScreenModel(
         observePlaybackSettings()
         observeApiHost()
         observeImageProxy()
+        observeImagePrefetch()
+        observeImageCacheStats()
     }
 
     private fun observeFavorites() {
@@ -65,6 +69,32 @@ class ProfileScreenModel(
         }
     }
 
+    private fun observeImagePrefetch() {
+        screenModelScope {
+            imagePrefetcher.enabled.collect { enabled ->
+                updateState { it.copy(imagePrefetchEnabled = enabled) }
+            }
+        }
+        screenModelScope {
+            imagePrefetcher.progress.collect { progress ->
+                updateState {
+                    it.copy(
+                        imagePrefetchDownloaded = progress.downloaded,
+                        imagePrefetchRemaining = progress.remaining,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun observeImageCacheStats() {
+        screenModelScope {
+            imageCache.stats.collect { stats ->
+                updateState { it.copy(imageCacheStats = stats) }
+            }
+        }
+    }
+
     override fun dispatch(event: ProfileEvent) {
         when (event) {
             ProfileEvent.Logout -> logout()
@@ -75,6 +105,7 @@ class ProfileScreenModel(
             is ProfileEvent.SetApiHost -> setApiHost(event.host)
             ProfileEvent.ClearImageCache -> clearImageCache()
             is ProfileEvent.SetImageProxyEnabled -> setImageProxyEnabled(event.enabled)
+            is ProfileEvent.SetImagePrefetchEnabled -> setImagePrefetchEnabled(event.enabled)
         }
     }
 
@@ -84,6 +115,10 @@ class ProfileScreenModel(
 
     private fun setImageProxyEnabled(enabled: Boolean) = screenModelScope {
         imageProxy.setEnabled(enabled)
+    }
+
+    private fun setImagePrefetchEnabled(enabled: Boolean) = screenModelScope {
+        imagePrefetcher.setEnabled(enabled)
     }
 
     private fun setQuality(quality: String) = screenModelScope {
