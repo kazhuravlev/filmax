@@ -86,7 +86,15 @@ class LibraryScreenModel(
         }
     }
 
-    /** «В процессе» и история — разные серверные источники и должны загружаться независимо. */
+    /**
+     * «В процессе» и история — разные серверные источники и должны загружаться независимо.
+     *
+     * Ошибка [loadTitleDetails] намеренно НЕ попадает в общий [WatchingResult.error]: это
+     * декоративное обогащение карточек (жанр/год/рейтинг), а не сами списки. Если сбой
+     * привязан к конкретному тайтлу (например, он удалён/битый на сервере), он не «лечится»
+     * повтором и раньше вечно держал баннер [scheduleServerRetry] висящим — хотя списки уже
+     * загрузились и показывают реальные данные.
+     */
     private suspend fun loadWatchingSection(): WatchingResult = coroutineScope {
         val titlesDeferred = async { loadWatchingTitles() }
         val historyDeferred = async { watching.getHistory() }
@@ -99,8 +107,8 @@ class LibraryScreenModel(
         WatchingResult(
             titles = titles.titles,
             history = historyItems,
-            titleDetails = titleDetails.items,
-            error = titles.error ?: firstErrorMessage(history) ?: titleDetails.error,
+            titleDetails = titleDetails,
+            error = titles.error ?: firstErrorMessage(history),
         )
     }
 
@@ -131,29 +139,18 @@ class LibraryScreenModel(
      * Эндпоинты `watching` не отдают год, жанры и рейтинги. Детали подгружаются ограниченно
      * параллельно: это сохраняет универсальную карточку, но не устраивает залп из десятков
      * одновременных запросов к серверу.
+     *
+     * Сбой по отдельному тайтлу (например, он удалён/битый на сервере) не считаем ошибкой
+     * экрана: карточка просто останется без обогащения (жанр/год/рейтинг), а не подвесит
+     * баннер [scheduleServerRetry] — сам сбой уже ушёл в телеметрию через `safeRequest`
+     * внутри `catalog.getItemDetails`.
      */
-    private suspend fun loadTitleDetails(itemIds: List<Int>): TitleDetailsResult = coroutineScope {
+    private suspend fun loadTitleDetails(itemIds: List<Int>): Map<Int, Item> = coroutineScope {
         val limiter = Semaphore(TITLE_DETAILS_CONCURRENCY)
-        val results = itemIds.distinct().map { itemId ->
-            async {
-                limiter.withPermit { itemId to catalog.getItemDetails(itemId) }
-            }
-        }.awaitAll()
-        val items = results.mapNotNull { (_, result) ->
-            (result as? RequestResult.Success)?.data
-        }.associateBy(Item::id)
-        val failed = results.firstOrNull { (_, result) -> result is RequestResult.Error }
-        TitleDetailsResult(
-            items = items,
-            error = (failed?.second as? RequestResult.Error)?.message
-                ?: SERVER_DETAILS_ERROR.takeIf { failed != null },
-        )
+        itemIds.distinct().map { itemId ->
+            async { limiter.withPermit { catalog.getItemDetails(itemId).getOrNull() } }
+        }.awaitAll().filterNotNull().associateBy(Item::id)
     }
-
-    private data class TitleDetailsResult(
-        val items: Map<Int, Item>,
-        val error: String?,
-    )
 
     private fun refreshBookmarks() {
         val openedFolder = state.openFolder?.folder
@@ -471,7 +468,6 @@ class LibraryScreenModel(
         const val TYPE_MOVIES = "movies"
         const val TYPE_SERIALS = "serials"
         const val TITLE_DETAILS_CONCURRENCY = 4
-        const val SERVER_DETAILS_ERROR = "Сервер не вернул данные тайтла"
     }
 }
 
