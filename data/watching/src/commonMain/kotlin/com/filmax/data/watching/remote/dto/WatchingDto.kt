@@ -4,16 +4,14 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class HistoryResponseDto(
-    val items: List<HistoryItemDto>,
-    val pagination: PaginationDto? = null,
+data class WatchingListResponseDto(
+    val items: List<WatchingItemDto> = emptyList(),
 )
 
 /**
- * Ответ `api/v1/history` — единственный источник прогресса списком.
- *
- * `watching/{type}` отдаёт только id/title/posters без `watching`, поэтому «Продолжить» на нём
- * построить нельзя: доля просмотра всегда выходила нулевой.
+ * Ответ `api/v1/history` — точный таймкод (`time` по каждому видео), но по СЕРИЯМ, а не тайтлам:
+ * один сериал — десятки записей. Источник для `Continuation` (точная позиция одного тайтла),
+ * не для списка «в процессе» целиком — для него см. [WatchingListResponseDto].
  */
 @Serializable
 data class HistoryListResponseDto(
@@ -57,22 +55,20 @@ data class HistoryDurationDto(
     val total: Int = 0,
 )
 
+/**
+ * Элемент `watching/{type}` — облегчённая карточка тайтла, БЕЗ точного таймкода (сервер его тут
+ * не отдаёт вовсе). `total`/`watched`/`new` — только у сериалов (`type=serials`), для фильмов
+ * сервер их не считает и не присылает.
+ */
 @Serializable
-data class HistoryItemDto(
+data class WatchingItemDto(
     val id: Int,
-    val title: String,
+    val title: String = "",
     val type: String = "",
     val posters: PostersDto? = null,
-    val watching: WatchProgressDto? = null,
-)
-
-@Serializable
-data class WatchProgressDto(
-    val status: Int = 0,
-    val time: Int? = null,
-    val duration: Int? = null,
-    val video: Int? = null,
-    val season: Int? = null,
+    val total: Int? = null,
+    val watched: Int? = null,
+    @SerialName("new") val newEpisodes: Int? = null,
 )
 
 @Serializable

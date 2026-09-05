@@ -36,6 +36,22 @@ data class WatchProgress(
         }
 }
 
+/**
+ * Тайтл из списка «в процессе» (`watching/{type}`) — облегчённая карточка одним запросом на тип,
+ * БЕЗ точной позиции: сервер тут отдаёт только счётчики серий, не таймкод. Для точной позиции
+ * (например, при открытии тайтла) — отдельный запрос за самим тайтлом (`getItemDetails`).
+ */
+data class WatchingItem(
+    val itemId: Int,
+    val title: String,
+    val isSeries: Boolean,
+    val posterUrl: String,
+    /** Счётчики серий — только у сериалов, сервер не считает их для фильмов. */
+    val totalEpisodes: Int? = null,
+    val watchedEpisodes: Int? = null,
+    val newEpisodes: Int? = null,
+)
+
 data class Notification(
     val id: Int,
     val title: String?,

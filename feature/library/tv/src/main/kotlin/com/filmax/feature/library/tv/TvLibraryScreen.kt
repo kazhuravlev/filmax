@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayCircleOutline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -59,8 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.user.model.BookmarkFolder
-import com.filmax.core.domain.watching.model.Continuation
-import com.filmax.core.domain.watching.model.WatchHistory
+import com.filmax.core.domain.watching.model.WatchingItem
 import com.filmax.core.tv.designsystem.RefreshOnTopNavReselect
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvAccent
@@ -74,7 +72,6 @@ import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvOutlineVariant
 import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvPosterGrid
-import com.filmax.core.tv.designsystem.TvRatingPill
 import com.filmax.core.tv.designsystem.TvScreenFocus
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
@@ -92,16 +89,19 @@ import com.filmax.feature.library.common.LibraryState
 import com.filmax.feature.library.common.OpenBookmarkFolder
 import org.koin.androidx.compose.koinViewModel
 
-/** Подразделы «Я смотрю»; в разделе «Подборки» сразу показывается сетка подборок. */
+/**
+ * «Я смотрю» больше не делится на «Продолжить»/«История»: `watching/{type}` одним запросом на
+ * тип уже отдаёт ровно то, что недосмотрено, — делить один и тот же список на два подраздела
+ * было бы искусственно. Тип оставлен для единообразия с «Подборками» (там своя вкладка).
+ */
 private enum class LibrarySegment(val label: String) {
-    CONTINUE("Продолжить"),
-    HISTORY("История"),
+    WATCHING("Я смотрю"),
     BOOKMARKS("Подборки"),
 }
 
 private val LibrarySection.segments: List<LibrarySegment>
     get() = when (this) {
-        LibrarySection.WATCHING -> listOf(LibrarySegment.CONTINUE, LibrarySegment.HISTORY)
+        LibrarySection.WATCHING -> listOf(LibrarySegment.WATCHING)
         LibrarySection.BOOKMARKS -> emptyList()
     }
 
@@ -239,16 +239,20 @@ private fun MineHeader(
                 top = TvMetrics.ContentTop,
             ),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            section.segments.forEach { entry ->
-                TvChip(
-                    label = entry.label,
-                    selected = entry == segment,
-                    onClick = { onSegment(entry) },
-                )
+        // Один-единственный подраздел — чипов не рисуем: верхний таб-бар уже назвал раздел
+        // «Я смотрю», повторять то же название второй строкой ниже было бы лишним.
+        if (section.segments.size > 1) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                section.segments.forEach { entry ->
+                    TvChip(
+                        label = entry.label,
+                        selected = entry == segment,
+                        onClick = { onSegment(entry) },
+                    )
+                }
             }
+            Spacer(Modifier.height(14.dp))
         }
-        Spacer(Modifier.height(14.dp))
         HorizontalDivider(thickness = 1.dp, color = TvOutlineVariant)
     }
 }
@@ -332,21 +336,23 @@ private fun MineGrid(
             contentPadding = GridPadding,
         ) {
             when (segment) {
-                LibrarySegment.CONTINUE -> continueSegment(state.continuations, actions.onOpenItem, focus)
+                LibrarySegment.WATCHING -> watchingSegment(state.watching, actions.onOpenItem, focus)
                 LibrarySegment.BOOKMARKS -> bookmarksSegment(state, ui, actions, focus)
-                LibrarySegment.HISTORY -> historySegment(state, actions.onOpenItem, focus)
             }
         }
     }
 }
 
-/** «Продолжить» — начатое, но не досмотренное. Ведёт в карточку тайтла: там и «продолжить», и контекст. */
-private fun LazyGridScope.continueSegment(
-    continuations: List<Continuation>,
+/**
+ * «Я смотрю» — тайтлы «в процессе», одним запросом на тип (см. [LibraryState.watching]).
+ * Ведёт в карточку тайтла: там и «продолжить», и контекст.
+ */
+private fun LazyGridScope.watchingSegment(
+    watching: List<WatchingItem>,
     onOpenItem: (Int) -> Unit,
     focus: TvScreenFocus,
 ) {
-    if (continuations.isEmpty()) {
+    if (watching.isEmpty()) {
         emptyItem(
             icon = Icons.Filled.PlayCircleOutline,
             title = "Ничего не начато",
@@ -354,10 +360,10 @@ private fun LazyGridScope.continueSegment(
         )
         return
     }
-    items(continuations, key = { it.itemId }) { continuation ->
-        ContinueWatchingCard(
-            continuation = continuation,
-            returnKey = "continue:${continuation.itemId}",
+    items(watching, key = { it.itemId }) { item ->
+        WatchingCard(
+            item = item,
+            returnKey = "watching:${item.itemId}",
             focus = focus,
             onOpenItem = onOpenItem,
         )
@@ -469,31 +475,6 @@ private fun LazyGridScope.folderPosters(
     }
 }
 
-/** «История» — всё просмотренное. Как и «Продолжить», ведёт в карточку тайтла. */
-private fun LazyGridScope.historySegment(
-    state: LibraryState,
-    onOpenItem: (Int) -> Unit,
-    focus: TvScreenFocus,
-) {
-    if (state.history.isEmpty()) {
-        emptyItem(
-            icon = Icons.Filled.History,
-            title = "История пуста",
-            hint = "Здесь появится всё, что вы смотрели",
-        )
-        return
-    }
-    items(state.history, key = { it.itemId }) { entry ->
-        HistoryWatchingCard(
-            entry = entry,
-            item = state.historyItems[entry.itemId],
-            returnKey = "history:${entry.itemId}",
-            focus = focus,
-            onOpenItem = onOpenItem,
-        )
-    }
-}
-
 private fun LazyGridScope.emptyItem(icon: ImageVector, title: String, hint: String) {
     item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
         MineEmpty(icon = icon, title = title, hint = hint)
@@ -520,64 +501,37 @@ private fun MineEmpty(icon: ImageVector, title: String, hint: String) {
     }
 }
 
+/**
+ * Карточка тайтла «в процессе». Без года/жанра/рейтинга — `watching/{type}` их не отдаёт
+ * (см. [WatchingItem]), а тянуть их отдельным getItemDetails на каждую карточку — это ровно тот
+ * N+1, которого список избегает. Бейдж — счётчик недосмотренных серий, готовый от сервера;
+ * у фильмов его нет вовсе (сервер не считает серии там, где их одна).
+ */
 @Composable
-private fun ContinueWatchingCard(
-    continuation: Continuation,
+private fun WatchingCard(
+    item: WatchingItem,
     returnKey: String,
     focus: TvScreenFocus,
     onOpenItem: (Int) -> Unit,
 ) {
-    val unwatchedCount = continuation.item.tracklist.count { it.watchStatus != 1 }
-    val rating = ratingLabel(continuation.item.rating.external)
     TvPosterCard(
-        title = continuation.title,
-        meta = gridPosterMeta(
-            year = continuation.item.year,
-            genre = continuation.item.genres.firstOrNull()?.title,
-        ),
-        posterUrl = continuation.item.posters.medium.ifBlank { continuation.item.posters.small },
-        onClick = { onOpenItem(continuation.itemId) },
+        title = item.title,
+        meta = null,
+        posterUrl = item.posterUrl,
+        onClick = { onOpenItem(item.itemId) },
         modifier = focus.item(returnKey),
         width = TvMetrics.CompactPosterWidth,
         height = TvMetrics.CompactPosterHeight,
-        // Рейтинг рисуем сами, вместе со счётчиком серий в одном ряду — иначе оба badge'а
-        // встали бы в один и тот же угол карточки и легли друг на друга.
         posterContent = { url, posterModifier ->
             Box(posterModifier) {
-                TvPoster(url, continuation.title, Modifier.fillMaxSize(), TvMetrics.PosterShape)
-                Row(
-                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    if (rating != null) TvRatingPill(rating = rating)
-                    if (unwatchedCount > 0) TvCountBadge(count = unwatchedCount)
+                TvPoster(url, item.title, Modifier.fillMaxSize(), TvMetrics.PosterShape)
+                val newCount = item.newEpisodes
+                if (newCount != null && newCount > 0) {
+                    Box(modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)) {
+                        TvCountBadge(count = newCount)
+                    }
                 }
             }
-        },
-    )
-}
-
-@Composable
-private fun HistoryWatchingCard(
-    entry: WatchHistory,
-    item: Item?,
-    returnKey: String,
-    focus: TvScreenFocus,
-    onOpenItem: (Int) -> Unit,
-) {
-    TvPosterCard(
-        title = entry.title,
-        // item — null, когда детали тайтла не доехали (см. LibraryState.historyItems): карточка
-        // остаётся кликабельной, просто без меты и рейтинга, а не пропадает из истории целиком.
-        meta = item?.let { gridPosterMeta(year = it.year, genre = it.genres.firstOrNull()?.title) },
-        posterUrl = item?.posters?.medium?.ifBlank { item.posters.small } ?: entry.posterSmall.orEmpty(),
-        onClick = { onOpenItem(entry.itemId) },
-        modifier = focus.item(returnKey),
-        width = TvMetrics.CompactPosterWidth,
-        height = TvMetrics.CompactPosterHeight,
-        rating = item?.let { ratingLabel(it.rating.external) },
-        posterContent = { url, posterModifier ->
-            TvPoster(url, entry.title, posterModifier, TvMetrics.PosterShape)
         },
     )
 }
@@ -948,7 +902,7 @@ private fun LoadingBox(modifier: Modifier = Modifier) {
 
 /** Колонки не открытых подборок: компактные постеры — впятеро, папки — втроём. */
 private fun columnsFor(segment: LibrarySegment): Int = when (segment) {
-    LibrarySegment.CONTINUE, LibrarySegment.HISTORY -> LIBRARY_POSTER_COLUMNS
+    LibrarySegment.WATCHING -> LIBRARY_POSTER_COLUMNS
     LibrarySegment.BOOKMARKS -> FOLDER_COLUMNS
 }
 

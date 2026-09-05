@@ -3,8 +3,7 @@ package com.filmax.feature.library.common
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.favorites.model.FavoriteItem
 import com.filmax.core.domain.user.model.BookmarkFolder
-import com.filmax.core.domain.watching.model.Continuation
-import com.filmax.core.domain.watching.model.WatchHistory
+import com.filmax.core.domain.watching.model.WatchingItem
 
 /** Два самостоятельных раздела бывшего «Моё». */
 enum class LibrarySection(val title: String) {
@@ -39,15 +38,12 @@ data class OpenBookmarkFolder(
 
 data class LibraryState(
     val favorites: List<FavoriteItem> = emptyList(),
-    val history: List<WatchHistory> = emptyList(),
     /**
-     * Полный тайтл (год, жанры, рейтинг) для карточек «Истории» — по itemId, побочный продукт
-     * того же резолва, что считает [continuations]. Записи, для которых детали не доехали,
-     * в карте отсутствуют — карточка просто не покажет мету и рейтинг.
+     * Тайтлы «в процессе» — одним запросом на тип (`watching/{type}`), без резолва каждого
+     * тайтла через getItemDetails. Без точной позиции: она не нужна для списка, только при
+     * открытии конкретного тайтла (экран деталей запросит её сам).
      */
-    val historyItems: Map<Int, Item> = emptyMap(),
-    /** Только реально незавершённые тайтлы; вычисляются по общей continuation-логике. */
-    val continuations: List<Continuation> = emptyList(),
+    val watching: List<WatchingItem> = emptyList(),
     val lists: List<BookmarkFolder> = emptyList(),
     /** Уже загруженные первые страницы для видимых плиток подборок. */
     val folderPreviews: Map<Int, BookmarkFolderPreview> = emptyMap(),

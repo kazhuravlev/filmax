@@ -1,8 +1,8 @@
 package com.filmax.data.watching.remote
 
 import com.filmax.data.watching.remote.dto.HistoryListResponseDto
-import com.filmax.data.watching.remote.dto.HistoryResponseDto
 import com.filmax.data.watching.remote.dto.NotificationsDto
+import com.filmax.data.watching.remote.dto.WatchingListResponseDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.forms.submitForm
@@ -14,12 +14,15 @@ import io.ktor.http.Parameters
 internal class WatchingApi(private val client: HttpClient) {
 
     /**
-     * Список начатого. [type] — только `movies` или `serials`: других значений у kino.watch нет,
-     * и на «all» эндпоинт молча отдавал пустоту (отсюда вечно пустая история).
+     * Список тайтлов «в процессе» одним запросом на тип — без обхода `/history` по сериям.
+     * [type] — только `movies` или `serials`: других значений у kino.watch нет, и на «all»
+     * эндпоинт молча отдавал пустоту. `subscribed=1` — только отмеченные «Буду смотреть»
+     * (для `movies` параметр сервер игнорирует, но передаём всегда — так проще сигнатура).
      *
-     * Прогресса тут НЕТ — только id/title/posters. За прогрессом — [getHistoryList].
+     * Точного таймкода тут НЕТ — только id/title/posters (+ total/watched/new у сериалов).
+     * За позицией конкретного тайтла — отдельным запросом, `CatalogApi.getItemDetails`.
      */
-    suspend fun getHistory(type: String, subscribed: Int = 1): HistoryResponseDto =
+    suspend fun getWatchingList(type: String, subscribed: Int = 1): WatchingListResponseDto =
         client.get("api/v1/watching/$type") {
             parameter("subscribed", subscribed)
         }.body()

@@ -6,9 +6,11 @@ import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.domain.watching.model.Notification
 import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchProgress
+import com.filmax.core.domain.watching.model.WatchingItem
 import com.filmax.data.watching.remote.WatchingApi
 import com.filmax.data.watching.remote.dto.HistoryEntryDto
 import com.filmax.data.watching.remote.dto.PaginationDto
+import com.filmax.data.watching.remote.dto.WatchingItemDto
 
 /** `watching/{type}`: единственный трек «досмотрено» — статус 1, как и в `items/{id}`. */
 private const val WATCH_STATUS_IN_PROGRESS = 0
@@ -36,17 +38,27 @@ private fun HistoryEntryDto.toDomain(): WatchHistory {
     )
 }
 
+private fun WatchingItemDto.toDomain(isSeries: Boolean): WatchingItem = WatchingItem(
+    itemId = id,
+    title = title,
+    isSeries = isSeries,
+    posterUrl = posters?.medium?.ifBlank { posters.small }.orEmpty(),
+    totalEpisodes = total,
+    watchedEpisodes = watched,
+    newEpisodes = newEpisodes,
+)
+
 internal class WatchingRepositoryImpl(
     private val api: WatchingApi,
 ) : WatchingRepository {
 
     /**
-     * История с прогрессом — из `api/v1/history`, а не из `watching/{type}`.
+     * История с ТОЧНОЙ позицией — из `api/v1/history`, а не из `watching/{type}`.
      *
-     * `watching/{type}` возвращает только id/title/posters, без объекта `watching`: доля просмотра
-     * там всегда выходила нулевой, и «Продолжить» физически не мог наполниться. `api/v1/history`
-     * отдаёт `time` по каждому видео, саму серию (`media`) с её кадром и длительностью — и уже
-     * отсортирован сервером по свежести.
+     * `watching/{type}` (см. [getWatchingTitles]) не отдаёт таймкод вовсе — годится для списка
+     * «в процессе», но не для точной позиции конкретного видео. `api/v1/history` отдаёт `time`
+     * по каждому видео, саму серию (`media`) с её кадром и длительностью — и уже отсортирован
+     * сервером по свежести. Источник для [com.filmax.core.domain.watching.model.Continuation].
      *
      * История ведётся ПО СЕРИЯМ: один сериал приходит несколькими записями (s1e1, s1e2, …),
      * а зрителю нужен один тайтл — тот, на котором он остановился. Страница — это `perpage` СЫРЫХ
@@ -80,6 +92,17 @@ internal class WatchingRepositoryImpl(
 
     /** `total` у kino.watch — число страниц, а не число элементов (как и в остальных списках). */
     private fun PaginationDto.hasNextPage(): Boolean = current < total
+
+    /**
+     * Тайтлы «в процессе» — одним запросом на [type], без обхода `/history` и без резолва
+     * каждого тайтла через `getItemDetails`. Точной позиции тут нет (см. [WatchingItem]) — она
+     * не нужна для списка, только при открытии конкретного тайтла.
+     */
+    override suspend fun getWatchingTitles(type: String, subscribed: Int): RequestResult<List<WatchingItem>> =
+        safeRequest {
+            val isSeries = type == "serials"
+            api.getWatchingList(type, subscribed).items.map { it.toDomain(isSeries) }
+        }
 
     override suspend fun saveProgress(itemId: Int, videoId: Int, timeSeconds: Int): RequestResult<Unit> =
         safeRequest { api.saveProgress(itemId, videoId, timeSeconds) }

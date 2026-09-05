@@ -1,6 +1,5 @@
 package com.filmax.feature.library.common
 
-import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemPage
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.firstErrorMessage
@@ -9,9 +8,7 @@ import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.WatchingRepository
-import com.filmax.core.domain.watching.model.Continuation
-import com.filmax.core.domain.watching.model.ContinuationResolver
-import com.filmax.core.domain.watching.model.WatchHistory
+import com.filmax.core.domain.watching.model.WatchingItem
 import com.filmax.core.presentation.BaseScreenModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -22,7 +19,6 @@ import kotlinx.coroutines.coroutineScope
 @Suppress("TooManyFunctions")
 class LibraryScreenModel(
     private val watching: WatchingRepository,
-    private val continuations: ContinuationResolver,
     private val user: UserRepository,
     private val favoritesRepo: FavoritesRepository,
 ) : BaseScreenModel<LibraryState, LibrarySideEffect, LibraryEvent>(LibraryState()) {
@@ -66,37 +62,36 @@ class LibraryScreenModel(
     private fun refreshWatching() {
         screenModelScope {
             updateState { it.copy(loading = true, error = null) }
-            val history = watching.getHistory()
-            val resolved = history.getOrNull()?.let { resolveWatching(it) }
+            val watchingResult = loadWatchingTitles()
             updateState {
                 it.copy(
                     loading = false,
-                    history = history.getOrNull().orEmpty(),
-                    continuations = resolved?.continuations.orEmpty(),
-                    historyItems = resolved?.historyItems.orEmpty(),
-                    error = firstErrorMessage(history),
+                    watching = watchingResult.titles,
+                    error = watchingResult.error,
                 )
             }
         }
     }
 
     /**
-     * Резолвит continuation ОДИН раз на всю историю и переиспользует результат дважды:
-     * реально незавершённые — для «Продолжить», а полный тайтл (год/жанр/рейтинг) КАЖДОЙ
-     * записи — для карточек «Истории». Второй сетевой проход по каталогу ради одних и тех
-     * же тайтлов был бы чистым расточительством.
+     * Тайтлы «в процессе» — фильмы и сериалы одним запросом на тип, параллельно. Каждый ответ уже
+     * готовый список тайтлов (не серий), без обхода `/history` и без getItemDetails на каждый —
+     * см. [WatchingRepository.getWatchingTitles].
      */
-    private suspend fun resolveWatching(history: List<WatchHistory>): ResolvedWatching {
-        val resolved = continuations.resolve(history)
-        return ResolvedWatching(
-            continuations = resolved.filter { it.isActualContinuation },
-            historyItems = resolved.associate { it.itemId to it.item },
+    private suspend fun loadWatchingTitles(): WatchingResult = coroutineScope {
+        val moviesDeferred = async { watching.getWatchingTitles(TYPE_MOVIES) }
+        val serialsDeferred = async { watching.getWatchingTitles(TYPE_SERIALS) }
+        val movies = moviesDeferred.await()
+        val serials = serialsDeferred.await()
+        WatchingResult(
+            titles = movies.getOrNull().orEmpty() + serials.getOrNull().orEmpty(),
+            error = firstErrorMessage(movies, serials),
         )
     }
 
-    private data class ResolvedWatching(
-        val continuations: List<Continuation>,
-        val historyItems: Map<Int, Item>,
+    private data class WatchingResult(
+        val titles: List<WatchingItem>,
+        val error: String?,
     )
 
     private fun refreshBookmarks() {
@@ -158,19 +153,16 @@ class LibraryScreenModel(
     override fun onFetchData() {
         screenModelScope {
             coroutineScope {
-                val historyDeferred = async { watching.getHistory() }
+                val watchingDeferred = async { loadWatchingTitles() }
                 val listsDeferred = async { user.getBookmarkFolders() }
-                val history = historyDeferred.await()
+                val watchingResult = watchingDeferred.await()
                 val lists = listsDeferred.await()
-                val resolved = history.getOrNull()?.let { resolveWatching(it) }
                 updateState {
                     it.copy(
                         loading = false,
-                        history = history.getOrNull().orEmpty(),
-                        continuations = resolved?.continuations.orEmpty(),
-                        historyItems = resolved?.historyItems.orEmpty(),
+                        watching = watchingResult.titles,
                         lists = lists.getOrNull().orEmpty(),
-                        error = firstErrorMessage(history, lists),
+                        error = watchingResult.error ?: firstErrorMessage(lists),
                     )
                 }
             }
@@ -180,20 +172,15 @@ class LibraryScreenModel(
     private fun removeFromHistory(itemId: Int) {
         screenModelScope {
             watching.clearHistory(itemId)
-            updateState { s ->
-                s.copy(
-                    history = s.history.filter { it.itemId != itemId },
-                    continuations = s.continuations.filter { it.itemId != itemId },
-                )
-            }
+            updateState { s -> s.copy(watching = s.watching.filter { it.itemId != itemId }) }
         }
     }
 
     private fun clearHistory() {
-        val ids = state.history.map { it.itemId }
+        val ids = state.watching.map { it.itemId }
         screenModelScope { _ ->
             ids.forEach { id -> watching.clearHistory(id) }
-            updateState { it.copy(history = emptyList(), continuations = emptyList()) }
+            updateState { it.copy(watching = emptyList()) }
         }
     }
 
@@ -394,5 +381,9 @@ class LibraryScreenModel(
     private companion object {
         /** Первая страница содержимого папки (нумерация kino.watch — с единицы). */
         const val FIRST_PAGE = 1
+
+        /** Единственные два значения `type`, которые понимает `watching/{type}`. */
+        const val TYPE_MOVIES = "movies"
+        const val TYPE_SERIALS = "serials"
     }
 }
