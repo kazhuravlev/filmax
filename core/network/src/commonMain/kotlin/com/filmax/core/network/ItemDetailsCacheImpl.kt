@@ -37,19 +37,19 @@ class ItemDetailsCacheImpl(private val settings: Settings) : ItemDetailsCache {
         ItemDetailsCacheAccess.cache = this
     }
 
-    override suspend fun get(itemId: Int): String? {
+    override suspend fun get(key: String): String? {
         val maxAgeDays = ttlState.value.days ?: return null
-        val cachedAt = settings.getLongOrNull(PREFIX_TIMESTAMP + itemId)
+        val cachedAt = settings.getLongOrNull(PREFIX_TIMESTAMP + key)
         val isFresh = cachedAt != null && currentTimeMillis() - cachedAt <= maxAgeDays * MILLIS_PER_DAY
-        return settings.getStringOrNull(PREFIX_JSON + itemId).takeIf { isFresh }
+        return settings.getStringOrNull(PREFIX_JSON + key).takeIf { isFresh }
     }
 
-    override fun remember(itemId: Int, json: String) {
+    override fun remember(key: String, json: String) {
         if (ttlState.value == ItemCacheTtl.NEVER) return
-        val jsonKey = PREFIX_JSON + itemId
+        val jsonKey = PREFIX_JSON + key
         val isNewEntry = settings.getStringOrNull(jsonKey) == null
         settings.putString(jsonKey, json)
-        settings.putLong(PREFIX_TIMESTAMP + itemId, currentTimeMillis())
+        settings.putLong(PREFIX_TIMESTAMP + key, currentTimeMillis())
         if (isNewEntry) {
             val updated = countState.value + 1
             countState.value = updated

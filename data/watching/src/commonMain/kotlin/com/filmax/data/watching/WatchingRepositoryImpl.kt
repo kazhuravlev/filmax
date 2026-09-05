@@ -1,5 +1,6 @@
 package com.filmax.data.watching
 
+import com.filmax.core.domain.cache.ItemDiscovery
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.safeRequest
 import com.filmax.core.domain.watching.WatchingRepository
@@ -20,6 +21,8 @@ private fun HistoryEntryDto.toDomain(): WatchHistory {
     // это средняя длительность по тайтлу, годная только как запасной вариант.
     val duration = media?.duration?.takeIf { it > 0 }
         ?: item.duration?.average?.takeIf { it > 0 }?.toInt()
+    // /history отдаёт тайтл без жанров/рейтинга/трейлера — докачиваем в фоне, см. ItemDiscovery.
+    ItemDiscovery.discovered(item.id)
     return WatchHistory(
         itemId = item.id,
         title = item.title,
@@ -38,15 +41,19 @@ private fun HistoryEntryDto.toDomain(): WatchHistory {
     )
 }
 
-private fun WatchingItemDto.toDomain(isSeries: Boolean): WatchingItem = WatchingItem(
-    itemId = id,
-    title = title,
-    isSeries = isSeries,
-    posterUrl = posters?.medium?.ifBlank { posters.small }.orEmpty(),
-    totalEpisodes = total,
-    watchedEpisodes = watched,
-    newEpisodes = newEpisodes,
-)
+private fun WatchingItemDto.toDomain(isSeries: Boolean): WatchingItem {
+    // watching/{type} тоже без полных данных — тот же повод на фоновую докачку, что и в history.
+    ItemDiscovery.discovered(id)
+    return WatchingItem(
+        itemId = id,
+        title = title,
+        isSeries = isSeries,
+        posterUrl = posters?.medium?.ifBlank { posters.small }.orEmpty(),
+        totalEpisodes = total,
+        watchedEpisodes = watched,
+        newEpisodes = newEpisodes,
+    )
+}
 
 internal class WatchingRepositoryImpl(
     private val api: WatchingApi,

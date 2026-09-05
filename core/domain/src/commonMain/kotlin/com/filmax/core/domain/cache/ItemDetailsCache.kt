@@ -19,19 +19,21 @@ enum class ItemCacheTtl(val days: Int?) {
 }
 
 /**
- * Кэш «статической» информации о тайтлах (`items/{id}`) — независимый от кэша картинок. Хранит
- * сырой JSON (формат решает вызывающий, см. `data:catalog`), не доменную модель: так `core:domain`
- * не тянет зависимость на `kotlinx.serialization` ради одного этого кэша.
+ * Кэш «статической» информации о тайтлах (`items/{id}`, `items/similar`) — независимый от кэша
+ * картинок. Хранит сырой JSON (формат и ключ решает вызывающий, см. `data:catalog`), не доменную
+ * модель: так `core:domain` не тянет зависимость на `kotlinx.serialization` ради одного этого
+ * кэша. [key] — строка вида `item:123`/`similar:123`, а не голый id: под одним хранилищем и
+ * счётчиком уживаются оба разных по смыслу кэша (сами детали тайтла и список похожих на него).
  *
  * [count] — не результат сканирования хранилища на каждый рендер настроек, а персистентный
- * счётчик, который реализация инкрементит сама в момент первой записи нового id (см.
+ * счётчик, который реализация инкрементит сама в момент первой записи нового ключа (см.
  * `ItemDetailsCacheImpl` в core:network).
  */
 interface ItemDetailsCache {
-    suspend fun get(itemId: Int): String?
+    suspend fun get(key: String): String?
 
     /** Синхронная, не suspend: вызывается из чистого маппера (`ItemDto.toDomain()`) без корутины. */
-    fun remember(itemId: Int, json: String)
+    fun remember(key: String, json: String)
 
     val ttl: StateFlow<ItemCacheTtl>
     suspend fun setTtl(ttl: ItemCacheTtl)
@@ -51,8 +53,8 @@ object ItemDetailsCacheAccess {
 }
 
 private object NoopItemDetailsCache : ItemDetailsCache {
-    override suspend fun get(itemId: Int): String? = null
-    override fun remember(itemId: Int, json: String) = Unit
+    override suspend fun get(key: String): String? = null
+    override fun remember(key: String, json: String) = Unit
     override val ttl: StateFlow<ItemCacheTtl> = MutableStateFlow(ItemCacheTtl.MONTH)
     override suspend fun setTtl(ttl: ItemCacheTtl) = Unit
     override val count: StateFlow<Int> = MutableStateFlow(0)

@@ -70,9 +70,16 @@ class DetailsScreenModel(
 
     override fun onFetchData() {
         screenModelScope { _ ->
-            val itemResult = catalog.getItemDetails(route.itemId)
-            val similar = catalog.getSimilarItems(route.itemId).getOrNull().orEmpty()
-            val history = findHistoryEntry()
+            // Три независимых запроса — параллельно, а не по очереди: без этого кэш-хит по
+            // деталям тайтла (см. CatalogRepositoryImpl.getItemDetails) не давал бы никакого
+            // выигрыша в скорости — «похожее» и историю всё равно ждали бы одно за другим.
+            val (itemResult, similarResult, history) = coroutineScope {
+                val itemDeferred = async { catalog.getItemDetails(route.itemId) }
+                val similarDeferred = async { catalog.getSimilarItems(route.itemId) }
+                val historyDeferred = async { findHistoryEntry() }
+                Triple(itemDeferred.await(), similarDeferred.await(), historyDeferred.await())
+            }
+            val similar = similarResult.getOrNull().orEmpty()
             when (itemResult) {
                 is RequestResult.Success -> {
                     updateState {

@@ -15,12 +15,15 @@ import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.safeRequest
 import com.filmax.core.network.networkJson
+import com.filmax.data.catalog.mapper.itemCacheKey
+import com.filmax.data.catalog.mapper.similarCacheKey
 import com.filmax.data.catalog.mapper.toDomain
 import com.filmax.data.catalog.mapper.toDomainOnly
 import com.filmax.data.catalog.remote.CatalogApi
 import com.filmax.data.catalog.remote.ItemsQuery
 import com.filmax.data.catalog.remote.dto.ItemDto
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 
 // Значение параметра `quality` для фильтра «только 4K» (kino.watch: 4 = 2160p).
 private const val QUALITY_4K = 4
@@ -62,7 +65,7 @@ internal class CatalogRepositoryImpl(
     // и т.п.) почти не меняется — при попадании в кэш ItemDto.toDomain() уже сохранил его туда
     // (см. CatalogMapper), здесь только читаем: свежая запись — не ходим в сеть вовсе.
     override suspend fun getItemDetails(id: Int): RequestResult<Item> = safeRequest {
-        val cached = itemCache.get(id)
+        val cached = itemCache.get(itemCacheKey(id))
         if (cached != null) {
             networkJson.decodeFromString<ItemDto>(cached).toDomainOnly()
         } else {
@@ -72,8 +75,23 @@ internal class CatalogRepositoryImpl(
 
     // distinctBy(id) здесь и в подборках: сервер может отдать тайтл дважды, а списки уходят
     // в Lazy-контейнеры с key = id — дубликат ключа роняет Compose («Key … was already used»).
-    override suspend fun getSimilarItems(id: Int): RequestResult<List<Item>> =
-        safeRequest { api.getSimilarItems(id).items.map { it.toDomain() }.distinctBy { it.id } }
+    //
+    // Список «похожих» тоже кэшируем (не только отдельные тайтлы в нём, это делает toDomain()
+    // сам по себе): иначе открытие каждой карточки заново ждёт этот запрос, хотя список для
+    // конкретного тайтла почти не меняется. Кэш-хит — toDomainOnly (без повторной заявки в
+    // фоновую закачку картинок/переучёта TTL, см. CatalogMapper), промах — обычный toDomain().
+    override suspend fun getSimilarItems(id: Int): RequestResult<List<Item>> = safeRequest {
+        val cacheKey = similarCacheKey(id)
+        val cached = itemCache.get(cacheKey)
+        val items = if (cached != null) {
+            networkJson.decodeFromString<List<ItemDto>>(cached).map { it.toDomainOnly() }
+        } else {
+            val dtos = api.getSimilarItems(id).items
+            itemCache.remember(cacheKey, networkJson.encodeToString(dtos))
+            dtos.map { it.toDomain() }
+        }
+        items.distinctBy { it.id }
+    }
 
     override suspend fun getGenres(): RequestResult<List<Genre>> =
         safeRequest { api.getGenres().items.map { it.toDomain() } }

@@ -44,17 +44,23 @@ fun ItemsResponseDto.toDomain(): ItemPage = ItemPage(
     pagination = pagination?.toDomain() ?: Pagination(0, 1, DEFAULT_PER_PAGE),
 )
 
+/** Ключ кэша тайтла (`items/{id}`) — см. [ItemDetailsCacheAccess]. */
+internal fun itemCacheKey(id: Int): String = "item:$id"
+
+/** Ключ кэша списка «похожих» на тайтл (`items/similar?id=`) — см. `CatalogRepositoryImpl.getSimilarItems`. */
+internal fun similarCacheKey(id: Int): String = "similar:$id"
+
 /**
  * Полный маппинг + «заявки» в фоновые кэши: любой тайтл, прошедший через API (список, поиск,
  * похожее, детали) — кандидат на фоновую закачку постера и на кэш статической информации, даже
  * если экран его ещё не отрисовал. Единственное место, где эти два побочных эффекта запускаются —
- * повторный вызов [toDomainCached] (кэш-хит в `CatalogRepositoryImpl.getItemDetails`) их МИНУЕТ,
- * иначе TTL кэша тайтлов растягивался бы на каждый повторный просмотр вместо честного отсчёта
- * от момента реальной закачки с сервера.
+ * повторный вызов [toDomainOnly] (кэш-хит в `CatalogRepositoryImpl`) их МИНУЕТ, иначе TTL кэша
+ * тайтлов растягивался бы на каждый повторный просмотр вместо честного отсчёта от момента
+ * реальной закачки с сервера.
  */
 fun ItemDto.toDomain(): Item {
     val item = toDomainOnly()
-    ItemDetailsCacheAccess.cache.remember(id, networkJson.encodeToString(this))
+    ItemDetailsCacheAccess.cache.remember(itemCacheKey(id), networkJson.encodeToString(this))
     ImageDiscovery.discovered(item.posterPrefetchImages())
     return item
 }
