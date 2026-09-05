@@ -310,7 +310,7 @@ private fun DetailsContent(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().then(focus.containerModifier),
-            contentPadding = PaddingValues(top = TvMetrics.SafeVertical, bottom = ContentBottomPadding),
+            contentPadding = PaddingValues(top = TvMetrics.ContentTop, bottom = ContentBottomPadding),
         ) {
             item(key = "hero") {
                 DetailsHero(
@@ -719,12 +719,12 @@ private fun RatingValue(value: String, source: String) {
 @Composable
 private fun DetailsAbout(item: Item) {
     if (item.plot.isNotBlank()) {
+        // Без maxLines/ellipsis: это единственное место, где показан полный синопсис — резать
+        // его до 4 строк означало обрезать описание у большинства тайтлов на полуслове.
         Text(
             item.plot,
             style = MaterialTheme.typography.bodyLarge,
             color = TvOnSurfaceVariant,
-            maxLines = 4,
-            overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .padding(start = TvMetrics.SafeHorizontal, end = TvMetrics.SafeHorizontal, top = 22.dp)
                 .widthIn(max = ReadableTextWidth),

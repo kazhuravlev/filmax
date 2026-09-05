@@ -70,7 +70,10 @@ object TvMetrics {
 
     /** Высота hero на главной и в деталях. */
     val HeroHeight = 326.dp
-    val DetailsHeroHeight = 346.dp
+
+    /** Заголовок (1 строка, ~30dp) + отступ 18dp + постер 210dp + нижний отступ 22dp — без запаса
+     * блок оставлял пустое место под собой, и «Описание» уезжало вниз (см. DetailsHero). */
+    val DetailsHeroHeight = 290.dp
 
     // ── Формы: только скруглённый прямоугольник и круг ──────────────────────
     val PosterShape = RoundedCornerShape(8.dp)
