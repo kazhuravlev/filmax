@@ -13,6 +13,8 @@ import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchingItem
 import com.filmax.core.presentation.BaseScreenModel
+import com.filmax.core.presentation.DataDomain
+import com.filmax.core.presentation.DataInvalidation
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -49,6 +51,7 @@ class LibraryScreenModel(
                 resetServerRetryCycle()
                 refresh(event.section)
             }
+            is LibraryEvent.RefreshIfDirty -> refreshIfDirty(event.section)
             is LibraryEvent.RemoveFromHistory -> removeFromHistory(event.itemId)
             LibraryEvent.ClearHistory -> clearHistory()
             is LibraryEvent.OpenFolder -> openFolder(event.folder)
@@ -66,6 +69,62 @@ class LibraryScreenModel(
         when (section) {
             LibrarySection.WATCHING -> refreshWatching()
             LibrarySection.BOOKMARKS -> refreshBookmarks()
+        }
+    }
+
+    /**
+     * Возврат на экран: ScreenModel переживает уход в детали (стек навигации его не убивает),
+     * поэтому по умолчанию ничего не делаем — то, что уже показано, остаётся как есть, без
+     * спиннера и похода в сеть. Если же что-то в этом разделе поменяли на другом экране
+     * (добавили в подборку, отметили «Я смотрю», сохранили прогресс) — тихо обновляем данные
+     * в фоне и перерисовываем экран, когда они придут.
+     */
+    private fun refreshIfDirty(section: LibrarySection) {
+        when (section) {
+            LibrarySection.WATCHING ->
+                if (DataInvalidation.consumeDirty(DataDomain.WATCHING)) refreshWatchingSilently()
+
+            LibrarySection.BOOKMARKS ->
+                if (DataInvalidation.consumeDirty(DataDomain.BOOKMARKS)) refreshBookmarksSilently()
+        }
+    }
+
+    /** Как [refreshWatching], но без `loading` и без баннера при сбое — попытка невидима снаружи. */
+    private fun refreshWatchingSilently() {
+        screenModelScope {
+            val watchingResult = loadWatchingSection()
+            if (watchingResult.error != null) {
+                // Не портим уже показанное сбойным пустым ответом и не теряем пометку:
+                // следующий возврат на экран попробует обновиться ещё раз.
+                DataInvalidation.markDirty(DataDomain.WATCHING)
+                return@screenModelScope
+            }
+            updateState { current ->
+                current.copy(
+                    watching = watchingResult.titles,
+                    history = watchingResult.history,
+                    titleDetails = current.titleDetails + watchingResult.titleDetails,
+                )
+            }
+        }
+    }
+
+    /** Как [refreshBookmarks], но без `loading` и без баннера при сбое — попытка невидима снаружи. */
+    private fun refreshBookmarksSilently() {
+        screenModelScope {
+            val folders = user.getBookmarkFolders().getOrNull()
+            if (folders == null) {
+                DataInvalidation.markDirty(DataDomain.BOOKMARKS)
+                return@screenModelScope
+            }
+            val folderIds = folders.mapTo(mutableSetOf()) { it.id }
+            updateState { current ->
+                current.copy(
+                    lists = folders,
+                    folderPreviews = current.folderPreviews.filterKeys { it in folderIds },
+                    loadingFolderPreviews = current.loadingFolderPreviews.intersect(folderIds),
+                )
+            }
         }
     }
 

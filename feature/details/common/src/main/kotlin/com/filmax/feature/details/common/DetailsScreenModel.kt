@@ -15,6 +15,8 @@ import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.domain.watching.model.calculateContinuation
 import com.filmax.core.presentation.BaseScreenModel
+import com.filmax.core.presentation.DataDomain
+import com.filmax.core.presentation.DataInvalidation
 import com.filmax.feature.details.common.navigation.DetailsRoute
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -136,6 +138,8 @@ class DetailsScreenModel(
             val watched = watching.toggleWatched(item.id).getOrNull() ?: return@screenModelScope
             val history = findHistoryEntry()
             updateState { it.copy(isWatching = watched, continuation = calculateContinuation(item, history)) }
+            // «Я смотрю»/история — это то же самое, что показывает «Я смотрю» в библиотеке.
+            DataInvalidation.markDirty(DataDomain.WATCHING)
         }
     }
 
@@ -170,6 +174,9 @@ class DetailsScreenModel(
             screenModelScope {
                 favorites.toggle(item.toFavoriteItem())
                 watching.toggleWatchlist(route.itemId)
+                // «Буду смотреть» — это подписка, которая и формирует список «Я смотрю» в
+                // библиотеке, и попутно обычная подборка в счётчиках «Подборок».
+                DataInvalidation.markDirty(DataDomain.WATCHING, DataDomain.BOOKMARKS)
             }
             return
         }
@@ -184,6 +191,7 @@ class DetailsScreenModel(
             }
             updateFolderMemberships()
             reloadBookmarkFolders()
+            DataInvalidation.markDirty(DataDomain.BOOKMARKS)
         }
     }
 
@@ -199,6 +207,7 @@ class DetailsScreenModel(
             scannedMemberships = scannedMemberships + created.id
             updateFolderMemberships()
             reloadBookmarkFolders()
+            DataInvalidation.markDirty(DataDomain.BOOKMARKS)
         }
     }
 

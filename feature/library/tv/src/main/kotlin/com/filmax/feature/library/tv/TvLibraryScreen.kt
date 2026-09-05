@@ -148,9 +148,10 @@ fun TvLibraryScreen(
     val state by screenModel.collectAsState()
     val retryNotice by screenModel.collectServerRetryNoticeAsState()
     RefreshOnTopNavReselect { screenModel.dispatch(LibraryEvent.Refresh(section)) }
-    // ViewModel живёт дольше экрана: без этого возврат из деталей (например, после «Я смотрю»)
-    // показывал бы список, каким он был при первом входе в раздел.
-    LaunchedEffect(section) { screenModel.dispatch(LibraryEvent.Refresh(section)) }
+    // ViewModel живёт дольше экрана: возврат из деталей — не повод перезагружать всё заново.
+    // Показываем то, что уже загружено, и тихо обновляем в фоне, только если данные раздела
+    // реально могли устареть (см. DataInvalidation) — без спиннера и лишнего похода в сеть.
+    LaunchedEffect(section) { screenModel.dispatch(LibraryEvent.RefreshIfDirty(section)) }
     var segment by rememberSaveable(section) { mutableStateOf(section.initialSegment) }
     val ui = remember { TvBookmarkUi() }
 

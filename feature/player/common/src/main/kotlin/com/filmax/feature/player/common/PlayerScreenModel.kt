@@ -22,6 +22,8 @@ import com.filmax.core.domain.playback.PlaybackSettingsRepository
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.presentation.BaseScreenModel
+import com.filmax.core.presentation.DataDomain
+import com.filmax.core.presentation.DataInvalidation
 import com.filmax.feature.player.common.navigation.PlayerRoute
 import kotlinx.coroutines.flow.first
 import kotlin.math.abs
@@ -403,6 +405,8 @@ class PlayerScreenModel(
             } else {
                 watching.saveProgress(item.id, track.number, seconds)
             }
+            // Позиция ушла на сервер — «Я смотрю» в библиотеке может отставать до возврата туда.
+            DataInvalidation.markDirty(DataDomain.WATCHING)
         }
     }
 
