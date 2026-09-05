@@ -1,5 +1,6 @@
 package com.filmax.core.domain.common
 
+import com.filmax.core.domain.error.AppError
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -25,6 +26,11 @@ suspend inline fun <T> safeRequest(crossinline block: suspend () -> T): RequestR
         // исключение с URL и кодом, включая 500-е) и падения парсинга. Что из этого поедет в
         // телеметрию событием, а что крошкой, решает reportRequestFailure.
         ErrorReporting.reporter.reportRequestFailure(error)
+        // Offline/Timeout — похоже, что не сервер лежит, а недоступен конкретный хост (блокировка
+        // провайдером и т.п.). Даём сети шанс переключиться на другой хост при следующем запросе.
+        if (AppError.resolve(error.message, error).let { it == AppError.Offline || it == AppError.Timeout }) {
+            ConnectionFailures.handler.onConnectionFailure()
+        }
         RequestResult.Error(error.message, error)
     }
 

@@ -13,6 +13,8 @@ kotlin {
     val koinBom = project.dependencies.platform(libs.koin.bom)
     sourceSets {
         commonMain.dependencies {
+            implementation(project(":core:domain"))
+
             api(libs.bundles.ktor.common)
             api(libs.kotlinx.serialization.json)
             api(libs.kotlinx.coroutines.core)

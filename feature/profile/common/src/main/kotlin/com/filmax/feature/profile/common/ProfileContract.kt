@@ -13,6 +13,10 @@ data class ProfileState(
     val quality: String? = null,
     /** Пользовательские настройки воспроизведения (качество/аудио/субтитры). */
     val playback: PlaybackSettings = PlaybackSettings(),
+    /** Текущий хост API (см. [com.filmax.core.domain.network.ApiHostRepository]). */
+    val apiHost: String = "",
+    /** Хосты-кандидаты для пункта настроек «Сервер API». */
+    val availableApiHosts: List<String> = emptyList(),
     val loading: Boolean = true,
     val error: String? = null,
 )
@@ -23,6 +27,7 @@ sealed interface ProfileEvent {
     data class SetAudioLanguage(val language: String) : ProfileEvent
     data class SetSubtitleLanguage(val language: String) : ProfileEvent
     data object ResetSubtitlePreferences : ProfileEvent
+    data class SetApiHost(val host: String) : ProfileEvent
 }
 
 sealed interface ProfileSideEffect {

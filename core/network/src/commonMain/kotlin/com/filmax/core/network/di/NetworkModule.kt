@@ -1,5 +1,7 @@
 package com.filmax.core.network.di
 
+import com.filmax.core.domain.network.ApiHostRepository
+import com.filmax.core.network.ApiHostRepositoryImpl
 import com.filmax.core.network.TokenStorage
 import com.filmax.core.network.buildHttpClient
 import com.filmax.core.network.isDebugBuild
@@ -13,10 +15,12 @@ import org.koin.dsl.module
  */
 val networkModule = module {
     single { TokenStorage(get()) }
+    single<ApiHostRepository> { ApiHostRepositoryImpl(settings = get(), engine = get()) }
     single<HttpClient> {
         buildHttpClient(
             engine = get(),
             tokenStorage = get(),
+            hostRepository = get(),
             // Только в debug: логи печатают URL, параметры и тела ответов.
             enableLogging = isDebugBuild,
         )

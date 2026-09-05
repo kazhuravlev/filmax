@@ -1,5 +1,6 @@
 package com.filmax.core.network
 
+import com.filmax.core.domain.network.ApiHostRepository
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngine
@@ -23,8 +24,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.coroutines.cancellation.CancellationException
 
-const val BASE_URL = "https://smarttvcdn.online/"
-
 val networkJson = Json {
     ignoreUnknownKeys = true
     coerceInputValues = true
@@ -40,7 +39,7 @@ val networkJson = Json {
 fun buildHttpClient(
     engine: HttpClientEngine,
     tokenStorage: TokenStorage,
-    baseUrl: String = BASE_URL,
+    hostRepository: ApiHostRepository,
     enableLogging: Boolean = false,
 ): HttpClient = HttpClient(engine) {
     expectSuccess = true
@@ -117,7 +116,12 @@ fun buildHttpClient(
     }
 
     defaultRequest {
-        url(baseUrl)
+        // Читаем hostRepository.currentHost на каждый запрос (а не один раз при сборке клиента):
+        // блок defaultRequest выполняется заново для каждого исходящего запроса, поэтому смена
+        // хоста (ручная или через дискавери) подхватывается без пересоздания HttpClient.
+        // Хвостовой слеш — как у прежнего BASE_URL: относительные пути ("api/v1/...") иначе
+        // резолвятся без последнего сегмента хоста.
+        url(hostRepository.currentHost.value + "/")
     }
 }
 

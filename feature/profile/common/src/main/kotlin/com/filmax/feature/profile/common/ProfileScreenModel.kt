@@ -3,6 +3,7 @@ package com.filmax.feature.profile.common
 import com.filmax.core.domain.auth.AuthRepository
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.favorites.FavoritesRepository
+import com.filmax.core.domain.network.ApiHostRepository
 import com.filmax.core.domain.playback.PlaybackSettingsRepository
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.watching.WatchingRepository
@@ -14,12 +15,14 @@ class ProfileScreenModel(
     private val auth: AuthRepository,
     private val favorites: FavoritesRepository,
     private val playbackSettings: PlaybackSettingsRepository,
+    private val apiHost: ApiHostRepository,
 ) : BaseScreenModel<ProfileState, ProfileSideEffect, ProfileEvent>(ProfileState()) {
 
     init {
         onFetchData()
         observeFavorites()
         observePlaybackSettings()
+        observeApiHost()
     }
 
     private fun observeFavorites() {
@@ -38,6 +41,14 @@ class ProfileScreenModel(
         }
     }
 
+    private fun observeApiHost() {
+        screenModelScope {
+            apiHost.currentHost.collect { host ->
+                updateState { it.copy(apiHost = host, availableApiHosts = apiHost.availableHosts) }
+            }
+        }
+    }
+
     override fun dispatch(event: ProfileEvent) {
         when (event) {
             ProfileEvent.Logout -> logout()
@@ -45,7 +56,12 @@ class ProfileScreenModel(
             is ProfileEvent.SetAudioLanguage -> setAudioLanguage(event.language)
             is ProfileEvent.SetSubtitleLanguage -> setSubtitleLanguage(event.language)
             ProfileEvent.ResetSubtitlePreferences -> resetSubtitlePreferences()
+            is ProfileEvent.SetApiHost -> setApiHost(event.host)
         }
+    }
+
+    private fun setApiHost(host: String) = screenModelScope {
+        apiHost.selectHost(host)
     }
 
     private fun setQuality(quality: String) = screenModelScope {

@@ -154,6 +154,10 @@ private fun ProfileContent(
             TvOverline("Приложение", color = TvOnSurfaceDim)
             Spacer(Modifier.height(12.dp))
             SettingRow(
+                spec = SettingRowSpec(label = "Сервер API", value = apiHostLabel(state.apiHost)),
+                onClick = actions.onCycleApiHost,
+            )
+            SettingRow(
                 spec = SettingRowSpec(label = "Проверить обновления"),
                 onClick = actions.onCheckUpdates,
             )
@@ -207,6 +211,7 @@ private data class ProfileActions(
     val onResetSubtitlePreferences: () -> Unit,
     val onLogout: () -> Unit,
     val onCheckUpdates: () -> Unit,
+    val onCycleApiHost: () -> Unit,
 )
 
 /** Лямбды замыкают текущий [state], поэтому пересобираются вместе с ним — без remember. */
@@ -235,6 +240,12 @@ private fun profileActions(
     },
     onResetSubtitlePreferences = { screenModel.dispatch(ProfileEvent.ResetSubtitlePreferences) },
     onLogout = { screenModel.dispatch(ProfileEvent.Logout) },
+    onCycleApiHost = {
+        val hosts = state.availableApiHosts
+        if (hosts.isNotEmpty()) {
+            screenModel.dispatch(ProfileEvent.SetApiHost(next(hosts, state.apiHost)))
+        }
+    },
 )
 
 @Composable
@@ -346,3 +357,6 @@ private fun next(options: List<String>, current: String): String {
     val index = options.indexOf(current)
     return options[(index + 1).mod(options.size)]
 }
+
+/** Хост без схемы — короче для строки настройки (`smarttvcdn.online` вместо полного URL). */
+private fun apiHostLabel(host: String): String = host.removePrefix("https://").removePrefix("http://")
