@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -29,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontWeight
@@ -59,6 +61,7 @@ import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
+import com.filmax.core.ui.components.GradientPosterPlaceholder
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.core.ui.components.appErrorText
 import com.filmax.core.ui.components.continueMeta
@@ -66,7 +69,6 @@ import com.filmax.core.ui.components.durationLabel
 import com.filmax.core.ui.components.posterUrl
 import com.filmax.feature.home.common.HomeEvent
 import com.filmax.feature.home.common.HomeRow
-import com.filmax.feature.home.common.HomeRowId
 import com.filmax.feature.home.common.HomeScreenModel
 import com.filmax.feature.home.common.HomeState
 import org.koin.androidx.compose.koinViewModel
@@ -143,7 +145,7 @@ private data class TvHomeActions(
     val onPlay: (itemId: Int, season: Int, videoId: Int, resumePositionSeconds: Int) -> Unit,
     val onOpenCollection: (id: Int, title: String) -> Unit,
     val onReload: () -> Unit,
-    val onLoadMoreRow: (HomeRowId) -> Unit,
+    val onLoadMoreRow: (String) -> Unit,
 )
 
 @Composable
@@ -169,8 +171,9 @@ private fun TvHomeContent(
         if (offline) {
             item(key = "offline") { TvOfflineBanner(onReload = actions.onReload) }
         }
-        state.hero?.let { hero ->
-            item(key = "hero") {
+        val hero = state.hero
+        when {
+            hero != null -> item(key = "hero") {
                 TvHero(
                     item = hero,
                     // Фильм — единственный трек, эпизод выбирать не из чего: PlayerRoute.videoId = -1.
@@ -179,6 +182,7 @@ private fun TvHomeContent(
                     focus = focus,
                 )
             }
+            state.heroLoading -> item(key = "hero-skeleton") { TvHeroSkeleton() }
         }
         tvRails(state = state, actions = actions, focus = focus)
     }
@@ -188,6 +192,10 @@ private fun TvHomeContent(
 private fun LazyListScope.tvRails(state: HomeState, actions: TvHomeActions, focus: TvScreenFocus) {
     state.rows.forEach { row ->
         if (row.isEmpty) return@forEach
+        if (row.loading) {
+            item(key = "${row.id}-skeleton") { TvRailSkeleton(title = row.title) }
+            return@forEach
+        }
         when (row) {
             is HomeRow.Continue -> tvContinueRail(row, actions, focus)
             is HomeRow.Titles -> tvPosterRail(row, actions, focus)
@@ -196,23 +204,10 @@ private fun LazyListScope.tvRails(state: HomeState, actions: TvHomeActions, focu
     }
 }
 
-/**
- * Заголовки рядов живут в экране, а не в модели: на десяти футах «Продолжить просмотр»
- * читается лучше, чем телефонное «Продолжить».
- */
-private val HomeRowId.title: String
-    get() = when (this) {
-        HomeRowId.CONTINUE -> "Продолжить просмотр"
-        HomeRowId.TRENDING -> "В тренде"
-        // Заголовок честный: forYou — это топ сериалов по рейтингу, персонализации в фиде нет.
-        HomeRowId.FOR_YOU -> "Сериалы с высоким рейтингом"
-        HomeRowId.COLLECTIONS -> "Подборки"
-    }
-
 private fun LazyListScope.tvContinueRail(row: HomeRow.Continue, actions: TvHomeActions, focus: TvScreenFocus) {
     val onPlay = actions.onPlay
-    item(key = row.id.name) {
-        TvRail(title = row.id.title) {
+    item(key = row.id) {
+        TvRail(title = row.title) {
             items(row.entries, key = { entry -> entry.itemId }) { entry ->
                 // Ряд продолжения ведёт сразу в плеер — на недосмотренный эпизод (videoId+сезон
                 // из истории), позицию внутри трека восстановит PlayerScreenModel.
@@ -230,8 +225,8 @@ private fun LazyListScope.tvContinueRail(row: HomeRow.Continue, actions: TvHomeA
 
 private fun LazyListScope.tvPosterRail(row: HomeRow.Titles, actions: TvHomeActions, focus: TvScreenFocus) {
     val railItems = row.paging.items
-    item(key = row.id.name) {
-        TvRail(title = row.id.title) {
+    item(key = row.id) {
+        TvRail(title = row.title) {
             itemsIndexed(railItems, key = { _, catalogItem -> catalogItem.id }) { index, catalogItem ->
                 // Хвостовая карточка скомпонована — зритель долистал ряд почти до конца:
                 // просим следующую страницу. Ленивый ряд композит только видимое (+префетч),
@@ -254,8 +249,8 @@ private fun LazyListScope.tvCollectionsRail(row: HomeRow.Collections, actions: T
     // Подборка без постера — пустая плашка: в монохроме карточку держит только картинка.
     val withPoster = row.paging.items.filter { it.posterUrl() != null }
     if (withPoster.isEmpty()) return
-    item(key = row.id.name) {
-        TvRail(title = row.id.title) {
+    item(key = row.id) {
+        TvRail(title = row.title) {
             itemsIndexed(withPoster, key = { _, collection -> collection.id }) { index, collection ->
                 // Хвостовая карточка скомпонована — просим следующую страницу (как у постер-рядов).
                 if (index == withPoster.lastIndex) {
@@ -269,6 +264,42 @@ private fun LazyListScope.tvCollectionsRail(row: HomeRow.Collections, actions: T
             }
         }
     }
+}
+
+// ── Скелетоны ─────────────────────────────────────────────────────────────
+
+/** Сколько карточек-заглушек рисовать в грузящемся ряду — по ширине ТВ-экрана достаточно. */
+private const val SKELETON_CARD_COUNT = 6
+
+/**
+ * Ряд, который ещё грузится: заголовок уже на месте, вместо карточек — статичные
+ * градиентные плейсхолдеры ([GradientPosterPlaceholder], тот же, что и под непрогруженным
+ * постером). БЕЗ shimmer-анимации: `PosterImage.kt` уже документирует, почему бесконечная
+ * shimmer-анимация на каждой из карточек одновременно роняла FPS на ТВ — статичный плейсхолдер
+ * даёт «тут что-то грузится» без повторения той ошибки.
+ */
+@Composable
+private fun TvRailSkeleton(title: String) {
+    TvRail(title = title) {
+        items(SKELETON_CARD_COUNT) {
+            GradientPosterPlaceholder(
+                accentColor = TvSurfaceContainerHigh,
+                modifier = Modifier
+                    .size(width = TvMetrics.PosterWidth, height = TvMetrics.PosterHeight)
+                    .clip(TvMetrics.PosterShape),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TvHeroSkeleton() {
+    GradientPosterPlaceholder(
+        accentColor = TvSurfaceContainerHigh,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(TvMetrics.HeroHeight),
+    )
 }
 
 // ── Hero ──────────────────────────────────────────────────────────────────
@@ -495,7 +526,7 @@ private fun TvOfflineBanner(onReload: () -> Unit) {
  * Ключ возврата фокуса: «ряд:id». Ряд в префиксе обязателен — один тайтл встречается сразу
  * в нескольких рядах, а ключ должен быть уникален в пределах экрана.
  */
-private fun returnKey(row: HomeRowId, itemId: Int): String = "$row:$itemId"
+private fun returnKey(row: String, itemId: Int): String = "$row:$itemId"
 
 /** Ключи кнопок hero: hero на экране один, поэтому без id. */
 private const val HERO_PLAY_KEY = "hero:play"

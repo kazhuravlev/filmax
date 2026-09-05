@@ -1,15 +1,14 @@
 package com.filmax.feature.home.common.di
 
 import com.filmax.core.domain.common.LastValueCache
-import com.filmax.core.domain.usecase.home.GetHomeFeedUseCase
-import com.filmax.core.domain.usecase.home.HomeFeed
 import com.filmax.feature.home.common.HomeScreenModel
+import com.filmax.feature.home.common.HomeSnapshot
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 
 val homeModule = module {
-    // Кэш последней ленты — single, чтобы переживать пересоздание use-case (офлайн-устойчивость #42).
-    single { LastValueCache<HomeFeed>() }
-    factory { GetHomeFeedUseCase(catalog = get(), watching = get(), continuations = get(), cache = get()) }
+    // Кэш последнего успешного снимка главной — single, чтобы переживать пересоздание
+    // ScreenModel (офлайн-устойчивость #42).
+    single { LastValueCache<HomeSnapshot>() }
     viewModelOf(::HomeScreenModel)
 }
