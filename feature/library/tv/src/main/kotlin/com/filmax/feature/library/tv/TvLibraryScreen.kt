@@ -144,6 +144,9 @@ fun TvLibraryScreen(
 ) {
     val state by screenModel.collectAsState()
     RefreshOnTopNavReselect { screenModel.dispatch(LibraryEvent.Refresh(section)) }
+    // ViewModel живёт дольше экрана: без этого возврат из деталей (например, после «Я смотрю»)
+    // показывал бы список, каким он был при первом входе в раздел.
+    LaunchedEffect(section) { screenModel.dispatch(LibraryEvent.Refresh(section)) }
     var segment by rememberSaveable(section) { mutableStateOf(section.initialSegment) }
     val ui = remember { TvBookmarkUi() }
 

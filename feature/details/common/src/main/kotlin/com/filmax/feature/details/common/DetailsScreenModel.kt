@@ -60,7 +60,7 @@ class DetailsScreenModel(
         screenModelScope { _ ->
             val itemResult = catalog.getItemDetails(route.itemId)
             val similar = catalog.getSimilarItems(route.itemId).getOrNull().orEmpty()
-            val history = watching.getHistory().getOrNull()?.firstOrNull { it.itemId == route.itemId }
+            val history = findHistoryEntry()
             when (itemResult) {
                 is RequestResult.Success -> {
                     updateState {
@@ -119,10 +119,23 @@ class DetailsScreenModel(
         }
     }
 
-    /** «Я смотрю»: отдельная от watchlist пометка тайтла (см. [DetailsEvent.ToggleWatching]). */
+    /** История ведётся по сериям — под текущий тайтл достаём только его запись. */
+    private suspend fun findHistoryEntry() =
+        watching.getHistory().getOrNull()?.firstOrNull { it.itemId == route.itemId }
+
+    /**
+     * «Я смотрю»: отдельная от watchlist пометка тайтла (см. [DetailsEvent.ToggleWatching]).
+     * Сервер не возвращает новый статус в ответе на toggle, поэтому после него перечитываем
+     * историю и пересчитываем continuation — иначе кнопка «Продолжить»/прогресс на экране
+     * молча оставались бы прежними, а клик выглядел бы так, будто ничего не произошло.
+     */
     private fun toggleWatching() {
         val item = state.item ?: return
-        screenModelScope { watching.toggleWatched(item.id) }
+        screenModelScope {
+            watching.toggleWatched(item.id)
+            val history = findHistoryEntry()
+            updateState { it.copy(continuation = calculateContinuation(item, history)) }
+        }
     }
 
     private fun toggleDownload() {
