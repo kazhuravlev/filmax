@@ -10,9 +10,15 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.filmax.core.domain.cache.ImageCacheStatsRecording
 import com.filmax.core.ui.cache.CacheableImage
 import okhttp3.Interceptor
+import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Response
+import okhttp3.ResponseBody
+import okio.Buffer
+import okio.BufferedSource
+import okio.ForwardingSource
 import okio.Path.Companion.toOkioPath
+import okio.buffer
 
 /**
  * Общий загрузчик картинок на всё приложение — постеры, фоны, фото актёров: все они идут через
@@ -55,22 +61,51 @@ class FilmaxImageLoaderFactory : SingletonImageLoader.Factory {
  * (а не попадания в память/диск из уже тёплого кэша) — здесь же учитываем его в статистику кэша
  * для настроек ([ImageCacheStatsRecording]). `304 Not Modified` не считаем: байт не переписано,
  * значит запись в кэше та же, что уже учтена.
+ *
+ * Размер узнаём по РЕАЛЬНО прочитанным байтам тела ([CountingResponseBody]), а не по
+ * `Content-Length`: прокси изображений (kwip, включён по умолчанию для всех картинок) намеренно
+ * убирает этот заголовок после буферизации ответа на своей стороне (см. `cf/kwip/src/index.js`,
+ * `headers.delete('Content-Length')`) — со старым подходом статистика кэша никогда не росла для
+ * ЛЮБОЙ картинки, идущей через прокси, то есть почти для всех.
  */
 private class ImageCacheLifetimeInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val response = chain.proceed(chain.request())
-
-        val contentLength = response.body?.contentLength() ?: -1L
-        if (response.code == HTTP_OK && contentLength > 0) {
-            ImageCacheStatsRecording.recorder.recordCached(contentLength)
-        }
-
-        return response.newBuilder()
+            .newBuilder()
             .removeHeader(HEADER_PRAGMA)
             .removeHeader(HEADER_CACHE_CONTROL)
             .header(HEADER_CACHE_CONTROL, "public, max-age=$IMAGE_CACHE_MAX_AGE_SECONDS")
             .build()
+
+        val body = response.body
+        if (response.code != HTTP_OK || body == null) return response
+        return response.newBuilder().body(CountingResponseBody(body)).build()
     }
+}
+
+/** Оборачивает тело ответа и на EOF шлёт реально прочитанное число байт в [ImageCacheStatsRecording]. */
+private class CountingResponseBody(private val delegate: ResponseBody) : ResponseBody() {
+    private var bytesRead = 0L
+    private var recorded = false
+
+    private val countingSource: BufferedSource = object : ForwardingSource(delegate.source()) {
+        override fun read(sink: Buffer, byteCount: Long): Long {
+            val read = super.read(sink, byteCount)
+            if (read != -1L) {
+                bytesRead += read
+                return read
+            }
+            if (!recorded) {
+                recorded = true
+                ImageCacheStatsRecording.recorder.recordCached(bytesRead)
+            }
+            return read
+        }
+    }.buffer()
+
+    override fun contentType(): MediaType? = delegate.contentType()
+    override fun contentLength(): Long = delegate.contentLength()
+    override fun source(): BufferedSource = countingSource
 }
 
 private const val HTTP_OK = 200
