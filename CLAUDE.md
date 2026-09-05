@@ -105,8 +105,7 @@ Network (Ktor Client)
 ### Signing and CI
 
 - **Local signing**: `keystore.properties` + `Taskfile.yaml generate:secrets` helper
-- **Release workflow** (`android-release.yml`): Tag `vX.Y.Z` → signed APK + changelog + GitHub Release + Telegram
-- **Debug workflow** (`android-build.yml`): Every push → artifacts + Telegram
+- **Release workflow** (`release.yml`): Tag `vX.Y.Z` → signed APK + changelog + GitHub Release
 
 ## Common Tasks
 

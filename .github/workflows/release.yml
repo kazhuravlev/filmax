@@ -1,8 +1,7 @@
 name: Release
 
 # Триггер — пуш git-тега вида v1.2.3. Собирает ПОДПИСАННЫЙ release-APK
-# (R8 + shrinkResources), публикует его в GitHub Release с авто-changelog
-# и дублирует в Telegram (с учётом лимита бота 50 МБ).
+# (R8 + shrinkResources) и публикует его в GitHub Release с авто-changelog.
 #
 # Требуемые секреты репозитория:
 #   KEYSTORE_BASE64   — release-keystore (.jks), закодированный base64
@@ -11,7 +10,6 @@ name: Release
 #   KEY_PASSWORD      — пароль ключа
 #   GOOGLE_SERVICES_JSON_BASE64 — app/google-services.json (Firebase Crashlytics), base64;
 #                                 не задан — релиз собирается без крэш-репортинга
-#   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID — доставка релиза в Telegram
 on:
   push:
     tags: [ "v[0-9]+.[0-9]+.[0-9]+" ]
@@ -165,31 +163,3 @@ jobs:
               --notes-file "$RUNNER_TEMP/changelog.md"
             echo "GitHub Release $TAG опубликован."
           fi
-
-      # Дублируем APK в Telegram. Лимит бота — 50 МБ; если больше — шлём ссылку на Release.
-      - name: Send APK to Telegram
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          APK: ${{ steps.apk.outputs.path }}
-          VERSION: ${{ steps.apk.outputs.version }}
-          SIZE_MB: ${{ steps.apk.outputs.size_mb }}
-        run: |
-          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "::warning::Секреты Telegram не заданы — пропускаю. APK в GitHub Release."
-            exit 0
-          fi
-          release_url="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
-          caption=$(printf 'Filmax %s · release\nПодписанный APK (%s МБ)\nRelease: %s' "$VERSION" "$SIZE_MB" "$release_url")
-          if [ "$SIZE_MB" -ge 50 ]; then
-            echo "::warning::APK ${SIZE_MB}MB ≥ 50MB — шлю ссылку вместо файла."
-            curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-              -d chat_id="${TELEGRAM_CHAT_ID}" \
-              --data-urlencode "text=Filmax ${VERSION} (release, ${SIZE_MB}MB) — превышает лимит Telegram 50MB. Скачай из GitHub Release: ${release_url}"
-            exit 0
-          fi
-          curl -sS -f -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
-            -F chat_id="${TELEGRAM_CHAT_ID}" \
-            -F document=@"${APK}" \
-            -F caption="$caption"
-          echo "Release-APK отправлен в Telegram."
