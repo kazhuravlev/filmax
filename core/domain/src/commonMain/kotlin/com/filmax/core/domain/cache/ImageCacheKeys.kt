@@ -1,6 +1,11 @@
-package com.filmax.core.ui.cache
+package com.filmax.core.domain.cache
 
-/** Ключи кэша картинок вида `entityType:entityId:subId` — независимы от URL (см. [CacheableImage]). */
+/**
+ * Ключи кэша картинок вида `entityType:entityId:subId` — независимы от URL (см.
+ * `CacheableImage` в core:ui). Живёт в domain, а не в core:ui: тем же ключом теперь
+ * пользуется и фоновый прогрев кэша ([ImagePrefetcher]), который стартует из data-мапперов
+ * (`ItemDto.toDomain()`), не имеющих доступа к core:ui.
+ */
 object ImageCacheKeys {
     const val SIZE_SMALL = "poster_small"
     const val SIZE_MEDIUM = "poster_medium"

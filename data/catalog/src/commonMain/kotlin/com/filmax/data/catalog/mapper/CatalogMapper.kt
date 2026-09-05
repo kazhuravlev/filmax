@@ -1,5 +1,8 @@
 package com.filmax.data.catalog.mapper
 
+import com.filmax.core.domain.cache.ImageCacheKeys
+import com.filmax.core.domain.cache.ImageDiscovery
+import com.filmax.core.domain.cache.PrefetchImage
 import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.CollectionPage
 import com.filmax.core.domain.catalog.model.Country
@@ -32,49 +35,71 @@ fun ItemsResponseDto.toDomain(): ItemPage = ItemPage(
     pagination = pagination?.toDomain() ?: Pagination(0, 1, DEFAULT_PER_PAGE),
 )
 
-fun ItemDto.toDomain(): Item = Item(
-    id = id,
-    title = title,
-    type = ItemType.from(type),
-    year = year,
-    plot = plot,
-    director = director,
-    cast = cast,
-    country = countries.firstOrNull()?.title ?: "",
-    genres = genres.map { it.toDomain() },
-    rating = ItemRating(
-        filmax = rating,
-        filmaxPercentage = ratingPercentage.toString(),
-        // API отдаёт оценки числом или null; `null?.toString()` дал бы строку "null",
-        // поэтому маппим только реальные значения, отсутствие — настоящий null.
-        imdb = imdbRating?.toString(),
-        kinopoisk = kinopoiskRating?.toString(),
-    ),
-    posters = posters?.toDomain() ?: Posters("", "", "", ""),
-    duration = duration.toDomain(),
-    // Сериал: эпизоды лежат в seasons[].episodes (номер сезона — на родителе). Фильм: в videos.
-    tracklist = if (!seasons.isNullOrEmpty()) {
-        seasons.flatMap { season -> season.episodes.map { it.toDomain(season.number) } }
-    } else {
-        videos?.map { it.toDomain() } ?: emptyList()
-    },
-    trailer = trailer?.toDomain(),
-    inWatchlist = inWatchlist,
-    finished = finished,
-    imdbId = imdb?.toString(),
-    views = views,
-    advert = advert,
-)
+fun ItemDto.toDomain(): Item {
+    val item = Item(
+        id = id,
+        title = title,
+        type = ItemType.from(type),
+        year = year,
+        plot = plot,
+        director = director,
+        cast = cast,
+        country = countries.firstOrNull()?.title ?: "",
+        genres = genres.map { it.toDomain() },
+        rating = ItemRating(
+            filmax = rating,
+            filmaxPercentage = ratingPercentage.toString(),
+            // API отдаёт оценки числом или null; `null?.toString()` дал бы строку "null",
+            // поэтому маппим только реальные значения, отсутствие — настоящий null.
+            imdb = imdbRating?.toString(),
+            kinopoisk = kinopoiskRating?.toString(),
+        ),
+        posters = posters?.toDomain() ?: Posters("", "", "", null),
+        duration = duration.toDomain(),
+        // Сериал: эпизоды лежат в seasons[].episodes (номер сезона — на родителе). Фильм: в videos.
+        tracklist = if (!seasons.isNullOrEmpty()) {
+            seasons.flatMap { season -> season.episodes.map { it.toDomain(season.number) } }
+        } else {
+            videos?.map { it.toDomain() } ?: emptyList()
+        },
+        trailer = trailer?.toDomain(),
+        inWatchlist = inWatchlist,
+        finished = finished,
+        imdbId = imdb?.toString(),
+        views = views,
+        advert = advert,
+    )
+    // Любой тайтл, который прошёл через API — кандидат на фоновую закачку постера, даже если
+    // экран его ещё не отрисовал (похожее, результаты поиска за пределами экрана и т.п.).
+    // См. ImageDiscovery: реальная закачка идёт тихо и последовательно, здесь только заявка.
+    ImageDiscovery.discovered(item.posterPrefetchImages())
+    return item
+}
+
+private fun Item.posterPrefetchImages(): List<PrefetchImage> = buildList {
+    val type = type.apiValue
+    posters.medium.takeIf { it.isNotBlank() }?.let { url ->
+        add(PrefetchImage(ImageCacheKeys.poster(type, id, ImageCacheKeys.SIZE_MEDIUM), url))
+    }
+    val backdrop = posters.wide ?: posters.big.takeIf { it.isNotBlank() }
+    if (backdrop != null) {
+        val subId = if (backdrop == posters.wide) ImageCacheKeys.WALL else ImageCacheKeys.SIZE_BIG
+        add(PrefetchImage(ImageCacheKeys.poster(type, id, subId), backdrop))
+    }
+}
 
 fun GenreDto.toDomain() = Genre(id = id, title = title, type = type)
 
 fun CountryDto.toDomain() = Country(id = id, title = title)
 
+// wide остаётся null, а не "": экраны фолбэчат `wide ?: big` (HeroBackdrop, TvHomeScreen и т.д.) —
+// с пустой строкой вместо null этот `?:` никогда бы не срабатывал, и при отсутствии широкого
+// кадра герой получал бы пустой url вместо постера.
 fun PostersDto?.toDomain() = Posters(
     small = this?.small ?: "",
     medium = this?.medium ?: "",
     big = this?.big ?: "",
-    wide = this?.wide ?: "",
+    wide = this?.wide,
 )
 
 // API отдаёт длительность в секундах — переводим в минуты.

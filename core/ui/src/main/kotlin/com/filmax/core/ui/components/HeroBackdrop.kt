@@ -8,8 +8,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.catalog.model.Item
-import com.filmax.core.ui.cache.ImageCacheKeys
 
 /**
  * Общий бэкдроп героя деталей: постер на всю область + слои градиентов [scrims] поверх него.

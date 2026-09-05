@@ -78,6 +78,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
+import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.cache.ImageProxyRepository
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemRating
@@ -111,7 +112,6 @@ import com.filmax.core.tv.designsystem.rememberDimAlpha
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.tv.designsystem.tvFocusGroup
 import com.filmax.core.ui.cache.CacheableImage
-import com.filmax.core.ui.cache.ImageCacheKeys
 import com.filmax.core.ui.cache.proxiedImageUrl
 import com.filmax.core.ui.components.HeroBackdrop
 import com.filmax.core.ui.components.PosterImage

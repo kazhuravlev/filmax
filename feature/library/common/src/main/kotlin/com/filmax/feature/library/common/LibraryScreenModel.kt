@@ -3,12 +3,14 @@ package com.filmax.feature.library.common
 import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemPage
+import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.firstErrorMessage
 import com.filmax.core.domain.common.getOrNull
 import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.user.model.BookmarkFolder
+import com.filmax.core.domain.watching.WatchingNowRepository
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchingItem
@@ -30,6 +32,7 @@ class LibraryScreenModel(
     private val user: UserRepository,
     private val favoritesRepo: FavoritesRepository,
     private val catalog: CatalogRepository,
+    private val watchingNow: WatchingNowRepository,
 ) : BaseScreenModel<LibraryState, LibrarySideEffect, LibraryEvent>(LibraryState()) {
 
     init {
@@ -112,7 +115,7 @@ class LibraryScreenModel(
     /** Как [refreshBookmarks], но без `loading` и без баннера при сбое — попытка невидима снаружи. */
     private fun refreshBookmarksSilently() {
         screenModelScope {
-            val folders = user.getBookmarkFolders().getOrNull()
+            val folders = user.getBookmarkFolders().getOrNull()?.withoutWatchingNow()
             if (folders == null) {
                 DataInvalidation.markDirty(DataDomain.BOOKMARKS)
                 return@screenModelScope
@@ -160,9 +163,11 @@ class LibraryScreenModel(
         val titles = titlesDeferred.await()
         val history = historyDeferred.await()
         val historyItems = history.getOrNull().orEmpty()
-        val titleDetails = loadTitleDetails(
-            titles.titles.map(WatchingItem::itemId) + historyItems.map(WatchHistory::itemId),
-        )
+        // Тайтлы из «Watching Now» уже пришли полными Item — их не перезапрашиваем.
+        val remainingIds = (titles.titles.map(WatchingItem::itemId) + historyItems.map(WatchHistory::itemId))
+            .distinct()
+            .filterNot { it in titles.titleDetails }
+        val titleDetails = titles.titleDetails + loadTitleDetails(remainingIds)
         WatchingResult(
             titles = titles.titles,
             history = historyItems,
@@ -172,20 +177,39 @@ class LibraryScreenModel(
     }
 
     /**
-     * Тайтлы «в процессе» — фильмы и сериалы одним запросом на тип, параллельно. Каждый ответ уже
-     * готовый список тайтлов (не серий), без обхода `/history`; недостающие данные карточки
-     * обогащаются отдельно в [loadTitleDetails].
+     * Тайтлы «в процессе» — три источника, параллельно. `watching/{movies|serials}` — родной
+     * прогресс. У kino.watch фильм нельзя вручную занести в «Я смотрю» (см.
+     * [WatchingNowRepository]) — то, что пользователь отметил «Буду смотреть» руками, приходит
+     * третьим источником — подборкой [WatchingNowRepository.getAll]. Для сериала эта подборка —
+     * дубль (пишем в обе при отметке, см. `DetailsScreenModel.toggleFolder`), поэтому дубликаты
+     * по id убираем в пользу родного источника: только там есть счётчики серий.
+     *
+     * Сбой самой подборки намеренно не входит в общий [WatchingResult.error] — как и в
+     * [loadTitleDetails], это необязательное дополнение, а не сам список.
      */
     private suspend fun loadWatchingTitles(): WatchingResult = coroutineScope {
         val moviesDeferred = async { watching.getWatchingTitles(TYPE_MOVIES) }
         val serialsDeferred = async { watching.getWatchingTitles(TYPE_SERIALS) }
+        val watchingNowDeferred = async { watchingNow.getAll() }
         val movies = moviesDeferred.await()
         val serials = serialsDeferred.await()
+        val watchingNowItems = watchingNowDeferred.await()
+        val fromServer = movies.getOrNull().orEmpty() + serials.getOrNull().orEmpty()
+        val knownIds = fromServer.mapTo(mutableSetOf()) { it.itemId }
+        val extra = watchingNowItems.getOrNull().orEmpty().filterNot { it.id in knownIds }
         WatchingResult(
-            titles = movies.getOrNull().orEmpty() + serials.getOrNull().orEmpty(),
+            titles = fromServer + extra.map { it.toWatchingItem() },
+            titleDetails = extra.associateBy(Item::id),
             error = firstErrorMessage(movies, serials),
         )
     }
+
+    private fun Item.toWatchingItem(): WatchingItem = WatchingItem(
+        itemId = id,
+        title = title,
+        isSeries = type == ItemType.SERIES || type == ItemType.ANIME || type == ItemType.DOCUMENTARY,
+        posterUrl = posters.medium.ifBlank { posters.small },
+    )
 
     private data class WatchingResult(
         val titles: List<WatchingItem>,
@@ -239,7 +263,7 @@ class LibraryScreenModel(
         foldersResult: RequestResult<List<BookmarkFolder>>,
         itemsResult: RequestResult<ItemPage>?,
     ): String? {
-        val folders = foldersResult.getOrNull()
+        val folders = foldersResult.getOrNull()?.withoutWatchingNow()
         val refreshedPage = itemsResult?.getOrNull()
         val error = if (itemsResult == null) {
             firstErrorMessage(foldersResult)
@@ -284,7 +308,7 @@ class LibraryScreenModel(
                         watching = watchingResult.titles.preserveEmpty(current.watching, error),
                         history = watchingResult.history.preserveEmpty(current.history, error),
                         titleDetails = current.titleDetails + watchingResult.titleDetails,
-                        lists = lists.getOrNull() ?: current.lists,
+                        lists = lists.getOrNull()?.withoutWatchingNow() ?: current.lists,
                         error = error,
                     )
                 }
@@ -492,7 +516,7 @@ class LibraryScreenModel(
     /** Перечитывает список папок с сервера: id, счётчики и порядок — его зона ответственности. */
     private suspend fun reloadFolders() {
         val result = user.getBookmarkFolders()
-        val folders = result.getOrNull()
+        val folders = result.getOrNull()?.withoutWatchingNow()
         if (folders == null) {
             scheduleServerRetry { screenModelScope { reloadFolders() } }
             return
@@ -519,6 +543,14 @@ class LibraryScreenModel(
             endReached = endReached,
         )
 
+    /**
+     * «Watching Now» — служебная папка-костыль (см. [WatchingNowRepository]), не настоящая
+     * подборка пользователя: в разделе «Подборки» её не показываем, она уже подмешана в «В
+     * процессе» через [loadWatchingTitles].
+     */
+    private fun List<BookmarkFolder>.withoutWatchingNow(): List<BookmarkFolder> =
+        filterNot { it.title == WATCHING_NOW_FOLDER_TITLE }
+
     private companion object {
         /** Первая страница содержимого папки (нумерация kino.watch — с единицы). */
         const val FIRST_PAGE = 1
@@ -527,6 +559,9 @@ class LibraryScreenModel(
         const val TYPE_MOVIES = "movies"
         const val TYPE_SERIALS = "serials"
         const val TITLE_DETAILS_CONCURRENCY = 4
+
+        /** То же название, что и [WatchingNowRepository] использует для поиска/создания своей подборки. */
+        const val WATCHING_NOW_FOLDER_TITLE = "Watching Now"
     }
 }
 
