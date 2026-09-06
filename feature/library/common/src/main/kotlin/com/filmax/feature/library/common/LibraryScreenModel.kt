@@ -101,6 +101,7 @@ class LibraryScreenModel(
                     watching = watchingResult.titles,
                     history = watchingResult.history,
                     titleDetails = current.titleDetails + watchingResult.titleDetails,
+                    watchLaterRail = watchingResult.watchLaterRail,
                 )
             }
         }
@@ -135,6 +136,8 @@ class LibraryScreenModel(
                     watching = watchingResult.titles.preserveEmpty(current.watching, watchingResult.error),
                     history = watchingResult.history.preserveEmpty(current.history, watchingResult.error),
                     titleDetails = current.titleDetails + watchingResult.titleDetails,
+                    watchLaterRail = watchingResult.watchLaterRail
+                        .preserveEmpty(current.watchLaterRail, watchingResult.error),
                     error = watchingResult.error,
                 )
             }
@@ -154,9 +157,12 @@ class LibraryScreenModel(
     private suspend fun loadWatchingSection(): WatchingResult = coroutineScope {
         val titlesDeferred = async { loadWatchingTitles() }
         val historyDeferred = async { watching.getHistory() }
+        val watchLaterDeferred = async { loadWatchLaterCollectionItems() }
         val titles = titlesDeferred.await()
         val history = historyDeferred.await()
+        val watchLaterAll = watchLaterDeferred.await()
         val historyItems = history.getOrNull().orEmpty()
+        val watchingIds = titles.titles.mapTo(mutableSetOf(), WatchingItem::itemId)
         val remainingIds = (titles.titles.map(WatchingItem::itemId) + historyItems.map(WatchHistory::itemId))
             .distinct()
         val titleDetails = loadTitleDetails(remainingIds)
@@ -164,8 +170,43 @@ class LibraryScreenModel(
             titles = titles.titles,
             history = historyItems,
             titleDetails = titleDetails,
+            watchLaterRail = watchLaterAll.filter { it.id !in watchingIds },
             error = titles.error ?: firstErrorMessage(history),
         )
+    }
+
+    /**
+     * Свимлейн «Буду смотреть» внизу «В процессе» — тайтлы одноимённой подборки за вычетом уже
+     * показанного в [LibraryState.watching]. Поиска подборки по имени в API нет, поэтому страницы
+     * [CatalogRepository.getCollections] перебираются вручную (конец — пустая страница, тот же
+     * приём, что в HomeScreenModel.loadMoreCollections); дальше грузим все страницы её содержимого.
+     * Любой сбой на этом пути — просто пустой рейл, а не баннер: раздел декоративный.
+     */
+    private suspend fun loadWatchLaterCollectionItems(): List<Item> {
+        val collectionId = findCollectionIdByTitle(WATCH_LATER_COLLECTION_TITLE) ?: return emptyList()
+        return loadAllCollectionItems(collectionId)
+    }
+
+    private suspend fun findCollectionIdByTitle(title: String): Int? {
+        var page = FIRST_PAGE
+        while (true) {
+            val collections = catalog.getCollections(page).getOrNull()
+            if (collections.isNullOrEmpty()) return null
+            collections.firstOrNull { it.title == title }?.let { return it.id }
+            page++
+        }
+    }
+
+    private suspend fun loadAllCollectionItems(collectionId: Int): List<Item> {
+        val items = mutableListOf<Item>()
+        var page = FIRST_PAGE
+        while (true) {
+            val result = catalog.getCollectionItems(collectionId, page).getOrNull() ?: break
+            items += result.items
+            if (!result.pagination.hasNextPage) break
+            page++
+        }
+        return items.distinctBy { it.id }
     }
 
     /** Тайтлы «в процессе» — родной прогресс `watching/{movies|serials}?subscribed=1`, оба типа параллельно. */
@@ -184,6 +225,7 @@ class LibraryScreenModel(
         val titles: List<WatchingItem>,
         val history: List<WatchHistory> = emptyList(),
         val titleDetails: Map<Int, Item> = emptyMap(),
+        val watchLaterRail: List<Item> = emptyList(),
         val error: String?,
     )
 
@@ -283,6 +325,8 @@ class LibraryScreenModel(
                         watching = watchingResult.titles.preserveEmpty(current.watching, error),
                         history = watchingResult.history.preserveEmpty(current.history, error),
                         titleDetails = current.titleDetails + watchingResult.titleDetails,
+                        watchLaterRail = watchingResult.watchLaterRail
+                            .preserveEmpty(current.watchLaterRail, error),
                         lists = lists.getOrNull() ?: current.lists,
                         error = error,
                     )
@@ -457,6 +501,12 @@ class LibraryScreenModel(
     /** Удаляет папку. Открытую — закрывает: содержимого у неё больше нет. */
     private fun deleteFolder(folderId: Int) {
         screenModelScope { _ ->
+            // Затронутые тайтлы — до оптимистичной очистки состояния ниже, иначе их id негде
+            // будет взять. Кэш детали каждого из них хранит принадлежность к этой папке
+            // (см. CatalogRepository.invalidateItemCache) — папки больше нет, кэш обязан узнать.
+            val previewItems = state.folderPreviews[folderId]?.items.orEmpty()
+            val openItems = state.openFolder?.takeIf { it.folder.id == folderId }?.items.orEmpty()
+            val affectedItemIds = (previewItems + openItems).map { it.id }.toSet()
             // Оптимистично убираем плитку и выходим из папки, если удаляли именно открытую;
             // reloadFolders ниже сверит результат с сервером.
             updateState { current ->
@@ -468,6 +518,7 @@ class LibraryScreenModel(
                 )
             }
             user.deleteBookmarkFolder(folderId)
+            affectedItemIds.forEach { catalog.invalidateItemCache(it) }
             reloadFolders()
         }
     }
@@ -494,6 +545,7 @@ class LibraryScreenModel(
                 )
             }
             user.removeFromBookmark(itemId, folderId)
+            catalog.invalidateItemCache(itemId)
             reloadFolders()
         }
     }
@@ -537,6 +589,9 @@ class LibraryScreenModel(
         const val TYPE_MOVIES = "movies"
         const val TYPE_SERIALS = "serials"
         const val TITLE_DETAILS_CONCURRENCY = 4
+
+        /** Название подборки, чей свимлейн показывается внизу «В процессе». */
+        const val WATCH_LATER_COLLECTION_TITLE = "Буду смотреть"
     }
 }
 

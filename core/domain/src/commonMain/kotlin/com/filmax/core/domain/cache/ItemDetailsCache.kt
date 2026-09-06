@@ -35,6 +35,14 @@ interface ItemDetailsCache {
     /** Синхронная, не suspend: вызывается из чистого маппера (`ItemDto.toDomain()`) без корутины. */
     fun remember(key: String, json: String)
 
+    /**
+     * Точечная инвалидация одного ключа — когда о тайтле стало известно что-то, чего кэш ещё не
+     * знает (например, локальное действие пользователя: подборки, «буду смотреть»), и ждать TTL
+     * нельзя. Следующий [get] по этому ключу — гарантированный промах, дальше система сама
+     * перечитает и перезапишет кэш свежими данными (см. вызывающих в `data:catalog`).
+     */
+    suspend fun remove(key: String)
+
     val ttl: StateFlow<ItemCacheTtl>
     suspend fun setTtl(ttl: ItemCacheTtl)
 
@@ -55,6 +63,7 @@ object ItemDetailsCacheAccess {
 private object NoopItemDetailsCache : ItemDetailsCache {
     override suspend fun get(key: String): String? = null
     override fun remember(key: String, json: String) = Unit
+    override suspend fun remove(key: String) = Unit
     override val ttl: StateFlow<ItemCacheTtl> = MutableStateFlow(ItemCacheTtl.MONTH)
     override suspend fun setTtl(ttl: ItemCacheTtl) = Unit
     override val count: StateFlow<Int> = MutableStateFlow(0)

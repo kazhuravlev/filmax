@@ -57,6 +57,18 @@ class ItemDetailsCacheImpl(private val settings: Settings) : ItemDetailsCache {
         }
     }
 
+    override suspend fun remove(key: String) {
+        val jsonKey = PREFIX_JSON + key
+        val existed = settings.getStringOrNull(jsonKey) != null
+        settings.remove(jsonKey)
+        settings.remove(PREFIX_TIMESTAMP + key)
+        if (existed) {
+            val updated = (countState.value - 1).coerceAtLeast(0)
+            countState.value = updated
+            settings.putInt(KEY_COUNT, updated)
+        }
+    }
+
     override suspend fun setTtl(ttl: ItemCacheTtl) {
         settings.putString(KEY_TTL, ttl.name)
         ttlState.value = ttl

@@ -78,6 +78,10 @@ internal class CatalogRepositoryImpl(
         }
     }
 
+    override suspend fun invalidateItemCache(id: Int) {
+        itemCache.remove(itemCacheKey(id))
+    }
+
     // distinctBy(id) здесь и в подборках: сервер может отдать тайтл дважды, а списки уходят
     // в Lazy-контейнеры с key = id — дубликат ключа роняет Compose («Key … was already used»).
     //

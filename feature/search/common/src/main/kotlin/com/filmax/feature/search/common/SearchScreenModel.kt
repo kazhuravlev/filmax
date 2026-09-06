@@ -25,6 +25,17 @@ private const val PER_PAGE = 20
 private const val RECENT_LIMIT = 8
 
 /**
+ * Потолок витрины каталога. Раньше списка не было вовсе: каждая догрузка конкатенировала и
+ * дедуплицировала ВЕСЬ накопленный список заново — стоимость росла вместе с ним без предела.
+ * «Аниме» тянет сразу два типа на страницу (см. [AnimeTypes]) и набирает вдвое больше карточек
+ * на то же число догрузок, поэтому первым же и упирался: за десятки нажатий «вниз» список
+ * разгонялся до тысяч элементов, и это перемалывание на главном потоке (внутри `updateState`)
+ * душило UI вплоть до ANR — воспринималось как вылет. Дальше пусть сужают жанром/фильтром,
+ * а не листают тысячи карточек подряд.
+ */
+private const val CATALOG_MAX_ITEMS = 500
+
+/**
  * Что показывает чип «Все». `api/v1/items` без параметра `type` не ходит, поэтому «все» —
  * это объединение конкретных типов; ItemType.TV (эфирные каналы) в витрину не входит.
  * ANIME здесь нет: у kino.watch нет такого типа (api/v1/types), и аниме-тайтлы уже входят
@@ -288,11 +299,14 @@ class SearchScreenModel(
                         val seen = s.catalogItems.mapTo(HashSet()) { it.id }
                         // filter гасит id, уже стоящие в сетке; distinctById — дубли внутри самой
                         // страницы (склейка типов): без этого две карточки с одним id роняют LazyGrid.
-                        val merged = (s.catalogItems + next.data.items.filter { it.id !in seen }).distinctById()
+                        val merged = (s.catalogItems + next.data.items.filter { it.id !in seen })
+                            .distinctById()
+                            .take(CATALOG_MAX_ITEMS)
                         s.copy(
                             catalogLoadingMore = false,
                             catalogItems = sortLocally(merged, request.sort),
-                            catalogEndReached = request.activeTypes.all { it in next.data.exhaustedTypes },
+                            catalogEndReached = merged.size >= CATALOG_MAX_ITEMS ||
+                                request.activeTypes.all { it in next.data.exhaustedTypes },
                         )
                     }
                     if (next.data.hadErrors) showServerRetryNotice()

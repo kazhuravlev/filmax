@@ -207,6 +207,7 @@ class DetailsScreenModel(
                 updateState { it.copy(isWantToWatch = isWantToWatch) }
             }
             DataInvalidation.markDirty(DataDomain.WATCHING)
+            catalog.invalidateItemCache(item.id)
         }
     }
 
@@ -258,6 +259,7 @@ class DetailsScreenModel(
             updateFolderMemberships()
             reloadBookmarkFolders()
             DataInvalidation.markDirty(DataDomain.BOOKMARKS)
+            catalog.invalidateItemCache(item.id)
         }
     }
 
@@ -269,6 +271,7 @@ class DetailsScreenModel(
         updateFolderMemberships()
         reloadBookmarkFolders()
         DataInvalidation.markDirty(DataDomain.BOOKMARKS)
+        catalog.invalidateItemCache(item.id)
     }
 
     /** Создаёт подборку и сразу заносит в неё текущий тайтл — одно действие в диалоге выбора. */
@@ -284,6 +287,7 @@ class DetailsScreenModel(
             updateFolderMemberships()
             reloadBookmarkFolders()
             DataInvalidation.markDirty(DataDomain.BOOKMARKS)
+            catalog.invalidateItemCache(item.id)
         }
     }
 

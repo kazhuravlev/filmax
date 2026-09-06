@@ -46,6 +46,11 @@ data class LibraryState(
     val watching: List<WatchingItem> = emptyList(),
     /** Полная история просмотров, отсортированная сервером от новых записей к старым. */
     val history: List<WatchHistory> = emptyList(),
+    /**
+     * Свимлейн внизу «В процессе» — тайтлы подборки «Буду смотреть» за вычетом того, что уже
+     * показано в [watching]. Пусто — рейл со своим заголовком не рисуется вовсе.
+     */
+    val watchLaterRail: List<Item> = emptyList(),
     /** Полные данные для единой карточки тайтла: год, жанры, рейтинги и качественный постер. */
     val titleDetails: Map<Int, Item> = emptyMap(),
     val lists: List<BookmarkFolder> = emptyList(),

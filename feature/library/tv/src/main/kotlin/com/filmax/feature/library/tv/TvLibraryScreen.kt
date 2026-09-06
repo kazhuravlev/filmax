@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -77,6 +78,7 @@ import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvOutlineVariant
 import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvPosterGrid
+import com.filmax.core.tv.designsystem.TvRail
 import com.filmax.core.tv.designsystem.TvScreenFocus
 import com.filmax.core.tv.designsystem.TvServerRetryNotification
 import com.filmax.core.tv.designsystem.TvSurface
@@ -357,7 +359,13 @@ private fun MineGrid(
         ) {
             when (segment) {
                 LibrarySegment.WATCHING ->
-                    watchingSegment(state.watching, state.titleDetails, actions.onOpenItem, focus)
+                    watchingSegment(
+                        watching = state.watching,
+                        titleDetails = state.titleDetails,
+                        watchLaterRail = state.watchLaterRail,
+                        onOpenItem = actions.onOpenItem,
+                        focus = focus,
+                    )
                 LibrarySegment.HISTORY ->
                     historySegment(state.history, state.titleDetails, actions.onOpenItem, focus)
                 LibrarySegment.BOOKMARKS -> bookmarksSegment(state, ui, actions, focus)
@@ -373,6 +381,7 @@ private fun MineGrid(
 private fun LazyGridScope.watchingSegment(
     watching: List<WatchingItem>,
     titleDetails: Map<Int, Item>,
+    watchLaterRail: List<Item>,
     onOpenItem: (Int) -> Unit,
     focus: TvScreenFocus,
 ) {
@@ -393,6 +402,35 @@ private fun LazyGridScope.watchingSegment(
             onOpenItem = onOpenItem,
         )
     }
+    // Подборка «Буду смотреть» уже отфильтрована от «В процессе» в ScreenModel — пусто здесь
+    // значит подборки нет либо в ней не осталось ничего нового, и рейл вместе с заголовком не рисуем.
+    if (watchLaterRail.isNotEmpty()) {
+        item(key = "watch_later_rail", span = { GridItemSpan(maxLineSpan) }) {
+            TvRail(title = "Буду смотреть") {
+                items(watchLaterRail, key = { it.id }) { item ->
+                    WatchLaterCard(
+                        item = item,
+                        modifier = focus.item("watch_later:${item.id}"),
+                        onOpenItem = onOpenItem,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Карточка тайтла из свимлейна «Буду смотреть» — та же адаптированная карточка, что и у «В процессе». */
+@Composable
+private fun WatchLaterCard(item: Item, modifier: Modifier, onOpenItem: (Int) -> Unit) {
+    LibraryTitleCard(
+        content = LibraryCardContent(
+            details = item,
+            fallbackTitle = item.title,
+            fallbackPosterUrl = item.posters.medium.ifEmpty { item.posters.big },
+        ),
+        onClick = { onOpenItem(item.id) },
+        modifier = modifier,
+    )
 }
 
 /** «История» — последние просмотренные тайтлы из отдельного endpoint `/history`. */
