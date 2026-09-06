@@ -1,6 +1,7 @@
 package com.filmax.data.catalog
 
 import com.filmax.core.domain.cache.BackgroundFetchSettings
+import com.filmax.core.domain.cache.DiscoveredTitle
 import com.filmax.core.domain.cache.ImageDiscovery
 import com.filmax.core.domain.cache.ImagePrefetchThrottle
 import com.filmax.core.domain.cache.ItemDetailsCache
@@ -11,6 +12,7 @@ import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.common.getOrNull
 import com.filmax.core.domain.tuning.PerformanceTuning
 import com.filmax.core.network.networkJson
+import com.filmax.data.catalog.mapper.hasFullDetails
 import com.filmax.data.catalog.mapper.itemCacheKey
 import com.filmax.data.catalog.mapper.posterPrefetchImages
 import com.filmax.data.catalog.mapper.toDomainOnly
@@ -98,13 +100,17 @@ internal class TitleBackgroundFetcherImpl(
         }
     }
 
-    override fun enqueue(itemIds: List<Int>) {
-        for (id in itemIds) {
+    override fun enqueue(items: List<DiscoveredTitle>) {
+        for (item in items) {
+            // Списковый ответ уже содержит почти всю карточку. Кладём её сразу, до ожидания
+            // throttle/очереди, но только в пустой слот — полный items/{id} важнее preview.
+            rememberPreview(item, itemCache)
+
             // Переполнение — дропаем новый id, не трогая queuedIds (см. doc класса).
             if (queuedIds.size >= PerformanceTuning.BackgroundQueues.MAX_QUEUED_TITLE_IDS) continue
             // add() возвращает false, если id уже в очереди/обрабатывается — не дублируем.
-            if (queuedIds.add(id)) {
-                channel.trySend(id)
+            if (queuedIds.add(item.id)) {
+                channel.trySend(item.id)
                 progressState.update { it.copy(remaining = queuedIds.size) }
             }
         }
@@ -113,14 +119,21 @@ internal class TitleBackgroundFetcherImpl(
     private suspend fun fetchThenPrefetchPoster(id: Int) {
         if (!backgroundFetch.enabled.value) return
         val cached = itemCache.get(itemCacheKey(id))
-        if (cached != null) {
-            val item = networkJson.decodeFromString<ItemDto>(cached).toDomainOnly()
+        val cachedDto = cached?.let { networkJson.decodeFromString<ItemDto>(it) }
+        cachedDto?.let { dto ->
+            val item = dto.toDomainOnly()
             ImageDiscovery.discovered(item.posterPrefetchImages())
-            return
         }
+        // Preview из списка полезен для мгновенного отображения, но не завершает фоновую
+        // работу: videos/seasons и остальные detail-only поля всё ещё нужно догрузить.
+        if (cachedDto?.hasFullDetails == true) return
         // toDomain() внутри уже сам заявит постер в ImageDiscovery — отдельно звать не нужно.
         // Иначе ActivityTrackingPlugin считает этот же запрос пользовательской активностью и
         // после КАЖДОГО JSON блокирует следующий id ещё на полный cooldown.
         catalog.getItemDetails(id, isBackground = true).getOrNull()
     }
+}
+
+internal fun rememberPreview(item: DiscoveredTitle, itemCache: ItemDetailsCache) {
+    item.previewJson?.let { json -> itemCache.rememberIfAbsent(itemCacheKey(item.id), json) }
 }

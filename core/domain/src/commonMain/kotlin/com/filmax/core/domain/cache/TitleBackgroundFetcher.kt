@@ -6,11 +6,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlin.concurrent.Volatile
 
 /**
- * Очередь фоновой докачки тайтла по голому id — для мест, где тайтл известен только по ссылке
- * (id/название/постер из «лёгкого» ответа), а полных полей (жанры/рейтинги/трейлер и т.п.)
- * сервер для этого эндпоинта не отдаёт. Единая точка входа для ДВУХ шагов на один id, строго по
- * порядку: сначала статическая информация о тайтле ([ItemDetailsCache]), потом — постер
- * ([ImagePrefetcher]). Раньше это были два независимых Channel-конвейера, связанные только
+ * Очередь фоновой докачки тайтла. Для каталожных списков получает [DiscoveredTitle] с preview:
+ * он сразу сохраняется в [ItemDetailsCache], не ожидая throttle, а затем полный `items/{id}` и
+ * постер доезжают обычной фоновой очередью. Источники с совсем лёгким ответом по-прежнему могут
+ * передать только id. Раньше это были два независимых Channel-конвейера, связанные только
  * побочным эффектом внутри маппера — из-за этого несложно было провести id туда, куда он не
  * должен попадать (см. [ItemDiscovery]), и легко забыть, что кэш-хит по деталям не досылает
  * заявку на постер вовсе. Обрабатывает очередь последовательно, как и [ImagePrefetcher] —
@@ -22,14 +21,24 @@ import kotlin.concurrent.Volatile
 interface TitleBackgroundFetcher {
     val progress: StateFlow<PrefetchProgress>
 
-    fun enqueue(itemIds: List<Int>)
+    fun enqueue(items: List<DiscoveredTitle>)
 }
+
+/**
+ * Данные, уже пришедшие в списковом ответе. [previewJson] имеет тот же формат `ItemDto`, что и
+ * полный `items/{id}`, но обычно без `videos`/`seasons`; реализация сначала сохраняет этот preview
+ * без перезаписи возможного полного значения, затем ставит [id] на фоновое обогащение.
+ */
+data class DiscoveredTitle(
+    val id: Int,
+    val previewJson: String? = null,
+)
 
 /**
  * Точка обнаружения вне DI-графа: любой маппер «лёгкого» ответа (`WatchingItemDto`,
  * `HistoryEntryDto` в data:watching) и, теперь, `ItemDto.toDomain()` (data:catalog — КАЖДЫЙ
  * тайтл КАЖДОГО спискового ответа: все ряды главной, каталог, поиск, похожее, подборки) сообщают
- * сюда id тайтла без DI-инъекции — аналогично
+ * сюда id и, когда он есть, списковый JSON тайтла без DI-инъекции — аналогично
  * [ImageDiscovery]/[com.filmax.core.domain.common.ErrorReporting]. Тайтлы с уже полными данными
  * сюда слать не нужно — они и так закэшированы; сама реализация к тому же пропускает id, уже
  * стоящие в очереди/обрабатывающиеся прямо сейчас (`queuedIds` в `TitleBackgroundFetcherImpl`) —
@@ -60,15 +69,19 @@ object ItemDiscovery {
     var prefetcher: TitleBackgroundFetcher = NoopTitleBackgroundFetcher
 
     fun discovered(itemId: Int) {
-        prefetcher.enqueue(listOf(itemId))
+        prefetcher.enqueue(listOf(DiscoveredTitle(itemId)))
     }
 
     fun discovered(itemIds: List<Int>) {
-        if (itemIds.isNotEmpty()) prefetcher.enqueue(itemIds)
+        if (itemIds.isNotEmpty()) prefetcher.enqueue(itemIds.map(::DiscoveredTitle))
+    }
+
+    fun discovered(item: DiscoveredTitle) {
+        prefetcher.enqueue(listOf(item))
     }
 }
 
 private object NoopTitleBackgroundFetcher : TitleBackgroundFetcher {
     override val progress: StateFlow<PrefetchProgress> = MutableStateFlow(PrefetchProgress())
-    override fun enqueue(itemIds: List<Int>) = Unit
+    override fun enqueue(items: List<DiscoveredTitle>) = Unit
 }

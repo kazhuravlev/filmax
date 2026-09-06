@@ -63,6 +63,18 @@ class ItemDetailsCacheImpl(private val settings: Settings) : ItemDetailsCache {
         }
     }
 
+    override fun rememberIfAbsent(key: String, json: String) {
+        if (ttlState.value == ItemCacheTtl.NEVER) return
+        val jsonKey = PREFIX_JSON + key
+        if (settings.getStringOrNull(jsonKey) != null) return
+
+        settings.putString(jsonKey, json)
+        settings.putLong(PREFIX_TIMESTAMP + key, currentTimeMillis())
+        val updated = countState.value + 1
+        countState.value = updated
+        settings.putInt(KEY_COUNT, updated)
+    }
+
     override suspend fun remove(key: String) {
         val jsonKey = PREFIX_JSON + key
         val existed = settings.getStringOrNull(jsonKey) != null

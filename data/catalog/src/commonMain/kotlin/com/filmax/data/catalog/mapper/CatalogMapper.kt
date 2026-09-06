@@ -6,6 +6,7 @@
 
 package com.filmax.data.catalog.mapper
 
+import com.filmax.core.domain.cache.DiscoveredTitle
 import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.cache.ImageDiscovery
 import com.filmax.core.domain.cache.ItemDetailsCacheAccess
@@ -60,15 +61,15 @@ internal fun similarCacheKey(id: Int): String = "similar:$id"
  * `CatalogRepositoryImpl`) их МИНУЕТ, иначе постер/детали грузились бы заново при каждом
  * повторном просмотре списка.
  *
- * В кэш деталей ([ItemDetailsCacheAccess]) тайтл кладём, ТОЛЬКО если в DTO реально есть треклист
- * (`seasons`/`videos`) — списковые эндпоинты (каталог/поиск/похожее/подборки) отдают тайтл БЕЗ
- * него, и, если кэшировать и такой ответ тоже, любой повторный показ тайтла в каком-нибудь ряду
- * тихо стирал бы уже закэшированные полные детали: треклист пропадал, а кнопка «Смотреть» на
- * экране деталей переставала знать, какую серию играть (см. `CatalogRepositoryImpl.getItemDetails`,
- * который на кэш-хите доверяет сохранённому DTO целиком).
+ * Списковый DTO целиком передаём в [ItemDiscovery]: он уже содержит почти всю карточку и сразу
+ * сохраняется как preview через `rememberIfAbsent`. Условная запись принципиальна — очередной
+ * список не может затереть уже закэшированный полный ответ пустыми `videos`/`seasons`. Если DTO
+ * действительно пришёл из `items/{id}` и содержит треклист, [ItemDetailsCacheAccess] заменяет им
+ * preview обычным [com.filmax.core.domain.cache.ItemDetailsCache.remember].
  *
- * Шлём id КАЖДОГО тайтла КАЖДОГО спискового ответа (все ряды главной, каталог, поиск, похожее,
- * подборки) в [ItemDiscovery] — раньше это было намеренно запрещено (см. историю в doc-комментарии
+ * Шлём id и доступный JSON КАЖДОГО тайтла КАЖДОГО спискового ответа (все ряды главной, каталог,
+ * поиск, похожее, подборки) в [ItemDiscovery] — раньше это было намеренно запрещено (см. историю
+ * в doc-комментарии
  * [ItemDiscovery]): кэш деталей был файлом `Settings`/SharedPreferences без потолка размера, и
  * обычный скролл раздувал бы его тысячами записей, переживающих даже перезапуск приложения.
  * Ограничение снято: [ItemDetailsCacheAccess.cache] теперь — SQLite (`ItemDetailsCacheDb`,
@@ -82,13 +83,18 @@ internal fun similarCacheKey(id: Int): String = "similar:$id"
  */
 fun ItemDto.toDomain(): Item {
     val item = toDomainOnly()
-    if (item.tracklist.isNotEmpty()) {
-        ItemDetailsCacheAccess.cache.remember(itemCacheKey(id), networkJson.encodeToString(this))
+    val serialized = networkJson.encodeToString(this)
+    if (hasFullDetails) {
+        ItemDetailsCacheAccess.cache.remember(itemCacheKey(id), serialized)
     }
     ImageDiscovery.discovered(item.posterPrefetchImages())
-    ItemDiscovery.discovered(item.id)
+    ItemDiscovery.discovered(DiscoveredTitle(id = item.id, previewJson = serialized))
     return item
 }
+
+/** Списковые ответы не содержат ни `videos`, ни `seasons`; detail полон при наличии треклиста. */
+internal val ItemDto.hasFullDetails: Boolean
+    get() = !videos.isNullOrEmpty() || !seasons.isNullOrEmpty()
 
 /** Тот же маппинг, но без побочных эффектов — для чтения уже закэшированного тайтла. */
 internal fun ItemDto.toDomainOnly(): Item = Item(

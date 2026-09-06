@@ -99,6 +99,14 @@ class DetailsScreenModel(
      */
     override fun onFetchData() {
         screenModelScope { _ ->
+            // Список, из которого открыли экран, уже положил почти всю карточку в кэш. Показываем
+            // её сразу; getItemDetails ниже отличает preview от полного ответа и в фоне дочитает
+            // videos/seasons и остальные detail-only поля, после чего бесшовно заменит затравку.
+            catalog.getCachedItemDetails(route.itemId)?.let { preview ->
+                updateState {
+                    it.copy(loading = false, item = preview, isWantToWatch = preview.inWatchlist)
+                }
+            }
             when (val itemResult = catalog.getItemDetails(route.itemId)) {
                 is RequestResult.Success -> {
                     val item = itemResult.data

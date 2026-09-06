@@ -15,6 +15,7 @@ import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.safeRequest
 import com.filmax.core.network.networkJson
+import com.filmax.data.catalog.mapper.hasFullDetails
 import com.filmax.data.catalog.mapper.itemCacheKey
 import com.filmax.data.catalog.mapper.similarCacheKey
 import com.filmax.data.catalog.mapper.toDomain
@@ -133,10 +134,10 @@ internal class CatalogRepositoryImpl(
         } else {
             null
         }
-        val cached = if (forceRefresh || adopted != null) null else itemCache.get(itemCacheKey(id))
+        val cached = if (forceRefresh || adopted != null) null else readCachedItemDto(id)
         return when {
             adopted != null -> adopted
-            cached != null -> safeRequest { networkJson.decodeFromString<ItemDto>(cached).toDomainOnly() }
+            cached?.hasFullDetails == true -> RequestResult.Success(cached.toDomainOnly())
             else -> inFlightDetails.computeIfAbsent(id) {
                 detailsFetchScope.async {
                     safeRequest { api.getItemDetails(id, isBackground).item.toDomain() }.also { result ->
@@ -148,6 +149,12 @@ internal class CatalogRepositoryImpl(
                     .also { job -> job.invokeOnCompletion { inFlightDetails.remove(id, job) } }
             }.await()
         }
+    }
+
+    override suspend fun getCachedItemDetails(id: Int): Item? = readCachedItemDto(id)?.toDomainOnly()
+
+    private suspend fun readCachedItemDto(id: Int): ItemDto? = itemCache.get(itemCacheKey(id))?.let { json ->
+        runCatching { networkJson.decodeFromString<ItemDto>(json) }.getOrNull()
     }
 
     override suspend fun invalidateItemCache(id: Int) {

@@ -194,6 +194,26 @@ class ItemDetailsCacheDb(context: Context) : ItemDetailsCache {
         }
     }
 
+    override fun rememberIfAbsent(key: String, json: String) {
+        scope.launch {
+            initDeferred.await()
+            if (ttlState.value == ItemCacheTtl.NEVER) return@launch
+
+            val values = ContentValues().apply {
+                put("key", key)
+                put("json", json)
+                put("cached_at", currentTimeMillis())
+            }
+            val inserted = dbHelper.writableDatabase.insertWithOnConflict(
+                TABLE_ENTRIES,
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_IGNORE,
+            )
+            if (inserted != -1L) countState.value += 1
+        }
+    }
+
     override suspend fun remove(key: String) {
         initDeferred.await()
         deleteRow(key)

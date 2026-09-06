@@ -36,6 +36,12 @@ interface ItemDetailsCache {
     fun remember(key: String, json: String)
 
     /**
+     * Сохраняет облегчённый ответ списка, только если по ключу ещё ничего нет. Полный
+     * `items/{id}` нельзя затирать более бедной карточкой из очередного списка.
+     */
+    fun rememberIfAbsent(key: String, json: String)
+
+    /**
      * Точечная инвалидация одного ключа — когда о тайтле стало известно что-то, чего кэш ещё не
      * знает (например, локальное действие пользователя: подборки, «буду смотреть»), и ждать TTL
      * нельзя. Следующий [get] по этому ключу — гарантированный промах, дальше система сама
@@ -51,9 +57,9 @@ interface ItemDetailsCache {
 }
 
 /**
- * Точка обнаружения вне DI-графа — `ItemDto.toDomain()` (`data:catalog`) кладёт в кэш КАЖДЫЙ
- * тайтл, который когда-либо пришёл от API (список, поиск, похожее, детали), не только те,
- * что пользователь открыл явно. Аналогично [ImageDiscovery]/[com.filmax.core.domain.common.ErrorReporting].
+ * Точка доступа вне DI-графа. Полные ответы `ItemDto.toDomain()` заменяют сохранённое значение
+ * напрямую, а preview списков проходит через `TitleBackgroundFetcherImpl` и
+ * [ItemDetailsCache.rememberIfAbsent], чтобы никогда не затереть полный треклист.
  */
 object ItemDetailsCacheAccess {
     @Volatile
@@ -63,6 +69,7 @@ object ItemDetailsCacheAccess {
 private object NoopItemDetailsCache : ItemDetailsCache {
     override suspend fun get(key: String): String? = null
     override fun remember(key: String, json: String) = Unit
+    override fun rememberIfAbsent(key: String, json: String) = Unit
     override suspend fun remove(key: String) = Unit
     override val ttl: StateFlow<ItemCacheTtl> = MutableStateFlow(ItemCacheTtl.MONTH)
     override suspend fun setTtl(ttl: ItemCacheTtl) = Unit

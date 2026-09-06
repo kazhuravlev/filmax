@@ -63,6 +63,12 @@ interface CatalogRepository {
         isBackground: Boolean = false,
     ): RequestResult<Item>
 
+    /**
+     * Возвращает сохранённую карточку без сети. Это может быть как полный `items/{id}`, так и
+     * preview из спискового ответа; используется только как мгновенная затравка интерфейса.
+     */
+    suspend fun getCachedItemDetails(id: Int): Item?
+
     suspend fun getSimilarItems(id: Int): RequestResult<List<Item>>
 
     /**
