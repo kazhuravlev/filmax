@@ -5,6 +5,7 @@ import com.filmax.core.domain.cache.BackgroundFetchSettings
 import com.filmax.core.domain.cache.ImageCacheRepository
 import com.filmax.core.domain.cache.ImageProxyRepository
 import com.filmax.core.domain.cache.ItemDetailsCache
+import com.filmax.core.domain.cache.TechOverlaySettings
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.network.ApiHostRepository
@@ -27,6 +28,7 @@ class ProfileScreenModel(
     private val imageProxy: ImageProxyRepository,
     private val backgroundFetch: BackgroundFetchSettings,
     private val itemCache: ItemDetailsCache,
+    private val techOverlay: TechOverlaySettings,
 ) : BaseScreenModel<ProfileState, ProfileSideEffect, ProfileEvent>(ProfileState()) {
 
     init {
@@ -38,6 +40,7 @@ class ProfileScreenModel(
         observeBackgroundFetch()
         observeImageCacheStats()
         observeItemCache()
+        observeTechOverlay()
     }
 
     private fun observeFavorites() {
@@ -96,6 +99,14 @@ class ProfileScreenModel(
         }
     }
 
+    private fun observeTechOverlay() {
+        screenModelScope {
+            techOverlay.enabled.collect { enabled ->
+                updateState { it.copy(techOverlayEnabled = enabled) }
+            }
+        }
+    }
+
     override fun dispatch(event: ProfileEvent) {
         when (event) {
             ProfileEvent.Logout -> logout()
@@ -107,6 +118,7 @@ class ProfileScreenModel(
             ProfileEvent.ClearImageCache -> clearImageCache()
             is ProfileEvent.SetImageProxyEnabled -> setImageProxyEnabled(event.enabled)
             is ProfileEvent.SetBackgroundFetchEnabled -> setBackgroundFetchEnabled(event.enabled)
+            is ProfileEvent.SetTechOverlayEnabled -> setTechOverlayEnabled(event.enabled)
             ProfileEvent.ClearItemCache -> clearItemCache()
         }
     }
@@ -125,6 +137,10 @@ class ProfileScreenModel(
 
     private fun setBackgroundFetchEnabled(enabled: Boolean) = screenModelScope {
         backgroundFetch.setEnabled(enabled)
+    }
+
+    private fun setTechOverlayEnabled(enabled: Boolean) = screenModelScope {
+        techOverlay.setEnabled(enabled)
     }
 
     private fun setQuality(quality: String) = screenModelScope {

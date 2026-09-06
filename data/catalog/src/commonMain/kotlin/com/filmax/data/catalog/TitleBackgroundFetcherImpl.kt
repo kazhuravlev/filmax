@@ -5,6 +5,7 @@ import com.filmax.core.domain.cache.ImageDiscovery
 import com.filmax.core.domain.cache.ImagePrefetchThrottle
 import com.filmax.core.domain.cache.ItemDetailsCache
 import com.filmax.core.domain.cache.ItemDiscovery
+import com.filmax.core.domain.cache.PrefetchProgress
 import com.filmax.core.domain.cache.TitleBackgroundFetcher
 import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.common.getOrNull
@@ -18,6 +19,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.decodeFromString
@@ -27,15 +32,19 @@ import java.util.concurrent.ConcurrentHashMap
 private const val FETCH_TIMEOUT_MS = 15_000L
 private const val THROTTLE_POLL_DELAY_MS = 500L
 
-/** Максимум одновременно стоящих в очереди id — см. doc класса про drop-newest. */
-private const val MAX_QUEUED_IDS = 200
+/** Максимум одновременно стоящих в очереди id — см. doc класса про drop-newest. Поднят с 200 до
+ * 1000: раньше сюда попадали только `WatchingItemDto`/`HistoryEntryDto` (data:watching), теперь —
+ * id КАЖДОГО тайтла КАЖДОГО спискового ответа (см. `CatalogMapper.toDomain()`), и старый потолок
+ * слишком легко выедался обычным скроллом каталога/поиска. */
+private const val MAX_QUEUED_IDS = 1000
 
 /**
  * Докачивает `items/{id}` в фоне для тайтлов, известных пока только по голой ссылке (см.
- * [ItemDiscovery]) — «В процессе», история и т.п. отдают id/название/постер без жанров, рейтинга,
- * трейлера. Очередь строго последовательная (один [Channel], одна корутина-читатель) — как и
- * `ImagePrefetcherImpl`: фоновая докачка не должна соревноваться за сеть с активным контентом
- * (в том числе с воспроизведением видео).
+ * [ItemDiscovery]) — раньше это были только «В процессе»/история (отдают id/название/постер без
+ * жанров, рейтинга, трейлера), теперь источник — ЛЮБОЙ тайтл, когда-либо прошедший через список,
+ * поиск, похожее или подборку (см. `CatalogMapper.toDomain()`). Очередь строго последовательная
+ * (один [Channel], одна корутина-читатель) — как и `ImagePrefetcherImpl`: фоновая докачка не
+ * должна соревноваться за сеть с активным контентом (в том числе с воспроизведением видео).
  *
  * Единый конвейер на id, СТРОГО по порядку: сначала детали тайтла, потом его постер.
  *  - Кэш-промах: [CatalogRepository.getItemDetails] сходит в сеть, а её `ItemDto.toDomain()`
@@ -69,6 +78,9 @@ internal class TitleBackgroundFetcherImpl(
     private val backgroundFetch: BackgroundFetchSettings,
 ) : TitleBackgroundFetcher {
 
+    private val progressState = MutableStateFlow(PrefetchProgress())
+    override val progress: StateFlow<PrefetchProgress> = progressState.asStateFlow()
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val channel = Channel<Int>(capacity = Channel.UNLIMITED)
     private val queuedIds = Collections.newSetFromMap(ConcurrentHashMap<Int, Boolean>())
@@ -80,6 +92,9 @@ internal class TitleBackgroundFetcherImpl(
                 while (ImagePrefetchThrottle.shouldThrottle) delay(THROTTLE_POLL_DELAY_MS)
                 runCatching { withTimeoutOrNull(FETCH_TIMEOUT_MS) { fetchThenPrefetchPoster(id) } }
                 queuedIds.remove(id)
+                progressState.update {
+                    it.copy(downloaded = it.downloaded + 1, remaining = queuedIds.size)
+                }
             }
         }
     }
@@ -91,6 +106,7 @@ internal class TitleBackgroundFetcherImpl(
             // add() возвращает false, если id уже в очереди/обрабатывается — не дублируем.
             if (queuedIds.add(id)) {
                 channel.trySend(id)
+                progressState.update { it.copy(remaining = queuedIds.size) }
             }
         }
     }

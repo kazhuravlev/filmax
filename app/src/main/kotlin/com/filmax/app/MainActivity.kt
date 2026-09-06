@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.filmax.app.diagnostics.TechOverlay
 import com.filmax.app.tv.navigation.FilmaxTvNavGraph
 import com.filmax.app.update.AppUpdateEvent
 import com.filmax.app.update.AppUpdatePrompt
@@ -49,6 +50,9 @@ class MainActivity : ComponentActivity() {
                         onExit = { finishAndRemoveTask() },
                     )
                     AppUpdatePrompt(updateScreenModel)
+                    // Рисуется ПОСЛЕ nav-графа и апдейт-промпта — поверх всего остального контента
+                    // (см. doc TechOverlay). Композит буквально ничего, пока настройка выключена.
+                    TechOverlay()
                 }
             }
         }

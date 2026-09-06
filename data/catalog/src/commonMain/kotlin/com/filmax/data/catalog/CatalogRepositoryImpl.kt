@@ -122,26 +122,28 @@ internal class CatalogRepositoryImpl(
     // тому, кто просто не нашёл кэш. Так фоновый TitleBackgroundFetcherImpl и экран деталей,
     // открытый в тот же момент на тот же id, ждут ОДИН запрос, а не гоняют по два параллельно.
     override suspend fun getItemDetails(id: Int, forceRefresh: Boolean): RequestResult<Item> {
-        if (forceRefresh) {
-            recentForceRefresh.remove(id)?.let { recent ->
-                if (recent.fetchedAt.elapsedNow() < FORCE_REFRESH_ADOPTION_TTL) return recent.result
-            }
+        val adopted = if (forceRefresh) {
+            recentForceRefresh.remove(id)
+                ?.takeIf { it.fetchedAt.elapsedNow() < FORCE_REFRESH_ADOPTION_TTL }
+                ?.result
+        } else {
+            null
         }
-        val cached = if (forceRefresh) null else itemCache.get(itemCacheKey(id))
-        if (cached != null) {
-            return safeRequest { networkJson.decodeFromString<ItemDto>(cached).toDomainOnly() }
-        }
-        val deferred = inFlightDetails.computeIfAbsent(id) {
-            detailsFetchScope.async {
-                safeRequest { api.getItemDetails(id).item.toDomain() }.also { result ->
-                    if (forceRefresh && result is RequestResult.Success) {
-                        recentForceRefresh[id] = RecentForceRefresh(result, TimeSource.Monotonic.markNow())
+        val cached = if (forceRefresh || adopted != null) null else itemCache.get(itemCacheKey(id))
+        return when {
+            adopted != null -> adopted
+            cached != null -> safeRequest { networkJson.decodeFromString<ItemDto>(cached).toDomainOnly() }
+            else -> inFlightDetails.computeIfAbsent(id) {
+                detailsFetchScope.async {
+                    safeRequest { api.getItemDetails(id).item.toDomain() }.also { result ->
+                        if (forceRefresh && result is RequestResult.Success) {
+                            recentForceRefresh[id] = RecentForceRefresh(result, TimeSource.Monotonic.markNow())
+                        }
                     }
                 }
-            }
-                .also { job -> job.invokeOnCompletion { inFlightDetails.remove(id, job) } }
+                    .also { job -> job.invokeOnCompletion { inFlightDetails.remove(id, job) } }
+            }.await()
         }
-        return deferred.await()
     }
 
     override suspend fun invalidateItemCache(id: Int) {

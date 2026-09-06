@@ -35,6 +35,13 @@ actual val platformNetworkModule: Module = module {
             androidContext().getSharedPreferences("filmax_bg_fetch", Context.MODE_PRIVATE),
         )
     }
+    // Свой файл под видимость технического оверлея — сброс любого из кэшей не должен менять,
+    // виден ли оверлей (см. TechOverlaySettingsImpl).
+    single<Settings>(named(TECH_OVERLAY_SETTINGS)) {
+        SharedPreferencesSettings(
+            androidContext().getSharedPreferences("filmax_tech_overlay", Context.MODE_PRIVATE),
+        )
+    }
     single { ChuckerInterceptor.Builder(androidContext()).build() }
     single<HttpClientEngine> {
         OkHttp.create { addInterceptor(get<ChuckerInterceptor>()) }

@@ -1,6 +1,7 @@
 package com.filmax.core.network
 
 import com.filmax.core.domain.cache.ImagePrefetchThrottle
+import com.filmax.core.domain.cache.NetworkStats
 import com.filmax.core.domain.network.ApiHostRepository
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
@@ -24,6 +25,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.url
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
+import io.ktor.http.contentLength
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.io.IOException
 import kotlinx.serialization.SerialName
@@ -155,11 +157,18 @@ fun buildHttpClient(
  */
 /** Любой запрос основного API-клиента — это «пользователь сейчас чем-то занят» для фоновой
  * закачки картинок (см. [ImagePrefetchThrottle]): она придушивает себя на 10 секунд после
- * такой активности, чтобы не отъедать канал у того, что реально нужно прямо сейчас. */
+ * такой активности, чтобы не отъедать канал у того, что реально нужно прямо сейчас.
+ *
+ * Заодно копит приблизительный трафик API-клиента в [NetworkStats] — источник строки «сеть» в
+ * оверлее «Показывать технические данные». Именно приблизительный: берём заявленный
+ * `Content-Length` ответа, а не реально прочитанные байты (в отличие от `FilmaxImageLoaderFactory`,
+ * где тело оборачивается явным `ForwardingSource`) — для короткого JSON этого API разница не имеет
+ * значения, а оборачивать тело ради диагностической цифры здесь не стоит своей сложности. */
 private fun HttpClientConfig<*>.installActivityTracking() {
     install(
         createClientPlugin("ActivityTrackingPlugin") {
             onRequest { _, _ -> ImagePrefetchThrottle.touch() }
+            onResponse { response -> NetworkStats.addBytes(response.contentLength() ?: 0) }
         },
     )
 }

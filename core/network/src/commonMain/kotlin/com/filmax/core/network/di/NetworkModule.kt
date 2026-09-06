@@ -1,9 +1,11 @@
 package com.filmax.core.network.di
 
 import com.filmax.core.domain.cache.BackgroundFetchSettings
+import com.filmax.core.domain.cache.TechOverlaySettings
 import com.filmax.core.domain.network.ApiHostRepository
 import com.filmax.core.network.ApiHostRepositoryImpl
 import com.filmax.core.network.BackgroundFetchSettingsImpl
+import com.filmax.core.network.TechOverlaySettingsImpl
 import com.filmax.core.network.TokenStorage
 import com.filmax.core.network.buildHttpClient
 import com.filmax.core.network.isDebugBuild
@@ -28,6 +30,9 @@ val networkModule = module {
     // своей очереди.
     single<BackgroundFetchSettings>(createdAtStart = true) {
         BackgroundFetchSettingsImpl(settings = get(named(BG_FETCH_SETTINGS)))
+    }
+    single<TechOverlaySettings> {
+        TechOverlaySettingsImpl(settings = get(named(TECH_OVERLAY_SETTINGS)))
     }
     single<HttpClient> {
         buildHttpClient(

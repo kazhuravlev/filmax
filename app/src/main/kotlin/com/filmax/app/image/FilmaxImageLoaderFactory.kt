@@ -9,6 +9,7 @@ import coil3.map.Mapper
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.filmax.core.domain.cache.ImagePrefetchThrottle
+import com.filmax.core.domain.cache.NetworkStats
 import com.filmax.core.ui.cache.BACKGROUND_FETCH_HEADER
 import com.filmax.core.ui.cache.CacheableImage
 import okhttp3.Interceptor
@@ -74,6 +75,11 @@ class FilmaxImageLoaderFactory : SingletonImageLoader.Factory {
  * как только появляется другая активность, следующие 10 секунд фоновая закачка придушена, чтобы
  * не отъедать канал у того, что реально нужно пользователю прямо сейчас. Заголовок снимается перед
  * отправкой на сервер в любом случае — до него не доезжает.
+ *
+ * Заодно считаем реально прочитанные байты КАЖДОГО тела ответа (и обычной загрузки, и фоновой) в
+ * [NetworkStats] — источник строки «сеть» в оверлее «Показывать технические данные» (см.
+ * `TechOverlay`, app). Оборачиваем [CountingResponseBody] всегда, throttle (когда он нужен) идёт
+ * уже поверх неё отдельным слоем — оба декоратора независимы друг от друга.
  */
 private class ImageCacheLifetimeInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -93,11 +99,37 @@ private class ImageCacheLifetimeInterceptor : Interceptor {
             .header(HEADER_CACHE_CONTROL, "public, max-age=$IMAGE_CACHE_MAX_AGE_SECONDS")
             .build()
 
-        val body = response.body
-        val shouldThrottleBody = isBackgroundFetch && ImagePrefetchThrottle.shouldThrottle
-        if (response.code != HTTP_OK || body == null || !shouldThrottleBody) return response
-        return response.newBuilder().body(ThrottledResponseBody(body, BACKGROUND_FETCH_BYTES_PER_SECOND)).build()
+        val body = response.body ?: return response
+        val countingBody = CountingResponseBody(body)
+        val shouldThrottleBody = response.code == HTTP_OK && isBackgroundFetch && ImagePrefetchThrottle.shouldThrottle
+        val finalBody = if (shouldThrottleBody) {
+            ThrottledResponseBody(countingBody, BACKGROUND_FETCH_BYTES_PER_SECOND)
+        } else {
+            countingBody
+        }
+        return response.newBuilder().body(finalBody).build()
     }
+}
+
+/**
+ * Считает реально прочитанные байты тела ответа в [NetworkStats] — не заявленный `Content-Length`
+ * (его может не быть у chunked-ответа, а декодирование, оборванное на середине, не должно
+ * засчитываться как полный вес). Оборачивает [ForwardingSource] по тому же приёму, что и
+ * [ThrottledResponseBody] ниже, но независимо от неё — эта обёртка ничего не придушивает, только
+ * считает.
+ */
+private class CountingResponseBody(private val delegate: ResponseBody) : ResponseBody() {
+    private val countingSource: BufferedSource = object : ForwardingSource(delegate.source()) {
+        override fun read(sink: Buffer, byteCount: Long): Long {
+            val read = super.read(sink, byteCount)
+            if (read > 0) NetworkStats.addBytes(read)
+            return read
+        }
+    }.buffer()
+
+    override fun contentType(): MediaType? = delegate.contentType()
+    override fun contentLength(): Long = delegate.contentLength()
+    override fun source(): BufferedSource = countingSource
 }
 
 /**

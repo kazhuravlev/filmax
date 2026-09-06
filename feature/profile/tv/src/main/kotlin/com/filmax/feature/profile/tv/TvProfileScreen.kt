@@ -220,6 +220,7 @@ private data class ProfileActions(
     val onClearImageCache: () -> Unit,
     val onToggleImageProxy: () -> Unit,
     val onToggleBackgroundFetch: () -> Unit,
+    val onToggleTechOverlay: () -> Unit,
     val onClearItemCache: () -> Unit,
 )
 
@@ -261,6 +262,9 @@ private fun profileActions(
     },
     onToggleBackgroundFetch = {
         screenModel.dispatch(ProfileEvent.SetBackgroundFetchEnabled(!state.backgroundFetchEnabled))
+    },
+    onToggleTechOverlay = {
+        screenModel.dispatch(ProfileEvent.SetTechOverlayEnabled(!state.techOverlayEnabled))
     },
     onClearItemCache = { screenModel.dispatch(ProfileEvent.ClearItemCache) },
 )
@@ -308,8 +312,10 @@ private fun AccountRows(state: ProfileState, actions: ProfileActions) {
 
 /**
  * Единый раздел настроек фоновой докачки: общий выключатель (картинки И информация о тайтлах,
- * см. [com.filmax.core.domain.cache.BackgroundFetchSettings]), прокси изображений и сброс обоих
- * дисковых кэшей по отдельности — у каждого свой размер/счётчик, поэтому и сбрасываются порознь.
+ * см. [com.filmax.core.domain.cache.BackgroundFetchSettings]), прокси изображений, оверлей
+ * технической диагностики этой же докачки ([com.filmax.core.domain.cache.TechOverlaySettings]) и
+ * сброс обоих дисковых кэшей по отдельности — у каждого свой размер/счётчик, поэтому и
+ * сбрасываются порознь.
  */
 @Composable
 private fun BackgroundFetchRows(state: ProfileState, actions: ProfileActions) {
@@ -335,6 +341,13 @@ private fun BackgroundFetchRows(state: ProfileState, actions: ProfileActions) {
         )
         SettingRow(
             spec = SettingRowSpec(
+                label = "Показывать технические данные",
+                value = onOff(state.techOverlayEnabled),
+            ),
+            onClick = actions.onToggleTechOverlay,
+        )
+        SettingRow(
+            spec = SettingRowSpec(
                 label = "Сбросить кеш изображений ($sizeLabel)",
                 labelColor = TvError,
             ),
@@ -342,7 +355,7 @@ private fun BackgroundFetchRows(state: ProfileState, actions: ProfileActions) {
         )
         SettingRow(
             spec = SettingRowSpec(
-                label = "Сбросить кеш данных ($itemCount $titleWord)",
+                label = "Сбросить кеш тайтлов ($itemCount $titleWord)",
                 labelColor = TvError,
             ),
             onClick = actions.onClearItemCache,

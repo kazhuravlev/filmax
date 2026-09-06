@@ -23,6 +23,10 @@ data class ProfileState(
     /** Единый выключатель ВСЕЙ автоматической фоновой докачки — картинок и информации о тайтлах
      * (см. [com.filmax.core.domain.cache.BackgroundFetchSettings]). */
     val backgroundFetchEnabled: Boolean = true,
+    /** Показывать ли оверлей с живой диагностикой фоновых очередей и сети в углу экрана (см.
+     * [com.filmax.core.domain.cache.TechOverlaySettings]). Не связан с [backgroundFetchEnabled] —
+     * только видимость, ничего не включает/выключает сам. */
+    val techOverlayEnabled: Boolean = false,
     /** Сколько сейчас реально занято на диске кэшем изображений — для подписи на кнопке сброса. */
     val imageCacheStats: ImageCacheStats = ImageCacheStats(),
     /** Сколько тайтлов сейчас в кэше статической информации (см.
@@ -43,6 +47,7 @@ sealed interface ProfileEvent {
     data object ClearImageCache : ProfileEvent
     data class SetImageProxyEnabled(val enabled: Boolean) : ProfileEvent
     data class SetBackgroundFetchEnabled(val enabled: Boolean) : ProfileEvent
+    data class SetTechOverlayEnabled(val enabled: Boolean) : ProfileEvent
     data object ClearItemCache : ProfileEvent
 }
 
