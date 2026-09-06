@@ -22,8 +22,14 @@ import com.filmax.data.catalog.mapper.toDomainOnly
 import com.filmax.data.catalog.remote.CatalogApi
 import com.filmax.data.catalog.remote.ItemsQuery
 import com.filmax.data.catalog.remote.dto.ItemDto
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
+import java.util.concurrent.ConcurrentHashMap
 
 // Значение параметра `quality` для фильтра «только 4K» (kino.watch: 4 = 2160p).
 private const val QUALITY_4K = 4
@@ -34,6 +40,14 @@ internal class CatalogRepositoryImpl(
     private val api: CatalogApi,
     private val itemCache: ItemDetailsCache,
 ) : CatalogRepository {
+
+    // Свой скоуп, не завязанный на вызывающего: фоновая очередь (TitleBackgroundFetcherImpl) и
+    // экран деталей, открытый пользователем ровно в этот момент, могут запросить один и тот же id
+    // одновременно — оба должны дождаться ОДНОГО сетевого ответа, а не бить по сети и по
+    // ItemDetailsCache дважды параллельно. Скоуп вызывающего для Deferred не годится: он живёт
+    // только на время одного из двух вызовов и не должен обрывать результат для другого.
+    private val detailsFetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val inFlightDetails = ConcurrentHashMap<Int, Deferred<RequestResult<Item>>>()
 
     override suspend fun getItems(type: ItemType, sort: CatalogSort, page: Int): RequestResult<ItemPage> =
         safeRequest { api.getItems(type.apiValue, sort.descending, page).toDomain() }
@@ -69,13 +83,22 @@ internal class CatalogRepositoryImpl(
     // (см. doc CatalogRepository.getItemDetails), поэтому перед воспроизведением нужен гарантированно
     // свежий ответ с реальными ссылками. toDomain() тут же перезаписывает кэш полными данными —
     // самолечение: следующий кэш-хит (в т.ч. для Details) уже увидит настоящий треклист.
-    override suspend fun getItemDetails(id: Int, forceRefresh: Boolean): RequestResult<Item> = safeRequest {
+    //
+    // Сетевой поход (единственная небезопасная для гонки часть — дубль запроса и запись в кэш из
+    // двух мест разом) схлопнут по id в [inFlightDetails]: пока он не забрал сюда ветку кэш-хита,
+    // forceRefresh не важен — общий свежий ответ одинаково годится и тому, кто его форсировал, и
+    // тому, кто просто не нашёл кэш. Так фоновый TitleBackgroundFetcherImpl и экран деталей,
+    // открытый в тот же момент на тот же id, ждут ОДИН запрос, а не гоняют по два параллельно.
+    override suspend fun getItemDetails(id: Int, forceRefresh: Boolean): RequestResult<Item> {
         val cached = if (forceRefresh) null else itemCache.get(itemCacheKey(id))
         if (cached != null) {
-            networkJson.decodeFromString<ItemDto>(cached).toDomainOnly()
-        } else {
-            api.getItemDetails(id).item.toDomain()
+            return safeRequest { networkJson.decodeFromString<ItemDto>(cached).toDomainOnly() }
         }
+        val deferred = inFlightDetails.computeIfAbsent(id) {
+            detailsFetchScope.async { safeRequest { api.getItemDetails(id).item.toDomain() } }
+                .also { job -> job.invokeOnCompletion { inFlightDetails.remove(id, job) } }
+        }
+        return deferred.await()
     }
 
     override suspend fun invalidateItemCache(id: Int) {

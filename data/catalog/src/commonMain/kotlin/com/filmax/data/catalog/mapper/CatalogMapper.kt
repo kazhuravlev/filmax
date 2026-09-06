@@ -127,7 +127,7 @@ internal fun ItemDto.toDomainOnly(): Item = Item(
  * маленькие постеры, что реально переиспользуются между экранами — отсюда и повторные закачки
  * одного и того же при возврате на главную/в подборку.
  */
-private fun Item.posterPrefetchImages(): List<PrefetchImage> = buildList {
+internal fun Item.posterPrefetchImages(): List<PrefetchImage> = buildList {
     posters.medium.takeIf { it.isNotBlank() }?.let { url ->
         add(PrefetchImage(ImageCacheKeys.poster(type.apiValue, id, ImageCacheKeys.SIZE_MEDIUM), url))
     }
