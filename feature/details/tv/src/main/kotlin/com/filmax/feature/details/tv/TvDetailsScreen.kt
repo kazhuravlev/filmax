@@ -297,7 +297,16 @@ private fun DetailsContent(
     // false = стейт hero (открытие экрана), true = фокус ушёл в контент. Пока полотно в стейте
     // hero, фокус-прокрутка (bringIntoView) выключена ПОЛНОСТЬЮ: именно она давала подскролл к
     // середине при открытии — стартовый requestFocus на «Смотреть» уезжал раньше раскладки.
-    val contentFocused = remember { mutableStateOf(false) }
+    //
+    // Начальное значение — не всегда false: если экран восстанавливает фокус сразу вглубь
+    // контента (например, на карточку серии, на которой стояли до перехода к режиссёру и
+    // обратно), фокус в hero-кнопки в этой композиции вообще не заходит — rememberHeroFocusScroller
+    // никогда не срабатывает, и NoFocusScroll остаётся включённым навсегда, ломая bringIntoView
+    // (в т.ч. подскролл) во всех рядах контента, включая «Похожее». Поэтому стартуем сразу в
+    // нужном стейте, а не ждём живого перехода фокуса через шапку.
+    val contentFocused = remember {
+        mutableStateOf(focus.initialReturnTarget != null && focus.initialReturnTarget != HERO_PLAY_KEY)
+    }
     val onHeroFocusChanged = rememberHeroFocusScroller(listState, contentFocused)
 
     // Локальная функция вместо лямбды-в-лямбде (ktlint Wrapping): у тайтла без трейлера кнопки нет.
