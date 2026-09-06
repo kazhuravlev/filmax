@@ -9,7 +9,6 @@ package com.filmax.data.catalog.mapper
 import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.cache.ImageDiscovery
 import com.filmax.core.domain.cache.ItemDetailsCacheAccess
-import com.filmax.core.domain.cache.ItemDiscovery
 import com.filmax.core.domain.cache.PrefetchImage
 import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.CollectionPage
@@ -53,28 +52,30 @@ internal fun similarCacheKey(id: Int): String = "similar:$id"
 
 /**
  * Полный маппинг + «заявки» в фоновые кэши: любой тайтл, прошедший через API (список, поиск,
- * похожее, детали, подборки) — кандидат на фоновую закачку постера, даже если экран его ещё не
- * отрисовал. Единственное место, где этот побочный эффект запускается — повторный вызов
- * [toDomainOnly] (кэш-хит в `CatalogRepositoryImpl`) его МИНУЕТ, иначе постер грузился бы заново
- * при каждом повторном просмотре списка.
+ * похожее, детали) — кандидат на фоновую закачку постера, даже если экран его ещё не отрисовал.
+ * Единственное место, где этот побочный эффект запускается — повторный вызов [toDomainOnly]
+ * (кэш-хит в `CatalogRepositoryImpl`) его МИНУЕТ, иначе постер грузился бы заново при каждом
+ * повторном просмотре списка.
  *
- * В кэш деталей ([ItemDetailsCacheAccess]) тайтл кладём НАПРЯМУЮ, только если в DTO реально есть
- * треклист (`seasons`/`videos`) — это и есть полный ответ `items/{id}`. Списковые эндпоинты
- * (каталог/поиск/похожее/подборки) отдают тайтл БЕЗ него: кэшировать и такой ответ тоже раньше
- * было ошибкой — любой повторный показ тайтла в каком-нибудь ряду тихо стирал уже закэшированные
- * полные детали (треклист пропадал, кнопка «Смотреть» на экране деталей переставала знать, какую
- * серию играть, см. `CatalogRepositoryImpl.getItemDetails`, который на кэш-хите доверяет
- * сохранённому DTO целиком). Но раз списковый ответ не кэшируем — тайтл без треклиста надо
- * докачать отдельно, иначе он не наверстает: поэтому вместо прямого кэширования шлём его id в
- * [ItemDiscovery] — фоновая очередь докачает `items/{id}` целиком тем же способом, что и
- * [ImageDiscovery] для постеров, и сама пропустит его, если он уже свежий в кэше.
+ * В кэш деталей ([ItemDetailsCacheAccess]) тайтл кладём, ТОЛЬКО если в DTO реально есть треклист
+ * (`seasons`/`videos`) — списковые эндпоинты (каталог/поиск/похожее/подборки) отдают тайтл БЕЗ
+ * него, и, если кэшировать и такой ответ тоже, любой повторный показ тайтла в каком-нибудь ряду
+ * тихо стирал бы уже закэшированные полные детали: треклист пропадал, а кнопка «Смотреть» на
+ * экране деталей переставала знать, какую серию играть (см. `CatalogRepositoryImpl.getItemDetails`,
+ * который на кэш-хите доверяет сохранённому DTO целиком).
+ *
+ * НЕ шлём id в [ItemDiscovery] здесь: эта функция мапит КАЖДЫЙ тайтл КАЖДОГО спискового ответа
+ * (все ряды главной, каталог, поиск, похожее, подборки) — фоновая докачка `items/{id}} на каждый
+ * из них означала бы один сетевой запрос и одну запись в [ItemDetailsCacheAccess] (persist на диск,
+ * без потолка размера) на каждую карточку, когда-либо промелькнувшую в любом списке — с обычным
+ * скроллом это тысячи записей за сессию, распухающий файл кэша переживает даже перезапуск
+ * приложения. [ItemDiscovery] — точечно, только там, где реально нужны полные детали тайтла,
+ * известного пока лишь по «лёгкой» ссылке: `WatchingItemDto`/`HistoryEntryDto` в data:watching.
  */
 fun ItemDto.toDomain(): Item {
     val item = toDomainOnly()
     if (item.tracklist.isNotEmpty()) {
         ItemDetailsCacheAccess.cache.remember(itemCacheKey(id), networkJson.encodeToString(this))
-    } else {
-        ItemDiscovery.discovered(id)
     }
     ImageDiscovery.discovered(item.posterPrefetchImages())
     return item
