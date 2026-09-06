@@ -6,6 +6,7 @@ import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
 import coil3.key.Keyer
 import coil3.map.Mapper
+import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.filmax.core.domain.cache.ImagePrefetchThrottle
 import com.filmax.core.ui.cache.BACKGROUND_FETCH_HEADER
@@ -46,6 +47,13 @@ class FilmaxImageLoaderFactory : SingletonImageLoader.Factory {
                 DiskCache.Builder()
                     .directory(context.cacheDir.resolve(IMAGE_DISK_CACHE_DIR).toOkioPath())
                     .maxSizeBytes(IMAGE_DISK_CACHE_MAX_SIZE_BYTES)
+                    .build()
+            }
+            // TV-боксы имеют маленькую кучу, дефолтные 25% + полноразмерные декоды приводили к
+            // OOM при скролле — явно урезаем до 15% вместо дефолта Coil.
+            .memoryCache {
+                MemoryCache.Builder()
+                    .maxSizePercent(context, MEMORY_CACHE_SIZE_PERCENT)
                     .build()
             }
             .build()
@@ -112,9 +120,16 @@ private class ThrottledResponseBody(
             if (read <= 0) return read
             totalBytesRead += read
             val targetNanos = totalBytesRead * NANOS_PER_SECOND / bytesPerSecond
-            val sleepNanos = targetNanos - (System.nanoTime() - startNanos)
-            if (sleepNanos > 0) {
-                TimeUnit.NANOSECONDS.sleep(sleepNanos)
+            var remainingNanos = targetNanos - (System.nanoTime() - startNanos)
+            // Спим короткими срезами, а не одним долгим TimeUnit.NANOSECONDS.sleep(): большой файл
+            // на 256 КБ/с легко требует многосекундной паузы за одно чтение, а один долгий sleep()
+            // не реагирует на закрытие потока/отмену корутины — источник почти не отпускал ресурсы,
+            // пока не проснётся сам. Срезами по [MAX_SLEEP_SLICE_NANOS] следующее чтение (и с ним
+            // проверка отмены/закрытия) подхватывается заметно быстрее.
+            while (remainingNanos > 0) {
+                val sliceNanos = minOf(remainingNanos, MAX_SLEEP_SLICE_NANOS)
+                TimeUnit.NANOSECONDS.sleep(sliceNanos)
+                remainingNanos -= sliceNanos
             }
             return read
         }
@@ -139,3 +154,9 @@ private const val NANOS_PER_SECOND = 1_000_000_000L
 /** ~256 КБ/с — с запасом хватает для постеров/фото, но заметно уступает по приоритету реальному
  * контенту (видео в плеере, картинки открытого сейчас экрана), с которым фоновая очередь не спорит. */
 private const val BACKGROUND_FETCH_BYTES_PER_SECOND = 256L * 1024
+
+/** Максимальный кусок паузы за одну итерацию throttle-цикла — см. doc [ThrottledResponseBody]. */
+private const val MAX_SLEEP_SLICE_NANOS = 200_000_000L
+
+/** Доля памяти под кэш Coil — см. комментарий у [FilmaxImageLoaderFactory.newImageLoader]. */
+private const val MEMORY_CACHE_SIZE_PERCENT = 0.15

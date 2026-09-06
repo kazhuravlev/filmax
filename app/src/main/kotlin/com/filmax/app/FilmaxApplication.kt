@@ -26,6 +26,9 @@ import com.filmax.feature.profile.common.di.profileModule
 import com.filmax.feature.search.common.di.searchFeatureModule
 import com.google.firebase.FirebaseApp
 import com.google.firebase.crashlytics.FirebaseCrashlytics
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.core.context.startKoin
@@ -41,6 +44,7 @@ class FilmaxApplication :
         super.onCreate()
         initErrorReporting()
         seedDemoTokenIfNeeded()
+        runOneTimeHousekeeping()
         startKoin {
             androidLogger(Level.ERROR)
             androidContext(this@FilmaxApplication)
@@ -114,5 +118,34 @@ class FilmaxApplication :
             .putString("access_token", access)
             .putString("refresh_token", refresh)
             .apply()
+    }
+
+    /**
+     * Разовая уборка после обновления: удаляет файлы хранилищ, которые перестали использоваться
+     * в текущей версии, но остались на диске у тех, кто ставил приложение раньше. Выполняется
+     * не более одного раза — факт запуска фиксируется отдельным маленьким файлом
+     * `filmax_housekeeping` (не тем, что чистим), чтобы сама уборка не плодила I/O при каждом
+     * старте. Идёт на фоновом потоке: диск не должен трогаться из `onCreate` синхронно.
+     *
+     * Каждый шаг уборки — свой ключ (`cleanup_v1`, дальше `cleanup_v2`, …), выполняется независимо
+     * и один раз. Добавить новый шаг в будущем — дописать проверку `if (!prefs.getBoolean("cleanup_vN", false))`
+     * с соответствующими удалениями и пометкой ключа как выполненного, не трогая предыдущие.
+     */
+    private fun runOneTimeHousekeeping() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val prefs = getSharedPreferences("filmax_housekeeping", MODE_PRIVATE)
+
+            // cleanup_v1: файл "filmax_item_cache" — кэш деталей тайтлов на старом Settings/
+            // SharedPreferences-хранилище. Заменён на SQLite ("filmax_item_cache.db"), миграции
+            // данных нет — старый файл просто больше никем не читается и не пишется.
+            if (!prefs.getBoolean(KEY_CLEANUP_V1_DONE, false)) {
+                deleteSharedPreferences("filmax_item_cache")
+                prefs.edit().putBoolean(KEY_CLEANUP_V1_DONE, true).apply()
+            }
+        }
+    }
+
+    private companion object {
+        const val KEY_CLEANUP_V1_DONE = "cleanup_v1_done"
     }
 }

@@ -7,12 +7,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import com.filmax.app.tv.navigation.FilmaxTvNavGraph
 import com.filmax.app.update.AppUpdateEvent
 import com.filmax.app.update.AppUpdatePrompt
 import com.filmax.app.update.AppUpdateScreenModel
+import com.filmax.core.domain.cache.ImageProxyRepository
 import com.filmax.core.tv.designsystem.FilmaxTvTheme
+import com.filmax.core.ui.components.LocalImageProxyEnabled
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 class MainActivity : ComponentActivity() {
 
@@ -30,14 +36,20 @@ class MainActivity : ComponentActivity() {
         setContent {
             val updateScreenModel: AppUpdateScreenModel = koinViewModel()
             val onCheckUpdates = { updateScreenModel.dispatch(AppUpdateEvent.Check) }
-            FilmaxTvTheme {
-                FilmaxTvNavGraph(
-                    onCheckUpdates = onCheckUpdates,
-                    // На корневом экране TV не оставляем task в фоне: следующий запуск из
-                    // лаунчера создаст Activity заново, а не вернёт прежний экран.
-                    onExit = { finishAndRemoveTask() },
-                )
-                AppUpdatePrompt(updateScreenModel)
+            // Единственная подписка на ImageProxyRepository.enabled на всё приложение: без неё
+            // каждый PosterImage сам делал koinInject + collectAsState, и на экране с десятками
+            // постеров это означало десятки independent-коллекторов одного и того же флага.
+            val proxyEnabled by koinInject<ImageProxyRepository>().enabled.collectAsState()
+            CompositionLocalProvider(LocalImageProxyEnabled provides proxyEnabled) {
+                FilmaxTvTheme {
+                    FilmaxTvNavGraph(
+                        onCheckUpdates = onCheckUpdates,
+                        // На корневом экране TV не оставляем task в фоне: следующий запуск из
+                        // лаунчера создаст Activity заново, а не вернёт прежний экран.
+                        onExit = { finishAndRemoveTask() },
+                    )
+                    AppUpdatePrompt(updateScreenModel)
+                }
             }
         }
     }

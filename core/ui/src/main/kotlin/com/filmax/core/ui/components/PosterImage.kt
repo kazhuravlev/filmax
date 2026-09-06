@@ -9,7 +9,7 @@ import androidx.compose.material.icons.outlined.ImageNotSupported
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,10 +26,19 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import com.filmax.core.designsystem.ShapePoster
-import com.filmax.core.domain.cache.ImageProxyRepository
 import com.filmax.core.ui.cache.CacheableImage
 import com.filmax.core.ui.cache.proxiedImageUrl
-import org.koin.compose.koinInject
+
+/**
+ * Включён ли прокси изображений ([com.filmax.core.domain.cache.ImageProxyRepository.enabled]) —
+ * читается через `CompositionLocal`, а не через прямой `koinInject` + `collectAsState` в каждом
+ * [PosterImage]: на экране одновременно живут десятки постеров, и подписка на `StateFlow` в
+ * каждом из них означала десятки independent-коллекторов на один и тот же флаг. Значение
+ * собирается ОДИН раз на корне приложения и прокидывается вниз, см. `MainActivity.kt`.
+ *
+ * Дефолт `false` — безопасное значение для превью/тестов, где провайдер не установлен.
+ */
+val LocalImageProxyEnabled = compositionLocalOf { false }
 
 /**
  * Постер с ленивой загрузкой через Coil [AsyncImage]. Под обложкой всегда лежит статичный
@@ -59,7 +68,7 @@ fun PosterImage(
     cacheKey: String? = null,
 ) {
     val placeholder = remember(accentColor) { posterPlaceholderBrush(accentColor) }
-    val proxyEnabled by koinInject<ImageProxyRepository>().enabled.collectAsState()
+    val proxyEnabled = LocalImageProxyEnabled.current
     val effectiveUrl = remember(url, proxyEnabled) { proxiedImageUrl(url, proxyEnabled) }
     val model = remember(cacheKey, effectiveUrl) {
         if (cacheKey != null) CacheableImage(key = cacheKey, url = effectiveUrl) else effectiveUrl

@@ -13,6 +13,7 @@ lifecycle = "2.9.0"
 coil = "3.2.0"
 media3 = "1.5.1"
 activity-compose = "1.10.1"
+profileinstaller = "1.4.1"
 tv-material = "1.0.0"
 chucker = "4.0.0"
 detekt = "1.23.8"
@@ -104,6 +105,9 @@ lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-ru
 
 # Activity
 activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activity-compose" }
+
+# Устанавливает baseline-профили, уже собранные внутри AndroidX/Compose AAR, при инсталляции APK
+profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "profileinstaller" }
 
 # Images
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }

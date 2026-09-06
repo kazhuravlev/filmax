@@ -2,7 +2,10 @@
 <resources>
 
     <style name="Theme.Filmax" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@android:color/black</item>
+        <!-- Брендированный фон окна запуска (splash_background.xml) вместо чёрного экрана:
+             видно до того, как Compose и startKoin успели отработать. Тот же тёмный фон и
+             логотип, что у Compose-сплэша (TvSplashScreen) — см. комментарий в самом drawable. -->
+        <item name="android:windowBackground">@drawable/splash_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>

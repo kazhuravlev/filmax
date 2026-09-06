@@ -136,21 +136,29 @@ fun TvCatalogScreen(
     // подсказки, и выдача каталога ему не нужна.
     LaunchedEffect(Unit) { screenModel.dispatch(SearchEvent.LoadCatalog) }
 
+    // remember, а не построение объекта на каждой рекомпозиции: CatalogActions создавал новый
+    // экземпляр (и новые лямбды) на каждую эмиссию state, а его читает сетка постеров ниже по
+    // дереву — смена ссылки инвалидировала все видимые карточки при каждом наборе символа/фильтре.
+    // Ключи — всё, что реально захватывают лямбды: screenModel/focus/voice/onOpenItem.
+    val actions = remember(screenModel, focus, voice, onOpenItem) {
+        CatalogActions(
+            onOpenItem = onOpenItem,
+            onQuery = { screenModel.dispatch(SearchEvent.QueryChange(it)) },
+            onVoice = voice::start,
+            onEditingFinished = { focus.focusOn(SEARCH_KEY) },
+            onFilter = { screenModel.dispatch(SearchEvent.FilterChange(it)) },
+            onSort = { screenModel.dispatch(SearchEvent.SortChange(it)) },
+            onGenre = { screenModel.dispatch(SearchEvent.GenreChange(it)) },
+            onApplyFilters = { screenModel.dispatch(SearchEvent.ApplyFilters(it)) },
+        )
+    }
+
     Box(modifier.fillMaxSize().background(TvSurface)) {
         CatalogContent(
             state = state,
             gridState = gridState,
             focus = focus,
-            actions = CatalogActions(
-                onOpenItem = onOpenItem,
-                onQuery = { screenModel.dispatch(SearchEvent.QueryChange(it)) },
-                onVoice = voice::start,
-                onEditingFinished = { focus.focusOn(SEARCH_KEY) },
-                onFilter = { screenModel.dispatch(SearchEvent.FilterChange(it)) },
-                onSort = { screenModel.dispatch(SearchEvent.SortChange(it)) },
-                onGenre = { screenModel.dispatch(SearchEvent.GenreChange(it)) },
-                onApplyFilters = { screenModel.dispatch(SearchEvent.ApplyFilters(it)) },
-            ),
+            actions = actions,
             onLoadMore = { screenModel.dispatch(SearchEvent.LoadMoreCatalog) },
         )
         TvServerRetryNotification(

@@ -224,6 +224,11 @@ dependencies {
     implementation(libs.bundles.compose)
     implementation(libs.activity.compose)
 
+    // Без этого ART после установки/обновления APK какое-то время выполняет уже готовые
+    // baseline-профили Compose/AndroidX интерпретируемым байткодом вместо AOT — profileinstaller
+    // сам ставит их системе при первом запуске (генерации профилей не требует).
+    implementation(libs.profileinstaller)
+
     // Navigation
     implementation(libs.navigation.compose)
 

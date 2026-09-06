@@ -116,17 +116,27 @@ fun TvHomeScreen(
                 )
             }
 
-            else -> TvHomeContent(
-                state = state,
-                offline = offline,
-                actions = TvHomeActions(
-                    onOpenItem = onOpenItem,
-                    onPlay = onPlay,
-                    onOpenCollection = onOpenCollection,
-                    onReload = { screenModel.dispatch(HomeEvent.Load) },
-                    onLoadMoreRow = { id -> screenModel.dispatch(HomeEvent.LoadMoreRow(id)) },
-                ),
-            )
+            else -> {
+                // remember, а не построение объекта на каждой рекомпозиции: TvHomeActions создавал
+                // новый экземпляр (и новые лямбды onReload/onLoadMoreRow) на каждую эмиссию state,
+                // а его читает LazyColumn ниже по дереву — смена ссылки инвалидировала все видимые
+                // карточки рядов. Ключи — параметры экрана и screenModel: смена любого из них и
+                // должна пересобрать действия (например, другой инстанс screenModel после логина).
+                val actions = remember(screenModel, onOpenItem, onPlay, onOpenCollection) {
+                    TvHomeActions(
+                        onOpenItem = onOpenItem,
+                        onPlay = onPlay,
+                        onOpenCollection = onOpenCollection,
+                        onReload = { screenModel.dispatch(HomeEvent.Load) },
+                        onLoadMoreRow = { id -> screenModel.dispatch(HomeEvent.LoadMoreRow(id)) },
+                    )
+                }
+                TvHomeContent(
+                    state = state,
+                    offline = offline,
+                    actions = actions,
+                )
+            }
         }
         TvServerRetryNotification(
             visible = retryNotice,
@@ -156,6 +166,17 @@ private fun TvHomeContent(
     ScrollToTopOnNavFocus(listState)
     val focus = rememberTvScreenFocus()
 
+    // Подборки без постера отфильтровываем один раз здесь, а не при каждом заходе LazyColumn
+    // в контент: `paging.items.filter` внутри tvCollectionsRail раньше пересчитывался на каждую
+    // рекомпозицию TvHomeContent (LazyColumn пересобирает список интервалов контента при каждой
+    // смене захваченной content-лямбды), даже когда конкретный ряд подборок не менялся вовсе.
+    // Ключ — state.rows: data-класс не трогает ссылку на список, если конкретное поле не менялось,
+    // так что remember реально пропускает пересчёт на несвязанных обновлениях состояния.
+    val filteredCollections = remember(state.rows) {
+        state.rows.filterIsInstance<HomeRow.Collections>()
+            .associate { row -> row.id to row.paging.items.filter { it.posterUrl() != null } }
+    }
+
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize().then(focus.containerModifier),
@@ -182,12 +203,17 @@ private fun TvHomeContent(
             }
             state.heroLoading -> item(key = "hero-skeleton") { TvHeroSkeleton() }
         }
-        tvRails(state = state, actions = actions, focus = focus)
+        tvRails(state = state, actions = actions, focus = focus, filteredCollections = filteredCollections)
     }
 }
 
 /** Лента — это [HomeState.rows]: экран идёт по ним и рисует, состав и порядок задаёт модель. */
-private fun LazyListScope.tvRails(state: HomeState, actions: TvHomeActions, focus: TvScreenFocus) {
+private fun LazyListScope.tvRails(
+    state: HomeState,
+    actions: TvHomeActions,
+    focus: TvScreenFocus,
+    filteredCollections: Map<String, List<Collection>>,
+) {
     state.rows.forEach { row ->
         if (row.isEmpty) return@forEach
         if (row.loading) {
@@ -197,7 +223,7 @@ private fun LazyListScope.tvRails(state: HomeState, actions: TvHomeActions, focu
         when (row) {
             is HomeRow.Continue -> tvContinueRail(row, actions, focus)
             is HomeRow.Titles -> tvPosterRail(row, actions, focus)
-            is HomeRow.Collections -> tvCollectionsRail(row, actions, focus)
+            is HomeRow.Collections -> tvCollectionsRail(row, actions, focus, filteredCollections[row.id].orEmpty())
         }
     }
 }
@@ -243,9 +269,14 @@ private fun LazyListScope.tvPosterRail(row: HomeRow.Titles, actions: TvHomeActio
     }
 }
 
-private fun LazyListScope.tvCollectionsRail(row: HomeRow.Collections, actions: TvHomeActions, focus: TvScreenFocus) {
+private fun LazyListScope.tvCollectionsRail(
+    row: HomeRow.Collections,
+    actions: TvHomeActions,
+    focus: TvScreenFocus,
     // Подборка без постера — пустая плашка: в монохроме карточку держит только картинка.
-    val withPoster = row.paging.items.filter { it.posterUrl() != null }
+    // Отфильтровано и заремемблено вызывающей стороной (TvHomeContent), см. комментарий там.
+    withPoster: List<Collection>,
+) {
     if (withPoster.isEmpty()) return
     item(key = row.id) {
         TvRail(title = row.title) {

@@ -1,11 +1,9 @@
 package com.filmax.core.network.di
 
 import com.filmax.core.domain.cache.BackgroundFetchSettings
-import com.filmax.core.domain.cache.ItemDetailsCache
 import com.filmax.core.domain.network.ApiHostRepository
 import com.filmax.core.network.ApiHostRepositoryImpl
 import com.filmax.core.network.BackgroundFetchSettingsImpl
-import com.filmax.core.network.ItemDetailsCacheImpl
 import com.filmax.core.network.TokenStorage
 import com.filmax.core.network.buildHttpClient
 import com.filmax.core.network.isDebugBuild
@@ -17,15 +15,14 @@ import org.koin.dsl.module
 /**
  * Общий сетевой DI-модуль. Зависит от платформенных провайдеров [platformNetworkModule]
  * ([com.russhwolf.settings.Settings] и [io.ktor.client.engine.HttpClientEngine]).
+ *
+ * `ItemDetailsCache` тут больше не биндится: на Android это `ItemDetailsCacheDb` (SQLite, без
+ * зависимости на `Settings`), на остальных платформах — старый `ItemDetailsCacheImpl` поверх
+ * `Settings`. Оба регистрируются в соответствующем [platformNetworkModule], см. там.
  */
 val networkModule = module {
     single { TokenStorage(get()) }
     single<ApiHostRepository> { ApiHostRepositoryImpl(settings = get(), engine = get()) }
-    // createdAtStart — ItemDto.toDomain() (data:catalog) кладёт тайтлы в кэш напрямую через
-    // ItemDetailsCacheAccess, без DI, и должен найти уже готовую реализацию с первого же тайтла.
-    single<ItemDetailsCache>(createdAtStart = true) {
-        ItemDetailsCacheImpl(settings = get(named(ITEM_CACHE_SETTINGS)))
-    }
     // createdAtStart — оба фетчера (TitleBackgroundFetcherImpl в data:catalog,
     // ImagePrefetcherImpl в core:ui) — тоже createdAtStart и читают этот флаг с первого элемента
     // своей очереди.

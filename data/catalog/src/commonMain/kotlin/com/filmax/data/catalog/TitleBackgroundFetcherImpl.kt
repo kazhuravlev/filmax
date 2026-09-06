@@ -2,6 +2,7 @@ package com.filmax.data.catalog
 
 import com.filmax.core.domain.cache.BackgroundFetchSettings
 import com.filmax.core.domain.cache.ImageDiscovery
+import com.filmax.core.domain.cache.ImagePrefetchThrottle
 import com.filmax.core.domain.cache.ItemDetailsCache
 import com.filmax.core.domain.cache.ItemDiscovery
 import com.filmax.core.domain.cache.TitleBackgroundFetcher
@@ -16,6 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.decodeFromString
@@ -23,6 +25,10 @@ import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
 private const val FETCH_TIMEOUT_MS = 15_000L
+private const val THROTTLE_POLL_DELAY_MS = 500L
+
+/** Максимум одновременно стоящих в очереди id — см. doc класса про drop-newest. */
+private const val MAX_QUEUED_IDS = 200
 
 /**
  * Докачивает `items/{id}` в фоне для тайтлов, известных пока только по голой ссылке (см.
@@ -48,6 +54,14 @@ private const val FETCH_TIMEOUT_MS = 15_000L
  * [BackgroundFetchSettings.enabled] проверяем первым делом на каждый id: выключенная фоновая
  * загрузка — это «совсем ничего не делаем», даже кэш-хитовую ветку без единого похода в сеть,
  * а не «делаем только то, что бесплатно».
+ *
+ * Очередь ограничена [MAX_QUEUED_IDS] элементами (drop-newest): при переполнении новый id не
+ * попадает ни в [queuedIds], ни в [channel] — как и в `ImagePrefetcherImpl`, дропаем именно
+ * новые элементы, чтобы ключ не застревал в множестве без шанса когда-либо обработаться.
+ *
+ * Перед КАЖДЫМ id ждём, пока [ImagePrefetchThrottle.shouldThrottle] не станет false — иначе
+ * запрос деталей и последующее декодирование постера соревнуются с UI-потоком за сеть/CPU прямо
+ * во время активного использования приложения (см. `ImagePrefetcherImpl`, тот же приём).
  */
 internal class TitleBackgroundFetcherImpl(
     private val catalog: CatalogRepository,
@@ -63,6 +77,7 @@ internal class TitleBackgroundFetcherImpl(
         ItemDiscovery.prefetcher = this
         scope.launch {
             for (id in channel) {
+                while (ImagePrefetchThrottle.shouldThrottle) delay(THROTTLE_POLL_DELAY_MS)
                 runCatching { withTimeoutOrNull(FETCH_TIMEOUT_MS) { fetchThenPrefetchPoster(id) } }
                 queuedIds.remove(id)
             }
@@ -71,6 +86,8 @@ internal class TitleBackgroundFetcherImpl(
 
     override fun enqueue(itemIds: List<Int>) {
         for (id in itemIds) {
+            // Переполнение — дропаем новый id, не трогая queuedIds (см. doc класса).
+            if (queuedIds.size >= MAX_QUEUED_IDS) continue
             // add() возвращает false, если id уже в очереди/обрабатывается — не дублируем.
             if (queuedIds.add(id)) {
                 channel.trySend(id)

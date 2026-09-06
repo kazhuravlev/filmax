@@ -3,6 +3,7 @@ package com.filmax.app.tv.navigation
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -20,11 +21,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.filmax.app.R
 import com.filmax.core.tv.designsystem.TvMetrics
-import com.filmax.core.tv.designsystem.TvOnSurface
 import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import kotlinx.coroutines.delay
 
@@ -33,6 +33,12 @@ import kotlinx.coroutines.delay
  * зритель (`isAuthenticated == null` — на большинстве запусков доля секунды). Статусная строка
  * внизу нарочно появляется не сразу: задержка [STATUS_DELAY_MILLIS] прячет её при обычном
  * мгновенном разрешении сессии и показывает, только когда шаг запуска реально заметен.
+ *
+ * Логотип — тот же векторный ассет `splash_logo.xml`, что нарисован в `android:windowBackground`
+ * темы (см. `splash_background.xml`, `themes.xml`): системное окно запуска видно первым кадром,
+ * до старта Compose, и должно бесшовно смениться этим экраном — один файл-ассет с одинаковым
+ * размером в обоих местах гарантирует, что логотип не «дёрнется» и не сменит начертание при
+ * переходе, в отличие от попытки подобрать Text() под системную отрисовку на глаз.
  */
 @Composable
 internal fun TvSplashScreen(modifier: Modifier = Modifier) {
@@ -43,13 +49,12 @@ internal fun TvSplashScreen(modifier: Modifier = Modifier) {
     }
 
     Box(modifier.fillMaxSize()) {
-        Text(
-            "FILMAX",
-            fontWeight = FontWeight.Black,
-            fontSize = SplashTitleSize,
-            letterSpacing = SplashTitleSpacing,
-            color = TvOnSurface,
-            modifier = Modifier.align(Alignment.Center),
+        Image(
+            painter = painterResource(R.drawable.splash_logo),
+            contentDescription = null,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(width = SplashLogoWidth, height = SplashLogoHeight),
         )
         AnimatedVisibility(
             visible = showStatus,
@@ -74,6 +79,8 @@ internal fun TvSplashScreen(modifier: Modifier = Modifier) {
     }
 }
 
-private val SplashTitleSize = 88.sp
-private val SplashTitleSpacing = 8.sp
+// Совпадает с размером логотипа в splash_background.xml (drawable/splash_background.xml) —
+// см. doc-комментарий у TvSplashScreen о бесшовном переходе от окна запуска.
+private val SplashLogoWidth = 240.dp
+private val SplashLogoHeight = 47.4.dp
 private const val STATUS_DELAY_MILLIS = 400L

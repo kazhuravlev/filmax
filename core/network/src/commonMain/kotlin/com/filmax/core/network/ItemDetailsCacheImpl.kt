@@ -15,6 +15,12 @@ private const val PREFIX_TIMESTAMP = "item_cache_ts:"
 private const val MILLIS_PER_DAY = 24L * 60 * 60 * 1000
 
 /**
+ * На Android больше не используется — заменён на `ItemDetailsCacheDb` (SQLite, см. androidMain):
+ * `Settings`/`SharedPreferences` не умел физически удалять протухшие записи, целиком грузил файл
+ * в память и синхронно парсил его на главном потоке при первом обращении. Класс остаётся как
+ * реализация для apple-таргетов (iOS/tvOS сейчас не используются реальным приложением, но должны
+ * собираться), см. `appleMain/PlatformNetworkModule`.
+ *
  * Персистентный кэш статической информации о тайтлах (`items/{id}`) — на отдельном [Settings]
  * (см. `ITEM_CACHE_SETTINGS` в DI), не на общем с [TokenStorage]: кэш может разрастись до сотен
  * записей, и `clear()` в [clear] не должен разлогинивать пользователя заодно. [count] не

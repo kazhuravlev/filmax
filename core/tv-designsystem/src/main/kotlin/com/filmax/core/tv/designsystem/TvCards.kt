@@ -25,10 +25,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,7 +88,10 @@ fun TvPosterCard(
         modifier = modifier
             .width(width)
             .onFocusChanged { focused = it.hasFocus }
-            .alpha(dim),
+            // Читаем dim.value в drawing-фазе (graphicsLayer), а не в composition (alpha()):
+            // иначе каждый кадр анимации затухания рекомпозирует всю карточку с AsyncImage
+            // постера — тот же приём, что и с рамкой фокуса в TvFocusCard.
+            .graphicsLayer { alpha = dim.value },
     ) {
         TvFocusCard(
             onClick = onClick,
@@ -150,7 +153,8 @@ fun TvProgressCard(
         modifier = modifier
             .width(size.width)
             .onFocusChanged { focused = it.hasFocus }
-            .alpha(dim),
+            // См. комментарий в TvPosterCard выше: alpha читается в drawing-фазе, не в composition.
+            .graphicsLayer { alpha = dim.value },
     ) {
         TvFocusCard(
             onClick = onClick,

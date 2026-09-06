@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -191,13 +191,17 @@ private fun DrawScope.drawFocusRing(shape: Shape) {
 
 /**
  * Приглушает несфокусированные карточки ряда — монохромный аналог подсветки: сфокусированная
- * карточка светится в полную яркость, соседи отступают. Возвращает анимированную альфу.
+ * карточка светится в полную яркость, соседи отступают.
+ *
+ * Возвращает сам [State], а не разыменованное значение: тот же приём, что и с фокусом в
+ * [TvFocusCard] выше — если читать альфу тут (в composable-функции), каждый кадр анимации
+ * рекомпозирует всю карточку целиком (включая AsyncImage постера), а не только слой отрисовки.
+ * Вызывающая сторона обязана читать `.value` внутри `Modifier.graphicsLayer { }`, а не
+ * передавать его в `Modifier.alpha(...)` напрямую.
  */
 @Composable
-fun rememberDimAlpha(focused: Boolean): Float {
-    val alpha by animateFloatAsState(
+fun rememberDimAlpha(focused: Boolean): State<Float> =
+    animateFloatAsState(
         targetValue = if (focused) 1f else TvMetrics.DimmedAlpha,
         label = "cardDim",
     )
-    return alpha
-}

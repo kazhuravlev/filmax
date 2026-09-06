@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Фон окна запуска (android:windowBackground в Theme.Filmax) — виден первым, до того как
+  Compose и startKoin вообще успели отработать. Раньше здесь был чистый чёрный экран на
+  несколько секунд; теперь тот же тёмный фон, что и у Compose-контента (TvSurface, #0A0A0A —
+  см. FilmaxTvTheme/TvColor.kt, не чистый #000, чтобы не «проваливаться» на OLED), плюс
+  тот же логотип, что рисует TvSplashScreen (splash_logo.xml) — так переход от системного окна
+  к первому кадру Compose-сплэша визуально бесшовный, без смены фона и «прыжка» логотипа.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#FF0A0A0A" />
+        </shape>
+    </item>
+    <item
+        android:width="240dp"
+        android:height="47.4dp"
+        android:gravity="center"
+        android:drawable="@drawable/splash_logo" />
+</layer-list>
