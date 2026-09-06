@@ -72,10 +72,36 @@ class HomeScreenModel(
                 result
             }
             val continueResult = async {
-                val result = watching.getHistory()
+                val historyDeferred = async { watching.getHistory() }
+                // Эталонный алгоритм kino.watch (веб-клиент, getAwaitItems): «Продолжить просмотр»
+                // строится ПЕРЕСЕЧЕНИЕМ `/history` (точная позиция) с `/watching/{type}` (родной
+                // список сервера «в процессе»). Наша локальная эвристика `isActualContinuation`
+                // (watchStatus/остаток по треклисту) не всегда совпадает с тем, что сервер уже
+                // отметил завершённым — просмотренные до конца тайтлы всё ещё остаются в истории с
+                // позицией. `/watching/{type}` — источник истины: досмотренный тайтл сервер сам
+                // убирает оттуда, поэтому пересечение отфильтровывает такие карточки надёжнее.
+                // Сериалы нужно опрашивать оба раза: `subscribed` у них не игнорируется сервером
+                // (как у movies) и делит список на подписанные/неподписанные на новые серии, а не
+                // на «досмотрено/нет» — без объединения обоих ответов часть сериалов «в процессе»
+                // потерялась бы.
+                val moviesDeferred = async { watching.getWatchingTitles(TYPE_MOVIES) }
+                val serialsSubscribedDeferred = async { watching.getWatchingTitles(TYPE_SERIALS, subscribed = 1) }
+                val serialsUnsubscribedDeferred = async { watching.getWatchingTitles(TYPE_SERIALS, subscribed = 0) }
+
+                val result = historyDeferred.await()
+                val watchingResults =
+                    listOf(moviesDeferred.await(), serialsSubscribedDeferred.await(), serialsUnsubscribedDeferred.await())
+                // Если ни один из запросов не ответил — доверять пустому пересечению нельзя, иначе
+                // временный сбой сети стёр бы весь ряд. Тогда откатываемся к одной локальной эвристике.
+                val inProgressIds = watchingResults.mapNotNull { it.getOrNull() }
+                    .takeIf { it.isNotEmpty() }
+                    ?.flatten()
+                    ?.mapTo(mutableSetOf()) { it.itemId }
+
                 val entries = result.getOrNull()
                     ?.let { continuations.resolve(it) }
                     ?.filter { it.isActualContinuation }
+                    ?.filter { inProgressIds == null || it.itemId in inProgressIds }
                     ?.take(CONTINUE_WATCHING_LIMIT)
                 updateContinueRow { it.copy(loading = false, entries = entries ?: it.entries) }
                 entries?.let { ImageDiscovery.discovered(it.mapNotNull(Continuation::backdropPrefetch)) }
@@ -300,6 +326,10 @@ private const val HOME_ROW_MAX = 100
 
 /** Сколько последних тайтлов показать в блоке «Продолжить просмотр». */
 private const val CONTINUE_WATCHING_LIMIT = 5
+
+/** Типы `watching/{type}` — как и в [com.filmax.feature.library.common.LibraryScreenModel]. */
+private const val TYPE_MOVIES = "movies"
+private const val TYPE_SERIALS = "serials"
 
 /** Сколько подборок показать в горизонтальном ряду. */
 private const val COLLECTIONS_LIMIT = 5

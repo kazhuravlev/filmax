@@ -82,18 +82,18 @@ fun githubRepository(): String {
 val updateGithubToken: String =
     (System.getenv("UPDATE_GITHUB_TOKEN") ?: localProps.getProperty("github.updateToken") ?: "").trim()
 
-// versionName ← последний git-тег vX.Y.Z (без «v»); нет тегов → 1.0.0.
+// versionName ← последний git-тег vX.Y.Z (без «v») на ветке main; нет тегов → 1.0.0.
 fun gitVersionName(): String =
     providers.exec {
-        commandLine("git", "describe", "--tags", "--abbrev=0")
+        commandLine("git", "describe", "--tags", "--abbrev=0", "origin/main")
         isIgnoreExitValue = true
     }.standardOutput.asText.get().trim().removePrefix("v").ifEmpty { "1.0.0" }
 
-// versionCode ← число коммитов в HEAD: монотонно растёт от релиза к релизу.
+// versionCode ← число коммитов в ветке main: монотонно растёт от релиза к релизу.
 // В CI требуется полная история (checkout fetch-depth: 0), иначе вернёт 1.
 fun gitCommitCount(): Int =
     providers.exec {
-        commandLine("git", "rev-list", "--count", "HEAD")
+        commandLine("git", "rev-list", "--count", "origin/main")
         isIgnoreExitValue = true
     }.standardOutput.asText.get().trim().toIntOrNull() ?: 1
 
