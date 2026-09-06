@@ -310,19 +310,31 @@ class PlayerScreenModel(
             AudioOption(label = audioLabel(index, group, apiAudios), groupIndex = index)
         }
 
-        // Запомненная озвучка тайтла: находим группу с тем же ключом и ставим override —
-        // следующая серия стартует с той же студии, а смена качества не сбрасывает выбор.
-        // Не нашлась (у серии другой набор озвучек) — остаёмся на выборе плеера.
+        // Запомненная озвучка тайтла: находим группу с тем же ключом — следующая серия сериала
+        // стартует с той же студии, а смена качества не сбрасывает выбор. Она сильнее глобального
+        // default профиля и переживает ручной выбор (selectAudio обновляет savedVoiceKey сразу же,
+        // синхронно, так что следующий re-fire onTracksChanged не спорит с ручным выбором).
+        // Не нашлась (у серии другой набор озвучек) — падаем на глобальный default профиля,
+        // сматченный эвристикой resolveAudioGroupIndex (см. её doc).
         val savedIndex = savedVoiceKey?.let { key ->
             audioGroups.indices.firstOrNull { voiceKey(it, audioGroups[it], apiAudios) == key }
         }
-        if (savedIndex != null && !audioGroups[savedIndex].isSelected) {
+        val autoIndex = savedIndex ?: resolveAudioGroupIndex(
+            audioPreference,
+            audioGroups.indices.map { index ->
+                AudioMatchCandidate(
+                    lang = audioLanguage(index, audioGroups[index], apiAudios),
+                    label = options[index].label,
+                )
+            },
+        )
+        if (autoIndex != null && !audioGroups[autoIndex].isSelected) {
             player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                .setOverrideForType(TrackSelectionOverride(audioGroups[savedIndex].mediaTrackGroup, 0))
+                .setOverrideForType(TrackSelectionOverride(audioGroups[autoIndex].mediaTrackGroup, 0))
                 .build()
         }
 
-        val selectedIndex = savedIndex ?: audioGroups.indexOfFirst { it.isSelected }
+        val selectedIndex = autoIndex ?: audioGroups.indexOfFirst { it.isSelected }
         screenModelScope { _ ->
             updateState {
                 it.copy(
@@ -375,7 +387,15 @@ class PlayerScreenModel(
             .build()
     }
 
-    /** Применяет предпочтение аудио; текстовая дорожка выбирается после разбора HLS. */
+    /**
+     * Слабая подсказка плееру ДО разбора манифеста: `setPreferredAudioLanguage` смотрит только на
+     * язык HLS-дорожки (у kino.watch это скупой код в NAME, часто бесполезный и не различающий
+     * несколько озвучек одного языка), поэтому она лишь чуть смещает самый первый, ещё
+     * недетерминированный выбор ExoPlayer. Дальше при onTracksChanged — единственном моменте,
+     * когда доступны реальные метаданные API (`audios[]`) — на конкретную группу ставится точечный
+     * override (см. [updateAudioTracks] и [resolveAudioGroupIndex]): именно он источник истины,
+     * этот метод оставлен как безобидный первый кадр без озвучки не того языка.
+     */
     private fun applyAudioPreference() {
         val builder = player.trackSelectionParameters.buildUpon()
         langCode(audioPreference)?.let { builder.setPreferredAudioLanguage(it) }
@@ -489,17 +509,25 @@ class PlayerScreenModel(
         }
 
         /**
+         * Язык дорожки для подписи/ключа/эвристики авто-выбора: из метаданных API (сопоставление
+         * по `audios[].index`, 1-based = порядок дорожек в HLS-манифесте), а если API их не
+         * прислал — из формата самой Media3-группы (сырой код языка из HLS-манифеста).
+         */
+        fun audioLanguage(groupIndex: Int, group: Tracks.Group, apiAudios: List<AudioTrack>): String? {
+            val meta = apiAudios.firstOrNull { it.index == groupIndex + 1 }
+            return meta?.lang ?: group.getTrackFormat(0).language
+        }
+
+        /**
          * Подпись дорожки: «2. Русский · Многоголосый · BaibaKo» — как в оригинальном клиенте
-         * kino.watch. Метаданные берём из `audios[]` ответа API, сопоставляя с группой Media3 по
-         * порядку (`audios[].index` 1-based = порядок дорожек в HLS-манифесте): сам манифест
-         * kino.watch кладёт в NAME только код языка, и по нему озвучки неотличимы. Номер в начале
-         * гарантирует уникальность подписи, даже если у двух озвучек совпали студия и тип.
+         * kino.watch. Метаданные берём из `audios[]` ответа API: сам манифест kino.watch кладёт в
+         * NAME только код языка, и по нему озвучки неотличимы. Номер в начале гарантирует
+         * уникальность подписи, даже если у двух озвучек совпали студия и тип.
          */
         fun audioLabel(groupIndex: Int, group: Tracks.Group, apiAudios: List<AudioTrack>): String {
             val meta = apiAudios.firstOrNull { it.index == groupIndex + 1 }
-            val language = meta?.lang ?: group.getTrackFormat(0).language
             val parts = buildList {
-                add(audioDisplay(language))
+                add(audioDisplay(audioLanguage(groupIndex, group, apiAudios)))
                 meta?.voiceType?.let { add(it) }
                 meta?.voiceAuthor?.let { add(it) }
             }.distinct()
@@ -513,7 +541,7 @@ class PlayerScreenModel(
          */
         fun voiceKey(groupIndex: Int, group: Tracks.Group, apiAudios: List<AudioTrack>): String {
             val meta = apiAudios.firstOrNull { it.index == groupIndex + 1 }
-            val language = meta?.lang ?: group.getTrackFormat(0).language
+            val language = audioLanguage(groupIndex, group, apiAudios)
             return listOf(language.orEmpty(), meta?.voiceType.orEmpty(), meta?.voiceAuthor.orEmpty())
                 .joinToString("|")
         }

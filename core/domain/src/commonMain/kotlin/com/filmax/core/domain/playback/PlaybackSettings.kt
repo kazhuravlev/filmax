@@ -14,11 +14,25 @@ data class PlaybackSettings(
     companion object {
         const val QualityAuto = "Авто"
         const val AudioOriginal = "Оригинал"
+
+        /**
+         * «Выкл» для аудио — это не «нет звука», а «не авто-выбирать»: играет первая/дефолтная
+         * дорожка потока, как её отдаёт плеер без вмешательства (см. [resolveAudioGroupIndex] в
+         * feature:player:common — при этом значении override на аудиогруппу не ставится).
+         */
+        const val AudioOff = "Выкл"
         const val SubtitleOff = "Выкл"
 
         /** Предпочитаемое качество; «Авто» — лучшее из доступных у конкретного фильма. */
         val qualityOptions = listOf(QualityAuto, "2160p", "1080p", "720p", "480p", "360p")
-        val audioOptions = listOf(AudioOriginal, "Русский", "English")
+
+        /**
+         * «Выкл» первым — самый безопасный default для нового выбора (ничего не трогать), дальше
+         * «Оригинал» (реальный default приложения, чтобы не менять поведение существующих
+         * пользователей), затем конкретные языки. Эвристика авто-выбора по каждому значению —
+         * в feature:player:common (`resolveAudioGroupIndex`).
+         */
+        val audioOptions = listOf(AudioOff, AudioOriginal, "Русский", "English")
         val subtitleOptions = listOf(SubtitleOff, "Русский", "English")
     }
 }
