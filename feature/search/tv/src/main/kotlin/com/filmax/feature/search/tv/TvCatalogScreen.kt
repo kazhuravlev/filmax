@@ -222,8 +222,17 @@ private fun CatalogContent(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        if (gridItems.isEmpty() && !state.loading) {
-            item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { CatalogEmpty() }
+        if (gridItems.isEmpty()) {
+            // Идёт поиск/первая загрузка витрины и показать пока нечего — не путать с «Ничего не
+            // найдено»: тот рисуем только когда запрос реально завершился пустым результатом.
+            // Пока идёт УТОЧНЕНИЕ уже непустой выдачи (пользователь допечатал буквы), прежние
+            // карточки остаются на месте — collectLatest в SearchScreenModel не даст устаревшему
+            // ответу их перезаписать, а этот индикатор здесь просто не нужен.
+            if (state.loading) {
+                item(key = "loading", span = { GridItemSpan(maxLineSpan) }) { CatalogSearchLoading() }
+            } else {
+                item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { CatalogEmpty() }
+            }
         }
         items(gridItems, key = { it.id }) { item ->
             CatalogPoster(
@@ -552,6 +561,21 @@ private fun CatalogGenreRow(
                 modifier = if (index == 0) Modifier.focusRequester(firstChipFocus) else Modifier,
             )
         }
+    }
+}
+
+/**
+ * Индикатор на время дебаунса+сети активного поиска, когда показать ещё нечего. Без него окно
+ * между нажатием клавиши и приходом ответа выглядело пустым и как будто зависшим — тот же
+ * хвостовой спиннер догрузки [CatalogLoadingMore], только по центру и покрупнее.
+ */
+@Composable
+private fun CatalogSearchLoading() {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator(color = TvOnSurfaceVariant, modifier = Modifier.size(32.dp))
     }
 }
 

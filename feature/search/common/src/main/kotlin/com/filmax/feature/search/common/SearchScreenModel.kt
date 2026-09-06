@@ -177,11 +177,32 @@ class SearchScreenModel(
         }
     }
 
+    /**
+     * Реальный поиск срабатывает только после [SEARCH_DEBOUNCE_MILLIS] в [onFetchData] — здесь же
+     * синхронно, на каждое нажатие клавиши, держим состояние в согласии с тем, что вот-вот
+     * покажет [SearchState.visibleItems]. Без этого в окне ожидания дебаунса `results` оставались
+     * пустыми/устаревшими от прошлого запроса при `loading == false`, и сетка на каждую букву
+     * успевала мигнуть «Ничего не найдено».
+     *
+     * Пересекли порог [MIN_QUERY_LENGTH] снизу вверх — тут же включаем `loading`: снятие флага
+     * дальше делает только завершившийся [performSearch] актуального запроса ([collectLatest] в
+     * [onFetchData] сам отменяет отставший поиск, так что более старый ответ не собьёт флаг назад).
+     * Опустились ниже порога — отменять сам поиск не нужно: он либо ещё не долетел до сети из-за
+     * debounce, либо collectLatest оборвёт устаревший вызов сам; здесь мы просто мгновенно
+     * возвращаем зрителя на витрину каталога, не дожидаясь этого запроса.
+     */
     private fun onQueryChange(query: String) {
         queryFlow.value = query
+        val searching = query.length >= MIN_QUERY_LENGTH
         screenModelScope { _ ->
-            updateState { it.copy(query = query, error = null) }
-            if (query.isBlank()) updateState { it.copy(results = emptyList(), loading = false) }
+            updateState {
+                it.copy(
+                    query = query,
+                    error = null,
+                    loading = searching,
+                    results = if (searching) it.results else emptyList(),
+                )
+            }
         }
     }
 
