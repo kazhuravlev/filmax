@@ -3,6 +3,8 @@ package com.filmax.data.tmdb
 import com.filmax.core.domain.person.CastMember
 import com.filmax.core.domain.person.CastRepository
 import com.filmax.data.tmdb.remote.TmdbApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 internal class TmdbCastRepositoryImpl(
     private val api: TmdbApi,
@@ -12,7 +14,11 @@ internal class TmdbCastRepositoryImpl(
         val imdbTag = imdbTag(imdbId).takeIf { api.hasKey } ?: return emptyList()
         // Любая неудача (нет совпадения, сбой сети, невалидный ответ) — пустой список: фото
         // украшают детали, ронять или тормозить из-за них экран нельзя.
-        return runCatching { fetchCast(imdbTag) }.getOrDefault(emptyList())
+        // withContext(IO) — единственный сетевой путь мимо safeRequest (тот уводит на IO сам,
+        // см. RequestResult.kt): декод ответа TMDB не должен идти на Main.immediate экрана.
+        return withContext(Dispatchers.IO) {
+            runCatching { fetchCast(imdbTag) }.getOrDefault(emptyList())
+        }
     }
 
     private suspend fun fetchCast(imdbTag: String): List<CastMember> {
