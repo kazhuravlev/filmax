@@ -4,7 +4,7 @@
 browsable catalog, episode-level watch progress, flexible playback controls, voice
 search, personal collections, and automatic updates.
 
-[![Latest release](https://img.shields.io/github/v/release/malyi-m-dev/filmax?label=release)](https://github.com/malyi-m-dev/filmax/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/kazhuravlev/filmax?label=release)](https://github.com/kazhuravlev/filmax/releases/latest)
 [![Android TV](https://img.shields.io/badge/platform-Android%20TV-3DDC84?logo=android&logoColor=white)](#installation)
 
 [Download the latest release](https://github.com/malyi-m-dev/filmax/releases/latest)
