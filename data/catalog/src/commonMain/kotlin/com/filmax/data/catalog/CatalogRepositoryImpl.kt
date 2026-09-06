@@ -30,9 +30,23 @@ import kotlinx.coroutines.async
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 // Значение параметра `quality` для фильтра «только 4K» (kino.watch: 4 = 2160p).
 private const val QUALITY_4K = 4
+
+/**
+ * Окно адопции недавнего forceRefresh-ответа — см. [CatalogRepositoryImpl.recentForceRefresh].
+ * Спекулятивный прогрев (плашка автоперехода в плеере — feature:player:tv, `AUTO_NEXT_WINDOW_MS` +
+ * `AUTO_NEXT_COUNTDOWN_SEC`; фокус на кнопке «Смотреть» в деталях) стартует максимум за ~20-25
+ * секунд до настоящего нажатия play. CDN-ссылки kino.watch живут заметно дольше этого разрыва,
+ * поэтому 45 секунд — с запасом покрывают лаг между прогревом и реальным стартом, но не настолько
+ * большое окно, чтобы рискнуть отдать протухшую ссылку. Возврат к тайтлу спустя минуту (или
+ * больше) уже не попадёт в окно — такой forceRefresh честно уходит в сеть.
+ */
+private val FORCE_REFRESH_ADOPTION_TTL = 45.seconds
 
 // Реализация всего контракта CatalogRepository — столько же методов, дробить незачем.
 @Suppress("TooManyFunctions")
@@ -48,6 +62,24 @@ internal class CatalogRepositoryImpl(
     // только на время одного из двух вызовов и не должен обрывать результат для другого.
     private val detailsFetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val inFlightDetails = ConcurrentHashMap<Int, Deferred<RequestResult<Item>>>()
+
+    /**
+     * Последний УСПЕШНЫЙ forceRefresh-ответ по id и момент, когда он получен (монотонные часы —
+     * тот же приём, что и в `ImagePrefetchThrottle`: системное время может прыгнуть, а порядок
+     * событий важнее календарной даты). Существует ради speculative-prefetch: плашка автоперехода
+     * в плеере и фокус на «Смотреть» в деталях запускают forceRefresh ДО того, как пользователь
+     * реально нажмёт play, а следующий настоящий forceRefresh (PlayerScreenModel.onFetchData) идёт
+     * ровно за тем же id секунды спустя — без адопции это были бы два похода в сеть подряд, и
+     * спиннер плеера всё равно ждал бы второй из них. Адопция одноразовая (см. [getItemDetails]):
+     * запись убирается сразу после того, как её забрали, — повторный форс тем же поводом уже не
+     * ловит ту же ссылку дважды. Неудачные ответы сюда никогда не попадают.
+     */
+    private val recentForceRefresh = ConcurrentHashMap<Int, RecentForceRefresh>()
+
+    private data class RecentForceRefresh(
+        val result: RequestResult.Success<Item>,
+        val fetchedAt: TimeMark,
+    )
 
     override suspend fun getItems(type: ItemType, sort: CatalogSort, page: Int): RequestResult<ItemPage> =
         safeRequest { api.getItems(type.apiValue, sort.descending, page).toDomain() }
@@ -90,12 +122,23 @@ internal class CatalogRepositoryImpl(
     // тому, кто просто не нашёл кэш. Так фоновый TitleBackgroundFetcherImpl и экран деталей,
     // открытый в тот же момент на тот же id, ждут ОДИН запрос, а не гоняют по два параллельно.
     override suspend fun getItemDetails(id: Int, forceRefresh: Boolean): RequestResult<Item> {
+        if (forceRefresh) {
+            recentForceRefresh.remove(id)?.let { recent ->
+                if (recent.fetchedAt.elapsedNow() < FORCE_REFRESH_ADOPTION_TTL) return recent.result
+            }
+        }
         val cached = if (forceRefresh) null else itemCache.get(itemCacheKey(id))
         if (cached != null) {
             return safeRequest { networkJson.decodeFromString<ItemDto>(cached).toDomainOnly() }
         }
         val deferred = inFlightDetails.computeIfAbsent(id) {
-            detailsFetchScope.async { safeRequest { api.getItemDetails(id).item.toDomain() } }
+            detailsFetchScope.async {
+                safeRequest { api.getItemDetails(id).item.toDomain() }.also { result ->
+                    if (forceRefresh && result is RequestResult.Success) {
+                        recentForceRefresh[id] = RecentForceRefresh(result, TimeSource.Monotonic.markNow())
+                    }
+                }
+            }
                 .also { job -> job.invokeOnCompletion { inFlightDetails.remove(id, job) } }
         }
         return deferred.await()

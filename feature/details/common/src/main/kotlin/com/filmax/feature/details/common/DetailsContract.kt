@@ -11,6 +11,12 @@ data class DetailsState(
     /** Рассчитан по history + tracklist, а не по одному `watchStatus` из деталей. */
     val continuation: Continuation? = null,
     /**
+     * true, пока ответ [com.filmax.feature.details.common.DetailsScreenModel] на историю (для
+     * [continuation]) ещё не пришёл. Нажатие Play, пока это true, должно дождаться реального
+     * ответа (см. `DetailsScreenModel.awaitContinuation`), а не молча считать, что продолжения нет.
+     */
+    val continuationLoading: Boolean = true,
+    /**
      * Тайтл сейчас в нативном watchlist kino.watch (`item.inWatchlist`, переключается
      * `watching/togglewatchlist`), см. [DetailsEvent.ToggleWantToWatch].
      */
@@ -55,6 +61,15 @@ sealed interface DetailsEvent {
 
     /** Создать новую подборку и сразу добавить в неё текущий тайтл. */
     data class CreateFolderAndAdd(val title: String) : DetailsEvent
+
+    /**
+     * Фокус пульта зашёл на кнопку «Смотреть» — момент, когда пользователь с наибольшей
+     * вероятностью через секунду нажмёт play. Спекулятивно прогревает
+     * `catalog.getItemDetails(itemId, forceRefresh = true)`: PlayerScreenModel.onFetchData сделает
+     * тот же forceRefresh следом, и с адопцией в CatalogRepositoryImpl его вызов окажется
+     * мгновенным вместо нового похода в сеть. Модель ограничивает это одним разом за жизнь экрана.
+     */
+    data object PrefetchPlayback : DetailsEvent
 }
 
 sealed interface DetailsSideEffect

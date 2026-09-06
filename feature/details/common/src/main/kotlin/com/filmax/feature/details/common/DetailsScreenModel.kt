@@ -19,14 +19,17 @@ import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.user.isItemInBookmark
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.WatchingRepository
+import com.filmax.core.domain.watching.model.Continuation
 import com.filmax.core.domain.watching.model.calculateContinuation
 import com.filmax.core.presentation.BaseScreenModel
 import com.filmax.core.presentation.DataDomain
 import com.filmax.core.presentation.DataInvalidation
 import com.filmax.feature.details.common.navigation.DetailsRoute
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
 
 // Экран деталей сводит воспроизведение, избранное, загрузки и подборки в одной модели —
 // дробить её ради лимитов нельзя: состояние и обработчики читаются только вместе.
@@ -51,6 +54,12 @@ class DetailsScreenModel(
     /** Id обычных подборок (без «Буду смотреть»), в которых найден тайтл — см. [scanMemberships]. */
     private var scannedMemberships: Set<Int> = emptySet()
 
+    /** Не долбим сеть повторно, если фокус ещё раз вернётся на «Смотреть» — см. [prefetchPlayback]. */
+    private var playbackPrefetched = false
+
+    /** Текущая загрузка continuation — см. doc [loadContinuation] и [awaitContinuation]. */
+    private var continuationJob: Deferred<Continuation?>? = null
+
     init {
         onFetchData()
         observeDownloadState()
@@ -63,7 +72,20 @@ class DetailsScreenModel(
             DetailsEvent.ToggleWantToWatch -> toggleWantToWatch()
             is DetailsEvent.ToggleFolder -> toggleFolder(event.folder)
             is DetailsEvent.CreateFolderAndAdd -> createFolderAndAdd(event.title)
+            DetailsEvent.PrefetchPlayback -> prefetchPlayback()
         }
+    }
+
+    /**
+     * Спекулятивный прогрев воспроизведения — см. doc [DetailsEvent.PrefetchPlayback]. Чисто
+     * фоновая подсказка кэшу: результат никуда не пишем в state и ошибку не показываем — сбой
+     * просто оставит настоящий forceRefresh в плеере отрабатывать как обычно.
+     */
+    private fun prefetchPlayback() {
+        if (playbackPrefetched) return
+        val item = state.item ?: return
+        playbackPrefetched = true
+        screenModelScope { _ -> catalog.getItemDetails(item.id, forceRefresh = true) }
     }
 
     /**
@@ -116,15 +138,41 @@ class DetailsScreenModel(
         }
     }
 
-    /** История (для continuation — «Продолжить · SxEy» на кнопке hero) — отдельным запросом, не
+    /**
+     * История (для continuation — «Продолжить · SxEy» на кнопке hero) — отдельным запросом, не
      * блокируя показ самого тайтла. До ответа кнопка играет разумный дефолт (первый недосмотренный
      * эпизод сезона либо первый вовсе, см. `target` в TvDetailsScreen) и тихо обновляется, если
-     * найдётся реальный прогресс. */
+     * найдётся реальный прогресс.
+     *
+     * ГОНКА: `state.continuation` до ответа этой корутины — `null`, а фокус пульта долетает до
+     * кнопки «Смотреть» почти мгновенно (экран стартует с фокусом именно на ней). Нажатие Play
+     * раньше, чем этот запрос ответит, раньше молча считало continuation отсутствующей и играло
+     * серию с нуля — реальный прогресс «терялся», хотя доехать ему было нужно ещё доли секунды.
+     * [continuationJob] — тот же запрос как `Deferred`, чтобы [awaitContinuation] мог его дождаться
+     * вместо того, чтобы полагаться на ещё не обновившийся `state.continuation`.
+     */
     private fun loadContinuation(item: Item) {
-        screenModelScope { _ ->
-            val history = findHistoryEntry()
-            updateState { it.copy(continuation = calculateContinuation(item, history)) }
+        continuationJob = screenModelScope.async {
+            updateState { it.copy(continuationLoading = true) }
+            // runCatching, а не голый вызов: этот Deferred читает awaitContinuation() через
+            // .await(), и необработанное исключение всплыло бы там, в обработчике клика Play, а
+            // не осталось изолированным сбоем одной корутины, как у соседних screenModelScope{}.
+            val continuation = runCatching { calculateContinuation(item, findHistoryEntry()) }.getOrNull()
+            updateState { it.copy(continuation = continuation, continuationLoading = false) }
+            continuation
         }
+    }
+
+    /**
+     * Ждёт ответ [loadContinuation], если он ещё не пришёл (см. её doc про гонку) — иначе сразу
+     * отдаёт то, что уже в `state.continuation`. [CONTINUATION_AWAIT_TIMEOUT_MS] — подстраховка от
+     * медленного сервера: экран не обязан зависать в ожидании ответа истории ради одного нажатия
+     * Play, по истечении вызывающий получает то, что успело прийти (обычно `null`, поведение как
+     * раньше — серия играет с нуля), а не блокируется бесконечно.
+     */
+    suspend fun awaitContinuation(): Continuation? {
+        if (!state.continuationLoading) return state.continuation
+        return withTimeoutOrNull(CONTINUATION_AWAIT_TIMEOUT_MS) { continuationJob?.await() } ?: state.continuation
     }
 
     /**
@@ -325,5 +373,8 @@ class DetailsScreenModel(
 
         /** То же название, что и [FavoritesRepository] использует для поиска/создания своей подборки. */
         const val FAVORITES_FOLDER_TITLE = "Буду смотреть"
+
+        /** Таймаут [awaitContinuation] — см. её doc. */
+        const val CONTINUATION_AWAIT_TIMEOUT_MS = 4_000L
     }
 }

@@ -75,6 +75,9 @@ class PlayerScreenModel(
     /** Индекс текущего варианта доставки в [StreamQuality.urls]; сбрасывается сменой качества. */
     private var streamVariantIndex = 0
 
+    /** Не долбим сеть повторно, если плашка автоперехода моргнёт ещё раз (см. [prefetchNextEpisode]). */
+    private var nextEpisodePrefetched = false
+
     init {
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -116,7 +119,21 @@ class PlayerScreenModel(
                 player.setPlaybackSpeed(event.speed)
                 screenModelScope { _ -> updateState { it.copy(currentSpeed = event.speed) } }
             }
+            PlayerEvent.PrefetchNextEpisode -> prefetchNextEpisode()
         }
+    }
+
+    /**
+     * Спекулятивный прогрев следующей серии — см. doc [PlayerEvent.PrefetchNextEpisode]. Чисто
+     * фоновая подсказка кэшу: результат никуда не пишем в state и ошибку не показываем — если
+     * сбой, настоящий forceRefresh на экране следующей серии просто отработает как обычно.
+     * Флаг — не сам механизм адопции (тот живёт в CatalogRepositoryImpl и одноразовый по своей
+     * природе), а защита от лишнего похода в сеть, если плашка почему-то моргнёт дважды.
+     */
+    private fun prefetchNextEpisode() {
+        if (nextEpisodePrefetched) return
+        nextEpisodePrefetched = true
+        screenModelScope { _ -> catalog.getItemDetails(route.itemId, forceRefresh = true) }
     }
 
     /**

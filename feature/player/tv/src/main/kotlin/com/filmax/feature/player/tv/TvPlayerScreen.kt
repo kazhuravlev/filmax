@@ -232,6 +232,13 @@ private fun PlayerEffects(ui: TvPlayerUiState, screenModel: PlayerScreenModel, m
         }
     }
 
+    // Плашка автоперехода появилась — до реального перехода ещё AUTO_NEXT_COUNTDOWN_SEC секунд,
+    // и это лучший момент прогреть следующую серию (см. PlayerEvent.PrefetchNextEpisode).
+    // LaunchedEffect с ключом на само значение срабатывает ровно на фронте false → true.
+    LaunchedEffect(ui.autoNextVisible) {
+        if (ui.autoNextVisible) screenModel.dispatch(PlayerEvent.PrefetchNextEpisode)
+    }
+
     LaunchedEffect(ui.isScrubbing, ui.scrubTargetMs) {
         if (ui.isScrubbing) {
             delay(SCRUB_COMMIT_TIMEOUT_MS)

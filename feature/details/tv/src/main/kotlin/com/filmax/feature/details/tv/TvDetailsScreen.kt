@@ -34,6 +34,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
@@ -43,7 +44,6 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -70,12 +70,14 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil3.compose.AsyncImage
@@ -200,10 +202,7 @@ fun TvDetailsScreen(
             .background(MaterialTheme.colorScheme.background),
     ) {
         when {
-            state.loading -> CircularProgressIndicator(
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.align(Alignment.Center),
-            )
+            state.loading -> TvDetailsSkeleton()
 
             item != null -> DetailsContent(
                 item = item,
@@ -225,11 +224,88 @@ fun TvDetailsScreen(
                     onPlayTrailer = nav.onPlayTrailer,
                     onToggleFolder = { folder -> screenModel.dispatch(DetailsEvent.ToggleFolder(folder)) },
                     onCreateFolder = { title -> screenModel.dispatch(DetailsEvent.CreateFolderAndAdd(title)) },
+                    onPrefetchPlayback = { screenModel.dispatch(DetailsEvent.PrefetchPlayback) },
+                    awaitContinuation = screenModel::awaitContinuation,
                 ),
             )
         }
     }
 }
+
+/**
+ * Скелетон холодного промаха кэша (`state.loading` без ещё загруженного `item`) — редкий путь:
+ * тайтл почти всегда уже лежит в `ItemDetailsCache` и экран открывается мгновенно (см. doc
+ * `DetailsScreenModel.onFetchData`). Раньше здесь был голый `CircularProgressIndicator` на чёрном
+ * фоне — грубое приближение раскладки [DetailsHero] тем же визуальным языком, что и
+ * [PosterRailSkeleton]/`TvRailSkeleton` (главная): статичные градиентные плашки
+ * ([GradientPosterPlaceholder]) без shimmer-анимации (см. её обоснование в `PosterImage.kt` —
+ * десятки одновременных shimmer-анимаций на ТВ роняли FPS).
+ */
+@Composable
+private fun TvDetailsSkeleton(modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .fillMaxSize()
+            .padding(
+                start = TvMetrics.SafeHorizontal,
+                end = TvMetrics.SafeHorizontal,
+                top = TvMetrics.ContentTop,
+            ),
+    ) {
+        SkeletonBlock(width = SkeletonTitleWidth, height = SkeletonTitleHeight, shape = TvMetrics.ButtonShape)
+        Spacer(Modifier.height(18.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            SkeletonBlock(width = HeroPosterWidth, height = HeroPosterHeight, shape = TvMetrics.PosterShape)
+            Column {
+                SkeletonBlock(width = HeroInfoWidth, height = SkeletonInfoPanelHeight, shape = TvMetrics.PanelShape)
+                Spacer(Modifier.height(18.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SkeletonBlock(
+                        width = SkeletonPlayButtonWidth,
+                        height = SkeletonButtonHeight,
+                        shape = TvMetrics.ButtonShape,
+                    )
+                    SkeletonBlock(
+                        width = SkeletonSecondaryButtonWidth,
+                        height = SkeletonButtonHeight,
+                        shape = TvMetrics.ButtonShape,
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                SkeletonBlock(
+                    width = SkeletonSecondaryButtonWidth,
+                    height = SkeletonButtonHeight,
+                    shape = TvMetrics.ButtonShape,
+                )
+            }
+        }
+        Spacer(Modifier.height(32.dp))
+        SkeletonBlock(width = ReadableTextWidth, height = SkeletonTextLineHeight, shape = SkeletonTextShape)
+        Spacer(Modifier.height(10.dp))
+        SkeletonBlock(width = ReadableTextWidth, height = SkeletonTextLineHeight, shape = SkeletonTextShape)
+        Spacer(Modifier.height(10.dp))
+        SkeletonBlock(width = SkeletonShortTextLineWidth, height = SkeletonTextLineHeight, shape = SkeletonTextShape)
+    }
+}
+
+/** Одна плашка скелетона — та же статичная градиентная заглушка, что и у постеров/рядов. */
+@Composable
+private fun SkeletonBlock(width: Dp, height: Dp, shape: Shape) {
+    GradientPosterPlaceholder(
+        accentColor = TvSurfaceContainerHigh,
+        modifier = Modifier.width(width).height(height).clip(shape),
+    )
+}
+
+private val SkeletonTitleWidth = 360.dp
+private val SkeletonTitleHeight = 32.dp
+private val SkeletonInfoPanelHeight = 76.dp
+private val SkeletonButtonHeight = 44.dp
+private val SkeletonPlayButtonWidth = 170.dp
+private val SkeletonSecondaryButtonWidth = 190.dp
+private val SkeletonTextLineHeight = 16.dp
+private val SkeletonShortTextLineWidth = 420.dp
+private val SkeletonTextShape = RoundedCornerShape(4.dp)
 
 /**
  * Навигация TV-деталей — группой (detekt LongParameterList): входной composable иначе набирает
@@ -257,6 +333,10 @@ private data class DetailsActions(
     val onToggleFolder: (BookmarkFolder) -> Unit,
     /** Создать подборку и сразу занести в неё тайтл — из того же диалога выбора. */
     val onCreateFolder: (title: String) -> Unit,
+    /** Фокус зашёл на кнопку «Смотреть» — см. [DetailsEvent.PrefetchPlayback]. */
+    val onPrefetchPlayback: () -> Unit,
+    /** Ждёт настоящий ответ continuation, если он ещё грузится — см. `DetailsScreenModel.awaitContinuation`. */
+    val awaitContinuation: suspend () -> Continuation?,
 )
 
 // Экран собирает hero, все секции полотна и диалог выбора подборки в одном месте — раскладывать
@@ -282,7 +362,13 @@ private fun DetailsContent(
     }
     // Селектор стартует на сезоне недосмотренной серии, а не на первом: продолжают чаще, чем
     // начинают заново.
-    var selectedSeason by remember(item.id) { mutableIntStateOf(series?.resumeSeasonIndex ?: 0) }
+    //
+    // rememberSaveable, а не remember: тот же класс бага, что уже чинили для contentFocused
+    // выше (см. её комментарий) — уход в плеер/фильмографию и обратно пересоздаёт композицию
+    // с нуля, и обычный remember тихо сбрасывал вручную выбранный сезон на resumeSeasonIndex,
+    // а восстановление фокуса на ключ "episode:${id}" переставало находить карточку — она
+    // просто не рендерилась, потому что список серий откатывался на другой сезон.
+    var selectedSeason by rememberSaveable(item.id) { mutableIntStateOf(series?.resumeSeasonIndex ?: 0) }
     val episodes = series?.seasons?.getOrNull(selectedSeason)?.second.orEmpty()
 
     // Первый заход открывает экран на «Смотреть», возврат из плеера — на серии, с которой ушли.
@@ -301,6 +387,8 @@ private fun DetailsContent(
     val directors = remember(item.director) { resolveDirectors(item.director) }
 
     val listState = rememberLazyListState()
+    // Для onPlay ниже: ожидание continuation (см. её doc) — suspend, а обработчик клика — нет.
+    val playScope = rememberCoroutineScope()
     // false = стейт hero (открытие экрана), true = фокус ушёл в контент. Пока полотно в стейте
     // hero, фокус-прокрутка (bringIntoView) выключена ПОЛНОСТЬЮ: именно она давала подскролл к
     // середине при открытии — стартовый requestFocus на «Смотреть» уезжал раньше раскладки.
@@ -348,15 +436,34 @@ private fun DetailsContent(
                             if (series == null) {
                                 actions.onPlay(NO_SEASON, MOVIE_VIDEO_ID, NO_RESUME_POSITION)
                             } else {
-                                target?.let {
-                                    val position = continuation
-                                        ?.takeIf { candidate ->
-                                            candidate.isActualContinuation &&
-                                                candidate.season == it.seasonNumber && candidate.videoId == it.number
+                                playScope.launch {
+                                    // ГОНКА (см. doc DetailsScreenModel.loadContinuation): пока
+                                    // continuation не пришла, `continuation`/`target` в этой
+                                    // композиции — временный дефолт (null / первая серия сезона),
+                                    // и без ожидания настоящего ответа серия сыграла бы с нуля,
+                                    // хотя прогресс уже есть — «потерял моё место». Ждём реальный
+                                    // ответ (с таймаутом на случай медленного сервера) и пересчитываем
+                                    // серию/позицию по НЕМУ, а не по тому, что успело попасть в кадр.
+                                    val resolved = actions.awaitContinuation()
+                                    val resolvedResume = resolved
+                                        ?.takeIf { it.isActualContinuation }
+                                        ?.let { c ->
+                                            item.tracklist.firstOrNull { track ->
+                                                track.seasonNumber == c.season && track.number == c.videoId
+                                            }
                                         }
-                                        ?.savedPositionSeconds
-                                        ?: NO_RESUME_POSITION
-                                    actions.onPlay(it.seasonNumber, it.number, position)
+                                    val chosen = resolvedResume ?: target
+                                    chosen?.let {
+                                        val position = resolved
+                                            ?.takeIf { candidate ->
+                                                candidate.isActualContinuation &&
+                                                    candidate.season == it.seasonNumber &&
+                                                    candidate.videoId == it.number
+                                            }
+                                            ?.savedPositionSeconds
+                                            ?: NO_RESUME_POSITION
+                                        actions.onPlay(it.seasonNumber, it.number, position)
+                                    }
                                 }
                             }
                         },
@@ -366,6 +473,7 @@ private fun DetailsContent(
                         showWantToWatch = item.isSeries(),
                         onHeroFocusChanged = onHeroFocusChanged,
                         onTrailer = trailerUrl?.let { ::playTrailer },
+                        onPrefetchPlayback = actions.onPrefetchPlayback,
                     ),
                 )
             }
@@ -534,6 +642,8 @@ private data class HeroPlayback(
     val onHeroFocusChanged: (Boolean) -> Unit,
     /** null — у тайтла нет играбельного трейлера, кнопки нет. */
     val onTrailer: (() -> Unit)? = null,
+    /** Фокус зашёл именно на «Смотреть» — см. [DetailsEvent.PrefetchPlayback]. */
+    val onPrefetchPlayback: () -> Unit = {},
 )
 
 /**
@@ -689,7 +799,10 @@ private fun HeroButtons(
                 text = playback.playLabel,
                 onClick = playback.onPlay,
                 leadingIcon = Icons.Filled.PlayArrow,
-                modifier = playback.playModifier,
+                // onFocusChanged именно здесь, а не на общем onHeroFocusChanged контейнера ниже:
+                // прогрев нужен только когда фокус реально на «Смотреть», а не на любой кнопке hero.
+                modifier = playback.playModifier
+                    .onFocusChanged { if (it.hasFocus) playback.onPrefetchPlayback() },
             )
             playback.onTrailer?.let { onTrailer ->
                 TvButton(

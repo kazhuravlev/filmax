@@ -153,6 +153,16 @@ sealed interface PlayerEvent {
     data class SelectAudio(val label: String) : PlayerEvent
     data class SelectSubtitle(val label: String) : PlayerEvent
     data class SetSpeed(val speed: Float) : PlayerEvent
+
+    /**
+     * Плашка автоперехода стала видна — до реального перехода на следующую серию ещё несколько
+     * секунд (`AUTO_NEXT_COUNTDOWN_SEC` в feature:player:tv). Спекулятивно прогревает
+     * `catalog.getItemDetails(itemId, forceRefresh = true)` для СЛЕДУЮЩЕЙ серии заранее: у неё тот
+     * же itemId, что и у текущей (сериал один), и её PlayerScreenModel сделает тот же forceRefresh
+     * секунды спустя (см. onFetchData) — с адопцией в CatalogRepositoryImpl тот второй вызов
+     * окажется мгновенным, а не новым походом в сеть.
+     */
+    data object PrefetchNextEpisode : PlayerEvent
 }
 
 sealed interface PlayerSideEffect
