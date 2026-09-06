@@ -5,6 +5,7 @@ import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.catalog.model.MediaTrack
 import com.filmax.core.domain.common.getOrNull
+import com.filmax.core.domain.tuning.PerformanceTuning
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -102,16 +103,16 @@ fun calculateContinuation(item: Item, history: WatchHistory? = null): Continuati
  * Если детали отдельного тайтла не доехали, запись не показываем: без полного tracklist нельзя
  * безопасно решить, является ли её эпизод последним.
  *
- * Запросы ограничены [CONTINUATION_DETAILS_CONCURRENCY] одновременных — на холодном кэше история
- * может содержать до пары десятков записей, и залп из стольких же параллельных запросов к серверу
- * не нужен (тот же приём и то же число, что и `LibraryScreenModel.loadTitleDetails`,
- * `TITLE_DETAILS_CONCURRENCY` — там объяснена та же причина). Без ограничения кэш-промах по всей
- * истории означал ещё и до 20 сетевых походов одновременно, что на медленной сети удлиняло
- * появление continuation куда сильнее, чем последовательная очередь с разумной шириной.
+ * Запросы ограничены [PerformanceTuning.ForegroundDetailsConcurrency.CONTINUATION_DETAILS]
+ * одновременных — на холодном кэше история может содержать до пары десятков записей, и залп из
+ * стольких же параллельных запросов к серверу не нужен (тот же приём и то же число, что и у
+ * `LibraryScreenModel.loadTitleDetails`). Без ограничения кэш-промах по всей истории означал ещё
+ * и до 20 сетевых походов одновременно, что на медленной сети удлиняло появление continuation
+ * куда сильнее, чем очередь с разумной шириной.
  */
 class ContinuationResolver(private val catalog: CatalogRepository) {
     suspend fun resolve(history: List<WatchHistory>): List<Continuation> = coroutineScope {
-        val limiter = Semaphore(CONTINUATION_DETAILS_CONCURRENCY)
+        val limiter = Semaphore(PerformanceTuning.ForegroundDetailsConcurrency.CONTINUATION_DETAILS)
         history.map { entry ->
             async {
                 limiter.withPermit { catalog.getItemDetails(entry.itemId).getOrNull() }
@@ -120,8 +121,6 @@ class ContinuationResolver(private val catalog: CatalogRepository) {
         }.awaitAll().filterNotNull()
     }
 }
-
-private const val CONTINUATION_DETAILS_CONCURRENCY = 4
 
 private fun Item.isSeriesForContinuation(): Boolean =
     type == ItemType.SERIES || type == ItemType.ANIME || type == ItemType.DOCUMENTARY

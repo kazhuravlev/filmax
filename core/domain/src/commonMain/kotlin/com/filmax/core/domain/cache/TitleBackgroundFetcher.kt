@@ -1,5 +1,6 @@
 package com.filmax.core.domain.cache
 
+import com.filmax.core.domain.tuning.PerformanceTuning
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.concurrent.Volatile
@@ -43,9 +44,10 @@ interface TitleBackgroundFetcher {
  * Это ограничение снято: [ItemDetailsCacheAccess.cache] теперь — SQLite (`ItemDetailsCacheDb`,
  * core:network) с жёстким потолком строк (2000) и TTL-вытеснением старых записей, а сама очередь
  * здесь — строго последовательная, с собственным потолком (drop-newest, см.
- * `TitleBackgroundFetcherImpl.MAX_QUEUED_IDS`) и паузой на время активности пользователя
- * ([ImagePrefetchThrottle]). Кэш-хит по уже свежим деталям фетчер обрабатывает вовсе без похода
- * в сеть — повторный маппинг одного и того же id из десятка разных списков почти бесплатен.
+ * [PerformanceTuning.BackgroundQueues.MAX_QUEUED_TITLE_IDS]) и паузой на время активности
+ * пользователя ([ImagePrefetchThrottle]). Кэш-хит по уже свежим деталям фетчер обрабатывает
+ * вовсе без похода в сеть — повторный маппинг одного и того же id из десятка разных списков
+ * почти бесплатен.
  *
  * Гонка «пользователь открыл тайтл, пока фоновая очередь качает его же id»: обе стороны в итоге
  * зовут `CatalogRepository.getItemDetails(id)`, и именно там (в реализации, data:catalog) один

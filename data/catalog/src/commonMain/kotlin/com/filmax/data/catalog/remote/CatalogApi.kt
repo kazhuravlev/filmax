@@ -1,5 +1,6 @@
 package com.filmax.data.catalog.remote
 
+import com.filmax.core.network.markAsBackgroundNetworkRequest
 import com.filmax.data.catalog.remote.dto.CollectionItemsDto
 import com.filmax.data.catalog.remote.dto.CollectionsResponseDto
 import com.filmax.data.catalog.remote.dto.CountriesResponseDto
@@ -29,8 +30,10 @@ internal data class ItemsQuery(
 
 internal class CatalogApi(private val client: HttpClient) {
 
-    suspend fun getItemDetails(id: Int): MovieInfoDto =
-        client.get("api/v1/items/$id").body()
+    suspend fun getItemDetails(id: Int, isBackground: Boolean = false): MovieInfoDto =
+        client.get("api/v1/items/$id") {
+            if (isBackground) markAsBackgroundNetworkRequest()
+        }.body()
 
     suspend fun getItems(type: String, sort: String, page: Int): ItemsResponseDto =
         client.get("api/v1/items") {

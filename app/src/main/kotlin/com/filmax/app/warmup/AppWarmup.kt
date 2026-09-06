@@ -3,6 +3,7 @@ package com.filmax.app.warmup
 import com.filmax.core.domain.auth.AuthRepository
 import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.common.LastValueCache
+import com.filmax.core.domain.tuning.PerformanceTuning
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.feature.library.common.LibrarySnapshot
@@ -76,16 +77,11 @@ class AppWarmup(
             auth.isAuthenticated.first { it }
             // Даём стартовому залпу главной забрать сеть первым: прогрев второстепенных вкладок
             // не должен состязаться с тем, что зритель видит на экране прямо сейчас.
-            delay(WARMUP_START_DELAY_MS)
+            delay(PerformanceTuning.Warmup.START_DELAY_MS)
             supervisorScope {
                 launch { runCatching { libraryCache.putIfAbsent(fetchLibrarySnapshot(watching, user)) } }
                 launch { runCatching { catalogCache.putIfAbsent(fetchCatalogSnapshot(catalog)) } }
             }
         }
-    }
-
-    private companion object {
-        /** Задержка перед стартом прогрева — см. doc [start]. */
-        const val WARMUP_START_DELAY_MS = 3_000L
     }
 }

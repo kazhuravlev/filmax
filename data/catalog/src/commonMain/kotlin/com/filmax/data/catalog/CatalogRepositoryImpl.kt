@@ -121,7 +121,11 @@ internal class CatalogRepositoryImpl(
     // forceRefresh не важен — общий свежий ответ одинаково годится и тому, кто его форсировал, и
     // тому, кто просто не нашёл кэш. Так фоновый TitleBackgroundFetcherImpl и экран деталей,
     // открытый в тот же момент на тот же id, ждут ОДИН запрос, а не гоняют по два параллельно.
-    override suspend fun getItemDetails(id: Int, forceRefresh: Boolean): RequestResult<Item> {
+    override suspend fun getItemDetails(
+        id: Int,
+        forceRefresh: Boolean,
+        isBackground: Boolean,
+    ): RequestResult<Item> {
         val adopted = if (forceRefresh) {
             recentForceRefresh.remove(id)
                 ?.takeIf { it.fetchedAt.elapsedNow() < FORCE_REFRESH_ADOPTION_TTL }
@@ -135,7 +139,7 @@ internal class CatalogRepositoryImpl(
             cached != null -> safeRequest { networkJson.decodeFromString<ItemDto>(cached).toDomainOnly() }
             else -> inFlightDetails.computeIfAbsent(id) {
                 detailsFetchScope.async {
-                    safeRequest { api.getItemDetails(id).item.toDomain() }.also { result ->
+                    safeRequest { api.getItemDetails(id, isBackground).item.toDomain() }.also { result ->
                         if (forceRefresh && result is RequestResult.Success) {
                             recentForceRefresh[id] = RecentForceRefresh(result, TimeSource.Monotonic.markNow())
                         }

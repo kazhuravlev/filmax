@@ -9,6 +9,7 @@ import com.filmax.core.domain.cache.PrefetchProgress
 import com.filmax.core.domain.cache.TitleBackgroundFetcher
 import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.common.getOrNull
+import com.filmax.core.domain.tuning.PerformanceTuning
 import com.filmax.core.network.networkJson
 import com.filmax.data.catalog.mapper.itemCacheKey
 import com.filmax.data.catalog.mapper.posterPrefetchImages
@@ -28,15 +29,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.decodeFromString
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
-
-private const val FETCH_TIMEOUT_MS = 15_000L
-private const val THROTTLE_POLL_DELAY_MS = 500L
-
-/** Максимум одновременно стоящих в очереди id — см. doc класса про drop-newest. Поднят с 200 до
- * 1000: раньше сюда попадали только `WatchingItemDto`/`HistoryEntryDto` (data:watching), теперь —
- * id КАЖДОГО тайтла КАЖДОГО спискового ответа (см. `CatalogMapper.toDomain()`), и старый потолок
- * слишком легко выедался обычным скроллом каталога/поиска. */
-private const val MAX_QUEUED_IDS = 1000
 
 /**
  * Докачивает `items/{id}` в фоне для тайтлов, известных пока только по голой ссылке (см.
@@ -64,9 +56,10 @@ private const val MAX_QUEUED_IDS = 1000
  * загрузка — это «совсем ничего не делаем», даже кэш-хитовую ветку без единого похода в сеть,
  * а не «делаем только то, что бесплатно».
  *
- * Очередь ограничена [MAX_QUEUED_IDS] элементами (drop-newest): при переполнении новый id не
- * попадает ни в [queuedIds], ни в [channel] — как и в `ImagePrefetcherImpl`, дропаем именно
- * новые элементы, чтобы ключ не застревал в множестве без шанса когда-либо обработаться.
+ * Очередь ограничена [PerformanceTuning.BackgroundQueues.MAX_QUEUED_TITLE_IDS] элементами
+ * (drop-newest): при переполнении новый id не попадает ни в [queuedIds], ни в [channel] — как и
+ * в `ImagePrefetcherImpl`, дропаем именно новые элементы, чтобы ключ не застревал в множестве
+ * без шанса когда-либо обработаться.
  *
  * Перед КАЖДЫМ id ждём, пока [ImagePrefetchThrottle.shouldThrottle] не станет false — иначе
  * запрос деталей и последующее декодирование постера соревнуются с UI-потоком за сеть/CPU прямо
@@ -89,8 +82,14 @@ internal class TitleBackgroundFetcherImpl(
         ItemDiscovery.prefetcher = this
         scope.launch {
             for (id in channel) {
-                while (ImagePrefetchThrottle.shouldThrottle) delay(THROTTLE_POLL_DELAY_MS)
-                runCatching { withTimeoutOrNull(FETCH_TIMEOUT_MS) { fetchThenPrefetchPoster(id) } }
+                while (ImagePrefetchThrottle.shouldThrottle) {
+                    delay(PerformanceTuning.BackgroundThrottle.THROTTLE_POLL_INTERVAL_MS)
+                }
+                runCatching {
+                    withTimeoutOrNull(PerformanceTuning.BackgroundQueues.TITLE_DETAILS_FETCH_TIMEOUT_MS) {
+                        fetchThenPrefetchPoster(id)
+                    }
+                }
                 queuedIds.remove(id)
                 progressState.update {
                     it.copy(downloaded = it.downloaded + 1, remaining = queuedIds.size)
@@ -102,7 +101,7 @@ internal class TitleBackgroundFetcherImpl(
     override fun enqueue(itemIds: List<Int>) {
         for (id in itemIds) {
             // Переполнение — дропаем новый id, не трогая queuedIds (см. doc класса).
-            if (queuedIds.size >= MAX_QUEUED_IDS) continue
+            if (queuedIds.size >= PerformanceTuning.BackgroundQueues.MAX_QUEUED_TITLE_IDS) continue
             // add() возвращает false, если id уже в очереди/обрабатывается — не дублируем.
             if (queuedIds.add(id)) {
                 channel.trySend(id)
@@ -120,6 +119,8 @@ internal class TitleBackgroundFetcherImpl(
             return
         }
         // toDomain() внутри уже сам заявит постер в ImageDiscovery — отдельно звать не нужно.
-        catalog.getItemDetails(id).getOrNull()
+        // Иначе ActivityTrackingPlugin считает этот же запрос пользовательской активностью и
+        // после КАЖДОГО JSON блокирует следующий id ещё на полный cooldown.
+        catalog.getItemDetails(id, isBackground = true).getOrNull()
     }
 }

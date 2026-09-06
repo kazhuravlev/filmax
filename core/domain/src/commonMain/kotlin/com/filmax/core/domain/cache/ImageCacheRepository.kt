@@ -1,5 +1,6 @@
 package com.filmax.core.domain.cache
 
+import com.filmax.core.domain.tuning.PerformanceTuning
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -17,7 +18,7 @@ interface ImageCacheRepository {
 
 /**
  * Живой размер дискового кэша картинок Coil: [sizeBytes] — сколько реально занято сейчас,
- * [maxSizeBytes] — настроенный потолок (`FilmaxImageLoaderFactory.IMAGE_DISK_CACHE_MAX_SIZE_BYTES`).
+ * [maxSizeBytes] — настроенный потолок [PerformanceTuning.ImageCache.DISK_CACHE_MAX_SIZE_BYTES].
  * Читается напрямую из `coil3.disk.DiskCache.size`/`.maxSize` (реализация — `core:ui`), а не копится
  * счётчиком по фактам закачки: инкрементальный счётчик никогда не уменьшался, когда Coil тихо
  * вытеснял старые записи по лимиту размера, и на кнопке сброса показывал бы «сколько всего когда-либо

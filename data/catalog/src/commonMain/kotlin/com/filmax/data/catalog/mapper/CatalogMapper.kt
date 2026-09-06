@@ -22,6 +22,7 @@ import com.filmax.core.domain.catalog.model.ItemRating
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.catalog.model.Pagination
 import com.filmax.core.domain.catalog.model.Posters
+import com.filmax.core.domain.tuning.PerformanceTuning
 import com.filmax.core.network.networkJson
 import com.filmax.data.catalog.remote.dto.CollectionDto
 import com.filmax.data.catalog.remote.dto.CollectionItemsDto
@@ -132,7 +133,7 @@ internal fun ItemDto.toDomainOnly(): Item = Item(
  * маленького набора тайтлов) и на экране деталей (грузится по факту открытия). Прогревать его для
  * КАЖДОГО тайтла, когда-либо прошедшего через любой список/поиск/похожее — почти чистая трата:
  * бэкдропы тяжелее постера на порядок, и на дисковом кэше в 1 ГБ (см.
- * `FilmaxImageLoaderFactory.IMAGE_DISK_CACHE_MAX_SIZE_BYTES`) быстро вытесняют как раз те
+ * [PerformanceTuning.ImageCache.DISK_CACHE_MAX_SIZE_BYTES]) быстро вытесняют как раз те
  * маленькие постеры, что реально переиспользуются между экранами — отсюда и повторные закачки
  * одного и того же при возврате на главную/в подборку.
  */

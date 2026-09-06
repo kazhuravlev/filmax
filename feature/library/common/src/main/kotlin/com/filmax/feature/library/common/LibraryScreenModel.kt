@@ -7,6 +7,7 @@ import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.firstErrorMessage
 import com.filmax.core.domain.common.getOrNull
 import com.filmax.core.domain.favorites.FavoritesRepository
+import com.filmax.core.domain.tuning.PerformanceTuning
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.user.getDedupedBookmarkItems
 import com.filmax.core.domain.user.model.BookmarkFolder
@@ -242,7 +243,7 @@ class LibraryScreenModel(
      * внутри `catalog.getItemDetails`.
      */
     private suspend fun loadTitleDetails(itemIds: List<Int>): Map<Int, Item> = coroutineScope {
-        val limiter = Semaphore(TITLE_DETAILS_CONCURRENCY)
+        val limiter = Semaphore(PerformanceTuning.ForegroundDetailsConcurrency.LIBRARY_TITLE_DETAILS)
         itemIds.distinct().map { itemId ->
             async { limiter.withPermit { catalog.getItemDetails(itemId).getOrNull() } }
         }.awaitAll().filterNotNull().associateBy(Item::id)
@@ -600,7 +601,6 @@ class LibraryScreenModel(
     private companion object {
         /** Первая страница содержимого папки (нумерация kino.watch — с единицы). */
         const val FIRST_PAGE = 1
-        const val TITLE_DETAILS_CONCURRENCY = 4
 
         /** Название подборки, чей свимлейн показывается внизу «В процессе». */
         const val WATCH_LATER_COLLECTION_TITLE = "Буду смотреть"

@@ -71,6 +71,10 @@ fun TechOverlay() {
     // StateFlow — опрашиваем их сами раз в секунду, пока оверлей виден.
     var speedLabel by remember { mutableStateOf("0 КБ/с") }
     var throttled by remember { mutableStateOf(ImagePrefetchThrottle.shouldThrottle) }
+    var cooldownRemainingMillis by remember {
+        mutableStateOf(ImagePrefetchThrottle.cooldownRemainingMillis)
+    }
+    var playbackActive by remember { mutableStateOf(ImagePrefetchThrottle.isPlaybackActive) }
     LaunchedEffect(Unit) {
         var lastBytes = NetworkStats.totalBytes
         while (true) {
@@ -79,6 +83,8 @@ fun TechOverlay() {
             speedLabel = formatSpeed(bytes - lastBytes)
             lastBytes = bytes
             throttled = ImagePrefetchThrottle.shouldThrottle
+            cooldownRemainingMillis = ImagePrefetchThrottle.cooldownRemainingMillis
+            playbackActive = ImagePrefetchThrottle.isPlaybackActive
         }
     }
 
@@ -99,9 +105,18 @@ fun TechOverlay() {
                 "картинки: очередь ${imageProgress.remaining} · скачано ${imageProgress.downloaded} " +
                     String.format(Locale.US, "· диск %.0f/%.0f МБ", usedMb, maxMb),
             )
-            OverlayLine("сеть: скорость $speedLabel · троттлинг ${if (throttled) "да" else "нет"}")
+            OverlayLine(
+                "сеть: скорость $speedLabel · троттлинг " +
+                    formatThrottle(throttled, playbackActive, cooldownRemainingMillis),
+            )
         }
     }
+}
+
+private fun formatThrottle(throttled: Boolean, playbackActive: Boolean, cooldownMillis: Long): String = when {
+    !throttled -> "нет"
+    playbackActive -> "да · плеер"
+    else -> "да · кулдаун ${(cooldownMillis + MILLIS_PER_SECOND - 1L) / MILLIS_PER_SECOND} с"
 }
 
 @Composable
@@ -124,6 +139,7 @@ private fun formatSpeed(bytesPerInterval: Long): String {
 }
 
 private const val REFRESH_INTERVAL_MS = 1_000L
+private const val MILLIS_PER_SECOND = 1_000L
 private const val BYTES_PER_KB = 1024.0
 private const val KB_PER_MB = 1024.0
 private const val BYTES_PER_MB = 1024.0 * 1024.0

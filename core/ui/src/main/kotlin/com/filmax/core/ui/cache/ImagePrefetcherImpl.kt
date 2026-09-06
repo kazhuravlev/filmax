@@ -14,6 +14,7 @@ import com.filmax.core.domain.cache.ImagePrefetchThrottle
 import com.filmax.core.domain.cache.ImagePrefetcher
 import com.filmax.core.domain.cache.PrefetchImage
 import com.filmax.core.domain.cache.PrefetchProgress
+import com.filmax.core.domain.tuning.PerformanceTuning
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -48,8 +49,9 @@ import java.util.concurrent.ConcurrentHashMap
  * перестаёт забирать из неё сеть, пропуская элементы без похода в сеть (см. [processOne]), так
  * что [PrefetchProgress.remaining] всё равно корректно стекает к нулю, а не зависает.
  *
- * Очередь ограничена [MAX_QUEUED_KEYS] элементами (drop-newest): при переполнении новый элемент
- * не попадает ни в [queuedKeys], ни в [channel] — иначе экран со списком из тысяч постеров разом
+ * Очередь ограничена [PerformanceTuning.BackgroundQueues.MAX_QUEUED_IMAGE_KEYS] элементами
+ * (drop-newest): при переполнении новый элемент не попадает ни в [queuedKeys], ни в [channel] —
+ * иначе экран со списком из тысяч постеров разом
  * забивает [Channel.UNLIMITED] и [queuedKeys] безграничным множеством ключей, которое никогда не
  * догоняется. Дропаем именно новые, а не старые — иначе пришлось бы вычищать уже отправленный в
  * канал элемент, а `Channel` этого не умеет.
@@ -91,7 +93,7 @@ internal class ImagePrefetcherImpl(
             // Переполнение — дропаем новый элемент, не трогая ни очередь, ни queuedKeys (см. doc
             // класса): ключ не должен остаться в множестве, иначе он никогда не будет обработан
             // и не освободит место для будущих элементов.
-            if (queuedKeys.size >= MAX_QUEUED_KEYS) continue
+            if (queuedKeys.size >= PerformanceTuning.BackgroundQueues.MAX_QUEUED_IMAGE_KEYS) continue
             // add() возвращает false, если ключ уже стоит в очереди/обрабатывается — второй раз
             // тот же тайтл из другого списка (например, попал и в «Похожее», и в поиск) не дублируем.
             if (queuedKeys.add(image.key)) {
@@ -107,8 +109,14 @@ internal class ImagePrefetcherImpl(
      * прогрева соревнуется с UI-потоком прямо во время скролла/воспроизведения. */
     private suspend fun processOne(image: PrefetchImage) {
         if (!backgroundFetch.enabled.value) return
-        while (ImagePrefetchThrottle.shouldThrottle) delay(THROTTLE_POLL_DELAY_MS)
-        runCatching { withTimeoutOrNull(PREFETCH_TIMEOUT_MS) { prefetchOne(image) } }
+        while (ImagePrefetchThrottle.shouldThrottle) {
+            delay(PerformanceTuning.BackgroundThrottle.THROTTLE_POLL_INTERVAL_MS)
+        }
+        runCatching {
+            withTimeoutOrNull(PerformanceTuning.BackgroundQueues.IMAGE_PREFETCH_TIMEOUT_MS) {
+                prefetchOne(image)
+            }
+        }
     }
 
     private suspend fun prefetchOne(image: PrefetchImage) {
@@ -128,7 +136,7 @@ internal class ImagePrefetcherImpl(
             // битмапами. INEXACT + маленький размер — декодер может даунсэмплить не глядя на
             // реальные пропорции, результат всё равно не используется.
             .memoryCachePolicy(CachePolicy.DISABLED)
-            .size(PREFETCH_DECODE_SIZE_PX)
+            .size(PerformanceTuning.BackgroundQueues.IMAGE_PREFETCH_DECODE_SIZE_PX)
             .precision(Precision.INEXACT)
             .build()
         imageLoader.execute(request)
@@ -139,24 +147,4 @@ internal class ImagePrefetcherImpl(
      * ([use]): нужен только сам факт, есть ли запись, не её содержимое. */
     private fun isAlreadyCached(imageLoader: ImageLoader, key: String): Boolean =
         imageLoader.diskCache?.openSnapshot(key)?.use { true } ?: false
-
-    private companion object {
-        // 90 c, не 15 — фоновая закачка сама себя придушивает до ~256 КБ/с (см.
-        // FilmaxImageLoaderFactory.BACKGROUND_FETCH_BYTES_PER_SECOND), а бэкдропы/кадры легко
-        // весят 2-3 МБ: на такой скорости это легитимно дольше 15 c, и работа бросалась
-        // на середине скачивания, так и не догрузившись.
-        const val PREFETCH_TIMEOUT_MS = 90_000L
-
-        // Результат декодирования отбрасывается (memoryCachePolicy = DISABLED выше) — размер
-        // нужен только чтобы Coil не декодировал прогрев в полное разрешение.
-        const val PREFETCH_DECODE_SIZE_PX = 32
-
-        /** Максимум одновременно стоящих в очереди картинок — см. doc класса. Поднят с 500 до
-         * 1000 вместе с тем же лимитом у `TitleBackgroundFetcherImpl` (data:catalog): фоновая
-         * докачка тайтлов теперь заявляет постер КАЖДОГО тайтла КАЖДОГО списка, а не только
-         * тех, что дошли до полных деталей — очередь картинок стала наполняться заметно плотнее. */
-        const val MAX_QUEUED_KEYS = 1000
-
-        const val THROTTLE_POLL_DELAY_MS = 500L
-    }
 }

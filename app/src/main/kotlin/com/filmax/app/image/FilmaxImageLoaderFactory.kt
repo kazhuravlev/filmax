@@ -10,6 +10,7 @@ import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.filmax.core.domain.cache.ImagePrefetchThrottle
 import com.filmax.core.domain.cache.NetworkStats
+import com.filmax.core.domain.tuning.PerformanceTuning
 import com.filmax.core.ui.cache.BACKGROUND_FETCH_HEADER
 import com.filmax.core.ui.cache.CacheableImage
 import okhttp3.Interceptor
@@ -47,14 +48,14 @@ class FilmaxImageLoaderFactory : SingletonImageLoader.Factory {
             .diskCache {
                 DiskCache.Builder()
                     .directory(context.cacheDir.resolve(IMAGE_DISK_CACHE_DIR).toOkioPath())
-                    .maxSizeBytes(IMAGE_DISK_CACHE_MAX_SIZE_BYTES)
+                    .maxSizeBytes(PerformanceTuning.ImageCache.DISK_CACHE_MAX_SIZE_BYTES)
                     .build()
             }
             // TV-боксы имеют маленькую кучу, дефолтные 25% + полноразмерные декоды приводили к
             // OOM при скролле — явно урезаем до 15% вместо дефолта Coil.
             .memoryCache {
                 MemoryCache.Builder()
-                    .maxSizePercent(context, MEMORY_CACHE_SIZE_PERCENT)
+                    .maxSizePercent(context, PerformanceTuning.ImageCache.MEMORY_CACHE_SIZE_PERCENT)
                     .build()
             }
             .build()
@@ -96,14 +97,17 @@ private class ImageCacheLifetimeInterceptor : Interceptor {
             .newBuilder()
             .removeHeader(HEADER_PRAGMA)
             .removeHeader(HEADER_CACHE_CONTROL)
-            .header(HEADER_CACHE_CONTROL, "public, max-age=$IMAGE_CACHE_MAX_AGE_SECONDS")
+            .header(HEADER_CACHE_CONTROL, "public, max-age=${PerformanceTuning.ImageCache.MAX_AGE_SECONDS}")
             .build()
 
         val body = response.body ?: return response
         val countingBody = CountingResponseBody(body)
         val shouldThrottleBody = response.code == HTTP_OK && isBackgroundFetch && ImagePrefetchThrottle.shouldThrottle
         val finalBody = if (shouldThrottleBody) {
-            ThrottledResponseBody(countingBody, BACKGROUND_FETCH_BYTES_PER_SECOND)
+            ThrottledResponseBody(
+                countingBody,
+                PerformanceTuning.BackgroundThrottle.BACKGROUND_IMAGE_BYTES_PER_SECOND,
+            )
         } else {
             countingBody
         }
@@ -178,17 +182,8 @@ private const val HEADER_CACHE_CONTROL = "Cache-Control"
 
 /** Отдельная от `UPDATES_DIR` (APK обновлений, см. `GitHubUpdateRepository`) поддиректория кэша. */
 private const val IMAGE_DISK_CACHE_DIR = "image_cache"
-private const val IMAGE_DISK_CACHE_MAX_SIZE_BYTES = 1024L * 1024 * 1024
-private const val IMAGE_CACHE_MAX_AGE_SECONDS = 30L * 24 * 60 * 60
 
 private const val NANOS_PER_SECOND = 1_000_000_000L
 
-/** ~256 КБ/с — с запасом хватает для постеров/фото, но заметно уступает по приоритету реальному
- * контенту (видео в плеере, картинки открытого сейчас экрана), с которым фоновая очередь не спорит. */
-private const val BACKGROUND_FETCH_BYTES_PER_SECOND = 256L * 1024
-
 /** Максимальный кусок паузы за одну итерацию throttle-цикла — см. doc [ThrottledResponseBody]. */
 private const val MAX_SLEEP_SLICE_NANOS = 200_000_000L
-
-/** Доля памяти под кэш Coil — см. комментарий у [FilmaxImageLoaderFactory.newImageLoader]. */
-private const val MEMORY_CACHE_SIZE_PERCENT = 0.15

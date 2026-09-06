@@ -3,6 +3,7 @@ package com.filmax.core.network
 import com.filmax.core.domain.cache.ImagePrefetchThrottle
 import com.filmax.core.domain.cache.NetworkStats
 import com.filmax.core.domain.network.ApiHostRepository
+import com.filmax.core.domain.tuning.PerformanceTuning
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.call.body
@@ -149,15 +150,18 @@ fun buildHttpClient(
  * OkHttp в FilmaxImageLoaderFactory) — здесь только короткие JSON-ответы kino.watch.
  *
  * [HttpRequestRetry]: единичный сетевой «чих» (обрыв сокета, 502/503 от балансера) не должен
- * долетать до пользователя как ошибка экрана — до [MAX_RETRIES] попыток он тихо повторяется сам.
+ * долетать до пользователя как ошибка экрана — до
+ * [PerformanceTuning.NetworkClient.MAX_RETRIES] попыток он тихо повторяется сам.
  * Ретраим только идемпотентные GET/HEAD: повторный POST (история просмотра, закладки) на
  * транзиентной ошибке рискует продублировать действие, если сервер всё-таки применил первый
  * запрос. 401 сюда не попадает — retryIf смотрит только на 5xx, а обновление токена и повтор
  * запроса с новым access — забота плагина Auth выше по цепочке.
  */
-/** Любой запрос основного API-клиента — это «пользователь сейчас чем-то занят» для фоновой
- * закачки картинок (см. [ImagePrefetchThrottle]): она придушивает себя на 10 секунд после
- * такой активности, чтобы не отъедать канал у того, что реально нужно прямо сейчас.
+/** Любой НЕ фоновый запрос основного API-клиента — это «пользователь сейчас чем-то занят» для
+ * фоновой закачки (см. [ImagePrefetchThrottle]): она ждёт 10 секунд после такой активности,
+ * чтобы не отъедать канал у того, что реально нужно прямо сейчас. Запросы, помеченные через
+ * [markAsBackgroundNetworkRequest], сами cooldown не продлевают: иначе очередь тайтлов после
+ * каждого короткого JSON-ответа блокировала бы свой следующий элемент ещё на 10 секунд.
  *
  * Заодно копит приблизительный трафик API-клиента в [NetworkStats] — источник строки «сеть» в
  * оверлее «Показывать технические данные». Именно приблизительный: берём заявленный
@@ -167,7 +171,9 @@ fun buildHttpClient(
 private fun HttpClientConfig<*>.installActivityTracking() {
     install(
         createClientPlugin("ActivityTrackingPlugin") {
-            onRequest { _, _ -> ImagePrefetchThrottle.touch() }
+            onRequest { request, _ ->
+                if (!request.isBackgroundNetworkRequest) ImagePrefetchThrottle.touch()
+            }
             onResponse { response -> NetworkStats.addBytes(response.contentLength() ?: 0) }
         },
     )
@@ -175,12 +181,12 @@ private fun HttpClientConfig<*>.installActivityTracking() {
 
 private fun HttpClientConfig<*>.installResilience() {
     install(HttpTimeout) {
-        requestTimeoutMillis = REQUEST_TIMEOUT_MS
-        connectTimeoutMillis = CONNECT_TIMEOUT_MS
-        socketTimeoutMillis = SOCKET_TIMEOUT_MS
+        requestTimeoutMillis = PerformanceTuning.NetworkClient.REQUEST_TIMEOUT_MS
+        connectTimeoutMillis = PerformanceTuning.NetworkClient.CONNECT_TIMEOUT_MS
+        socketTimeoutMillis = PerformanceTuning.NetworkClient.SOCKET_TIMEOUT_MS
     }
     install(HttpRequestRetry) {
-        maxRetries = MAX_RETRIES
+        maxRetries = PerformanceTuning.NetworkClient.MAX_RETRIES
         retryOnExceptionIf { request, cause -> request.method in IDEMPOTENT_METHODS && cause is IOException }
         retryIf { request, response ->
             request.method in IDEMPOTENT_METHODS && response.status.value >= HTTP_SERVER_ERROR
@@ -200,14 +206,6 @@ private data class OAuthTokenResponse(
     @SerialName("expires_in") val expiresIn: Int = 0,
 )
 
-// requestTimeoutMillis — весь обмен запрос/ответ, включая чтение тела; connect/socket —
-// отдельно фаза установления соединения и пауза между пакетами при чтении. Втроём режут
-// три разных сценария зависания, которые OkHttp без HttpTimeout не ловил вовсе.
-private const val REQUEST_TIMEOUT_MS = 12_000L
-private const val CONNECT_TIMEOUT_MS = 8_000L
-private const val SOCKET_TIMEOUT_MS = 10_000L
-
-private const val MAX_RETRIES = 2
 private const val HTTP_SERVER_ERROR = 500
 
 /** GET/HEAD безопасно повторять — они не меняют состояние на сервере. */

@@ -52,8 +52,16 @@ interface CatalogRepository {
      * (см. [com.filmax.core.domain.cache.ItemDetailsCache]), а списочные эндпоинты (главная,
      * поиск, похожее) отдают тайтл БЕЗ этих полей — и, промелькнув карточкой, портят кэш пустым
      * треклистом ещё до открытия деталей. Свежий запрос перезаписывает кэш актуальным ответом.
+     *
+     * [isBackground] помечает только сетевой промах фоновой очереди: он не считается новой
+     * пользовательской активностью и потому не перезапускает собственный throttle. Видимые
+     * экраны оставляют значение false.
      */
-    suspend fun getItemDetails(id: Int, forceRefresh: Boolean = false): RequestResult<Item>
+    suspend fun getItemDetails(
+        id: Int,
+        forceRefresh: Boolean = false,
+        isBackground: Boolean = false,
+    ): RequestResult<Item>
 
     suspend fun getSimilarItems(id: Int): RequestResult<List<Item>>
 
