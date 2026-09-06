@@ -2,6 +2,8 @@ package com.filmax.core.domain.common
 
 import com.filmax.core.domain.error.AppError
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Унифицированный результат запроса к данным.
@@ -15,10 +17,21 @@ sealed interface RequestResult<out T> {
 
 /** Выполняет [block], оборачивая исключения в [RequestResult.Error]. CancellationException пробрасывается. */
 // Намеренная граница ошибок: любой сбой запроса конвертируется в RequestResult.Error (кроме отмены).
+//
+// [block] выполняется на Dispatchers.IO — единая точка для всего data-слоя, а не правка каждого
+// репозитория по отдельности: почти все repository-функции — это suspend-обёртки без своего
+// dispatcher вокруг safeRequest { api.getX().toDomain() }, а каждый ScreenModel по умолчанию
+// стартует на Dispatchers.Main.immediate (BaseScreenModel.screenModelScope). Без этого сетевой
+// await, декодирование JSON в .body<T>() и маппинг DTO→domain внутри [block] шли прямо на главном
+// потоке — конкурируя с Compose за кадр на слабых TV-приставках. Возвращаться на Main вручную
+// после [block] не нужно: withContext сам восстанавливает исходный диспетчер вызывающей
+// suspend-функции, а BaseScreenModel.updateState() дополнительно и независимо переключается на
+// Main сам перед записью в state — так что даже если бы этот switch отсутствовал, состояние всё
+// равно обновилось бы на правильном потоке.
 @Suppress("TooGenericExceptionCaught")
 suspend inline fun <T> safeRequest(crossinline block: suspend () -> T): RequestResult<T> =
     try {
-        RequestResult.Success(block())
+        RequestResult.Success(withContext(Dispatchers.IO) { block() })
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (error: Throwable) {
