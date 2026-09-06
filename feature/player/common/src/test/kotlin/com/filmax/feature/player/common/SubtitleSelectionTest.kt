@@ -50,4 +50,30 @@ class SubtitleSelectionTest {
             resolveSubtitleOption(options, russianForced.preferenceKey()),
         )
     }
+
+    @Test
+    fun `global default russian picks first non forced russian track`() {
+        assertEquals(russianFull, resolveSubtitleOption(options, "Русский"))
+    }
+
+    @Test
+    fun `global default english picks the english track`() {
+        assertEquals(english, resolveSubtitleOption(options, "English"))
+    }
+
+    @Test
+    fun `global default off always disables subtitles`() {
+        assertEquals(off, resolveSubtitleOption(options, PlaybackSettings.SubtitleOff))
+    }
+
+    @Test
+    fun `no match on unrecognized preference falls back to off`() {
+        assertEquals(off, resolveSubtitleOption(options, "Українська"))
+    }
+
+    @Test
+    fun `only forced track available never gets auto picked by language default`() {
+        val forcedOnly = listOf(off, russianForced)
+        assertEquals(off, resolveSubtitleOption(forcedOnly, "Русский"))
+    }
 }
