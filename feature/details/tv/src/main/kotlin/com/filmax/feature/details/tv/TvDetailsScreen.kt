@@ -9,6 +9,7 @@ package com.filmax.feature.details.tv
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
@@ -16,7 +17,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -152,11 +152,14 @@ private const val FRAMES_BEFORE_STATE_SCROLL = 2
 /**
  * Чип человека (актёр/режиссёр, см. [TvPersonChip]): портретное фото сверху, имя под ним.
  * Форма — та же, что и у плашки в целом ([PersonChipShape]): скругление не отдельное для фото,
- * а общее. Ширина не фиксируется — [IntrinsicSize.Min] на карточке отдаёт её имени (см. ниже),
- * поэтому здесь только высота фото и зазор в ряду.
+ * а общее. Ширина и высота ФИКСИРОВАНЫ и одинаковы у всех чипов ряда — иначе имена разной
+ * длины давали чипы вразнобой. Имя, которое не влезает в [PersonChipWidth], не обрезается
+ * навсегда: бегущей строкой оно едет при фокусе (см. [TvPersonChip]).
  */
 private val PersonChipShape = TvMetrics.CardShape
-private val PersonPhotoHeight = 132.dp
+private val PersonChipWidth = 120.dp
+private val PersonChipHeight = 188.dp
+private val PersonChipNameHeight = 40.dp
 private val PersonChipGap = 12.dp
 
 /** Размер постера-обложки в hero (см. [HeroPoster]) — компактнее каталожного, рядом с бэкдропом. */
@@ -792,10 +795,8 @@ private fun DetailsAbout(item: Item) {
 
 /**
  * Ряд людей (актёры ИЛИ режиссёры — один и тот же компонент для обоих, только заголовок и цель
- * клика отличаются): круглый аватар + имя рядом, чипами, с переносом на новую строку — как в
- * веб-версии kino.watch. Раньше это была вертикальная карточка (аватар над именем) в
- * горизонтальном ряду со скроллом; теперь — компактные подписанные чипы, из которых на экран
- * помещается сразу весь состав, без скролла вбок.
+ * клика отличаются): портретные чипы одинакового размера ([TvPersonChip]), с переносом на новую
+ * строку ([FlowRow]) — весь состав виден сразу, без горизонтального скролла ряда.
  */
 @OptIn(ExperimentalLayoutApi::class)
 private fun LazyListScope.peopleSection(
@@ -825,10 +826,11 @@ private fun LazyListScope.peopleSection(
 
 /**
  * Чип человека: портретное фото сверху (TMDB/угаданное или инициалы), имя под ним одной строкой.
- * Ширина карточки не фиксируется — [IntrinsicSize.Min] заставляет её взять ровно ту ширину,
- * которую требует полное имя (без переноса и без обрезки многоточием); фото под неё же
- * растягивается на всю ширину. Поэтому в ряду ([FlowRow]) число чипов на строке не фиксировано:
- * оно определяется тем, сколько имён поместится при их естественной ширине.
+ * Карточка — фиксированного размера ([PersonChipWidth] × [PersonChipHeight]), одинакового у всех
+ * чипов ряда. Фото занимает всё, что остаётся над именем (`weight(1f)` в колонке) — то есть
+ * 100% высоты своей области, по центру, с обрезкой по бокам ([ContentScale.Crop] на более узкий,
+ * чем у фото, контейнер). Имя не обрезается навсегда многоточием: при фокусе на чипе запускается
+ * бегущая строка — так виден весь текст без роста карточки.
  */
 @Composable
 private fun TvPersonChip(member: CastMember, onClick: () -> Unit) {
@@ -838,24 +840,33 @@ private fun TvPersonChip(member: CastMember, onClick: () -> Unit) {
         onClick = onClick,
         shape = PersonChipShape,
         modifier = Modifier
-            .width(IntrinsicSize.Min)
+            .size(width = PersonChipWidth, height = PersonChipHeight)
             .onFocusChanged { focused = it.hasFocus }
             .alpha(dim),
     ) {
         Column(
             modifier = Modifier
+                .fillMaxSize()
                 .clip(PersonChipShape)
                 .background(TvSurfaceContainerHigh),
         ) {
-            PersonPhoto(member = member, modifier = Modifier.fillMaxWidth().height(PersonPhotoHeight))
-            Text(
-                member.name,
-                style = MaterialTheme.typography.bodyMedium,
-                color = TvOnSurface,
-                maxLines = 1,
-                softWrap = false,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            )
+            PersonPhoto(member = member, modifier = Modifier.fillMaxWidth().weight(1f))
+            Box(
+                modifier = Modifier.fillMaxWidth().height(PersonChipNameHeight).padding(horizontal = 10.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Text(
+                    member.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = TvOnSurface,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis,
+                    modifier = Modifier.then(
+                        if (focused) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier,
+                    ),
+                )
+            }
         }
     }
 }

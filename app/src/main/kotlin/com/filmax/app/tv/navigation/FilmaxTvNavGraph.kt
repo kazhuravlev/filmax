@@ -226,7 +226,7 @@ private fun NavGraphBuilder.tvDestinations(
     navController: NavHostController,
     onCheckUpdates: () -> Unit,
 ) {
-    composable<TvSplashRoute> { Box(Modifier.fillMaxSize()) }
+    composable<TvSplashRoute> { TvSplashScreen() }
 
     tvOnboardingScreen(
         onAuthenticated = {
