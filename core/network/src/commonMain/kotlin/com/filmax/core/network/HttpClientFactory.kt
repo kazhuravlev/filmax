@@ -6,6 +6,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.HttpRequestRetry
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.api.createClientPlugin
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.providers.BearerTokens
@@ -20,7 +22,9 @@ import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.url
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.io.IOException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -45,6 +49,34 @@ fun buildHttpClient(
     enableLogging: Boolean = false,
 ): HttpClient = HttpClient(engine) {
     expectSuccess = true
+
+    // Без этого таймаут был бесконечным (OkHttp callTimeout не выставлен): подвисший на
+    // приёме данных сервер вешал запрос навечно — пользователь видел вечный спиннер вместо
+    // ошибки, по которой экран мог бы предложить Retry. requestTimeoutMillis можно смело
+    // выставлять глобально: этот клиент не используется для больших закачек (обновление
+    // приложения качает APK через голый HttpURLConnection в :app, см. GitHubUpdateRepository;
+    // картинки идут через отдельный OkHttp в CoreUiModule/FilmaxImageLoaderFactory) — здесь
+    // только короткие JSON-ответы kino.watch.
+    install(HttpTimeout) {
+        requestTimeoutMillis = REQUEST_TIMEOUT_MS
+        connectTimeoutMillis = CONNECT_TIMEOUT_MS
+        socketTimeoutMillis = SOCKET_TIMEOUT_MS
+    }
+
+    // Единичный сетевой «чих» (обрыв сокета, 502/503 от балансера) не должен долетать до
+    // пользователя как ошибка экрана — до maxRetries попыток он тихо повторяется сам. Ретраим
+    // только идемпотентные GET/HEAD: повторный POST (история просмотра, закладки) на транзиентной
+    // ошибке рискует продублировать действие, если сервер всё-таки применил первый запрос.
+    // 401 сюда не попадает — retryIf смотрит только на 5xx, а обновление токена и повтор запроса
+    // с новым access — забота плагина Auth выше по цепочке, задваивать эту логику здесь не нужно.
+    install(HttpRequestRetry) {
+        maxRetries = MAX_RETRIES
+        retryOnExceptionIf { request, cause -> request.method in IDEMPOTENT_METHODS && cause is IOException }
+        retryIf { request, response ->
+            request.method in IDEMPOTENT_METHODS && response.status.value >= HTTP_SERVER_ERROR
+        }
+        exponentialDelay()
+    }
 
     // Любой запрос основного API-клиента — это «пользователь сейчас чем-то занят» для фоновой
     // закачки картинок (см. ImagePrefetchThrottle): она придушивает себя на 10 секунд после
@@ -146,3 +178,16 @@ private data class OAuthTokenResponse(
     @SerialName("refresh_token") val refreshToken: String,
     @SerialName("expires_in") val expiresIn: Int = 0,
 )
+
+// requestTimeoutMillis — весь обмен запрос/ответ, включая чтение тела; connect/socket —
+// отдельно фаза установления соединения и пауза между пакетами при чтении. Втроём режут
+// три разных сценария зависания, которые OkHttp без HttpTimeout не ловил вовсе.
+private const val REQUEST_TIMEOUT_MS = 12_000L
+private const val CONNECT_TIMEOUT_MS = 8_000L
+private const val SOCKET_TIMEOUT_MS = 10_000L
+
+private const val MAX_RETRIES = 2
+private const val HTTP_SERVER_ERROR = 500
+
+/** GET/HEAD безопасно повторять — они не меняют состояние на сервере. */
+private val IDEMPOTENT_METHODS = listOf(HttpMethod.Get, HttpMethod.Head)
