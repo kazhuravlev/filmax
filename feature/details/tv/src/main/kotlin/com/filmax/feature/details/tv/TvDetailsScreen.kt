@@ -134,6 +134,9 @@ import org.koin.compose.koinInject
 /** Ширина меты/рейтинга в hero: уже заголовка — рядом теперь постер (см. [HeroPoster]). */
 private val HeroInfoWidth = 420.dp
 
+/** Непрозрачность чёрной подложки под метой/рейтингами — та же, что у [TvRatingPill]. */
+private const val HERO_INFO_SCRIM_ALPHA = 0.72f
+
 /** Максимальная ширина описания и строки состава: длинная строка на 3 метрах не читается. */
 private val ReadableTextWidth = 760.dp
 
@@ -587,17 +590,7 @@ private fun DetailsHero(
             Row(Modifier.weight(1f).padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 HeroPoster(item)
                 Column {
-                    TvMetaRow(
-                        parts = remember(item, series) { metaParts(item, series) },
-                        modifier = Modifier.width(HeroInfoWidth),
-                    )
-                    RatingsRow(
-                        rating = item.rating,
-                        views = item.views,
-                        modifier = Modifier
-                            .width(HeroInfoWidth)
-                            .padding(top = 9.dp),
-                    )
+                    HeroInfoPanel(item = item, series = series)
                     // Кнопки НЕ зажаты в HeroInfoWidth: в узкой колонке подборки/«хочу
                     // посмотреть» обрезались бы почти до одной иконки.
                     HeroButtons(
@@ -608,6 +601,32 @@ private fun DetailsHero(
                 }
             }
         }
+    }
+}
+
+/**
+ * Год/жанр и рейтинги на полупрозрачной чёрной подложке: бэкдроп под ними — постер тайтла,
+ * часто пёстрый, и текст без неё местами терялся.
+ */
+@Composable
+private fun HeroInfoPanel(item: Item, series: SeriesData?) {
+    Column(
+        modifier = Modifier
+            .clip(TvMetrics.PanelShape)
+            .background(TvSurface.copy(alpha = HERO_INFO_SCRIM_ALPHA))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        TvMetaRow(
+            parts = remember(item, series) { metaParts(item, series) },
+            modifier = Modifier.width(HeroInfoWidth),
+        )
+        RatingsRow(
+            rating = item.rating,
+            views = item.views,
+            modifier = Modifier
+                .width(HeroInfoWidth)
+                .padding(top = 9.dp),
+        )
     }
 }
 
