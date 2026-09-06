@@ -241,7 +241,7 @@ data class TvDetailsNav(
 private data class DetailsActions(
     /** [season] ≤ 0 — фильм/сезон неизвестен; номер видео уникален только внутри сезона. */
     val onPlay: (season: Int, videoId: Int, resumePositionSeconds: Int) -> Unit,
-    /** «Буду смотреть» — тот же тоггл, что и строка «Буду смотреть» в диалоге подборок. */
+    /** «Буду смотреть» — нативный watchlist kino.watch. */
     val onToggleWantToWatch: () -> Unit,
     val onOpenItem: (Int) -> Unit,
     val onOpenPerson: (name: String, isDirector: Boolean) -> Unit,
@@ -674,9 +674,9 @@ private fun HeroButtons(
                 leadingIcon = if (hasAnyFolder) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
                 leadingIconTint = if (hasAnyFolder) TvError else null,
             )
-            // «Буду смотреть»: тот же тоггл, что и строка «Буду смотреть» в диалоге подборок
-            // (см. DetailsEvent.ToggleWantToWatch), но в один клик — та же красная заливка, что и
-            // у кнопки подборок, сигнализирует «уже добавлено».
+            // «Буду смотреть»: нативный watchlist kino.watch, переключается в один клик
+            // (см. DetailsEvent.ToggleWantToWatch) — та же красная заливка, что и у кнопки
+            // подборок, сигнализирует «уже добавлено».
             TvButton(
                 text = if (playback.isWantToWatch) "Буду смотреть" else "Хочу посмотреть",
                 onClick = playback.onToggleWantToWatch,

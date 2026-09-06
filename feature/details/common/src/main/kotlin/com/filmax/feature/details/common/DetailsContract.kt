@@ -11,9 +11,8 @@ data class DetailsState(
     /** Рассчитан по history + tracklist, а не по одному `watchStatus` из деталей. */
     val continuation: Continuation? = null,
     /**
-     * Тайтл сейчас в «Буду смотреть» — либо нативный watchlist (сериалы), либо подборка
-     * «Watching Now» (фильмы), см. [DetailsEvent.ToggleWantToWatch]. Синхронизируется с
-     * [folderMemberships] в `updateFolderMemberships`.
+     * Тайтл сейчас в нативном watchlist kino.watch (`item.inWatchlist`, переключается
+     * `watching/togglewatchlist`), см. [DetailsEvent.ToggleWantToWatch].
      */
     val isWantToWatch: Boolean = false,
     val similar: List<Item> = emptyList(),
@@ -42,10 +41,8 @@ sealed interface DetailsEvent {
     data object ToggleDownload : DetailsEvent
 
     /**
-     * Переключить «Буду смотреть»: нативный `watching/togglewatchlist` для сериалов (у kino.watch
-     * он работает только для них) и всегда подборка «Watching Now» для фильмов — та же логика,
-     * что и выбор строки «Буду смотреть» в диалоге подборок ([ToggleFolder]). Текущее состояние —
-     * [DetailsState.isWantToWatch].
+     * Переключить «Буду смотреть»: нативный `watching/togglewatchlist`, без своей логики.
+     * Текущее состояние — [DetailsState.isWantToWatch].
      */
     data object ToggleWantToWatch : DetailsEvent
 

@@ -3,12 +3,10 @@ package com.filmax.data.watching.di
 import com.filmax.core.domain.downloads.DownloadsRepository
 import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.playback.PlaybackSettingsRepository
-import com.filmax.core.domain.watching.WatchingNowRepository
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.data.watching.DownloadsRepositoryImpl
 import com.filmax.data.watching.FavoritesRepositoryImpl
 import com.filmax.data.watching.PlaybackSettingsRepositoryImpl
-import com.filmax.data.watching.WatchingNowRepositoryImpl
 import com.filmax.data.watching.WatchingRepositoryImpl
 import com.filmax.data.watching.remote.WatchingApi
 import org.koin.dsl.module
@@ -20,7 +18,5 @@ val watchingModule = module {
     // UserRepository (из user-модуля) даёт доступ к папкам-закладкам — «Буду смотреть» теперь
     // серверная папка, а не локальный список. Koin резолвит зависимость на уровне приложения.
     single<FavoritesRepository> { FavoritesRepositoryImpl(userRepository = get(), settings = get()) }
-    // «Watching Now» — та же папка-закладка, но для фильмов (см. WatchingNowRepository).
-    single<WatchingNowRepository> { WatchingNowRepositoryImpl(userRepository = get(), settings = get()) }
     single<PlaybackSettingsRepository> { PlaybackSettingsRepositoryImpl(storage = get()) }
 }

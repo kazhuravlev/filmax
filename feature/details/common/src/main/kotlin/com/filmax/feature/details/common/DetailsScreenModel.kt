@@ -18,7 +18,6 @@ import com.filmax.core.domain.search.SearchRepository
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.user.isItemInBookmark
 import com.filmax.core.domain.user.model.BookmarkFolder
-import com.filmax.core.domain.watching.WatchingNowRepository
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.domain.watching.model.calculateContinuation
 import com.filmax.core.presentation.BaseScreenModel
@@ -28,7 +27,6 @@ import com.filmax.feature.details.common.navigation.DetailsRoute
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.combine
 
 // Экран деталей сводит воспроизведение, избранное, загрузки и подборки в одной модели —
 // дробить её ради лимитов нельзя: состояние и обработчики читаются только вместе.
@@ -39,7 +37,6 @@ class DetailsScreenModel(
     private val watching: WatchingRepository,
     private val downloads: DownloadsRepository,
     private val favorites: FavoritesRepository,
-    private val watchingNow: WatchingNowRepository,
     private val cast: CastRepository,
     private val user: UserRepository,
     private val search: SearchRepository,
@@ -47,19 +44,8 @@ class DetailsScreenModel(
 
     private val route = savedStateHandle.toRoute<DetailsRoute>()
 
-    /**
-     * Состояние кнопки «Буду смотреть» в hero — ТОЛЬКО подборка-костыль [WatchingNowRepository]
-     * («Watching Now»). Кнопка ведёт исключительно её, а не настоящую подборку «Буду смотреть»
-     * ([FavoritesRepository]) — та отдельная, полноценная подборка-вишлист, и управляется как
-     * любая другая через диалог выбора подборок (см. [toggleFolder]/[toggleFavoritesFolder]), а
-     * не связана с этой кнопкой. Раньше кнопка дёргала оба источника разом — если они расходились
-     * между собой, тайтл (особенно сериал) было невозможно убрать из «Буду смотреть» с этого
-     * экрана: один источник включался, другой выключался, и агрегат оставался «в списке».
-     */
-    private var isFav = false
-
     /** Состояние строки «Буду смотреть» В ДИАЛОГЕ подборок — настоящая подборка
-     * [FavoritesRepository], отдельно от [isFav] (см. его комментарий). */
+     * [FavoritesRepository], отдельно от кнопки hero (см. [toggleWantToWatch]). */
     private var isInFavoritesFolder = false
 
     /** Id обычных подборок (без «Буду смотреть»), в которых найден тайтл — см. [scanMemberships]. */
@@ -94,7 +80,7 @@ class DetailsScreenModel(
             when (val itemResult = catalog.getItemDetails(route.itemId)) {
                 is RequestResult.Success -> {
                     val item = itemResult.data
-                    updateState { it.copy(loading = false, item = item) }
+                    updateState { it.copy(loading = false, item = item, isWantToWatch = item.inWatchlist) }
                     // Down-sync: если на сервере фильм уже в watchlist — заносим в локальный кэш.
                     if (item.inWatchlist) {
                         favorites.add(item.toFavoriteItem())
@@ -196,11 +182,8 @@ class DetailsScreenModel(
 
     private fun observeFavoriteState() {
         screenModelScope {
-            combine(favorites.isFavorite(route.itemId), watchingNow.isMember(route.itemId)) { fav, inWatchingNow ->
-                fav to inWatchingNow
-            }.collect { (fav, inWatchingNow) ->
+            favorites.isFavorite(route.itemId).collect { fav ->
                 isInFavoritesFolder = fav
-                isFav = inWatchingNow
                 updateFolderMemberships()
             }
         }
@@ -210,13 +193,15 @@ class DetailsScreenModel(
     private suspend fun findHistoryEntry() =
         watching.getHistory().getOrNull()?.firstOrNull { it.itemId == route.itemId }
 
-    /**
-     * «Буду смотреть» — кнопка hero-блока: тот же тоггл, что и выбор строки «Буду смотреть» в
-     * диалоге подборок (см. [toggleFolder]), но в один клик, без диалога.
-     */
+    /** «Буду смотреть» — кнопка hero-блока: нативный `watching/togglewatchlist`, без своей логики. */
     private fun toggleWantToWatch() {
         val item = state.item ?: return
-        screenModelScope { toggleWantToWatchFolder(item) }
+        screenModelScope {
+            watching.toggleWatchlist(item.id).getOrNull()?.let { isWantToWatch ->
+                updateState { it.copy(isWantToWatch = isWantToWatch) }
+            }
+            DataInvalidation.markDirty(DataDomain.WATCHING)
+        }
     }
 
     private fun toggleDownload() {
@@ -242,8 +227,7 @@ class DetailsScreenModel(
      * Добавляет или убирает тайтл из подборки — один и тот же диалог для «Буду смотреть» и для
      * любой другой подборки. «Буду смотреть» распознаём по названию и делегируем в
      * [toggleFavoritesFolder] — это НАСТОЯЩАЯ подборка [FavoritesRepository], не имеющая отношения
-     * к [WatchingNowRepository]/кнопке hero (см. [toggleWantToWatchFolder]); остальные подборки —
-     * напрямую через [UserRepository].
+     * к кнопке hero (см. [toggleWantToWatch]); остальные подборки — напрямую через [UserRepository].
      */
     private fun toggleFolder(folder: BookmarkFolder) {
         val item = state.item ?: return
@@ -269,23 +253,6 @@ class DetailsScreenModel(
             reloadBookmarkFolders()
             DataInvalidation.markDirty(DataDomain.BOOKMARKS)
         }
-    }
-
-    /**
-     * Кнопка «Буду смотреть» в hero — переключает ИСКЛЮЧИТЕЛЬНО подборку-костыль
-     * [WatchingNowRepository] («Watching Now»): именно в неё, не в настоящую подборку «Буду
-     * смотреть» ([FavoritesRepository]) — та управляется отдельно, только из диалога выбора
-     * подборок (см. [toggleFavoritesFolder]).
-     *
-     * Раньше кнопка одним кликом дёргала СРАЗУ три независимых источника (эту подборку, настоящую
-     * [FavoritesRepository] и нативный watchlist сервера для сериалов) — у каждого свой `toggle()`
-     * («перевернуть как есть»), и если источники расходились между собой, слепой вызов на каждом
-     * по отдельности уводил их в РАЗНЫЕ стороны: один включался, другой выключался — сериал было
-     * невозможно убрать из «Буду смотреть» с этого экрана. Один источник — расходиться не с чем.
-     */
-    private suspend fun toggleWantToWatchFolder(item: Item) {
-        watchingNow.toggle(item)
-        DataInvalidation.markDirty(DataDomain.WATCHING)
     }
 
     /** Строка «Буду смотреть» В ДИАЛОГЕ подборок — настоящая подборка [FavoritesRepository]:
@@ -319,9 +286,7 @@ class DetailsScreenModel(
 
     private suspend fun reloadBookmarkFolders() {
         val folders = user.getBookmarkFolders().getOrNull() ?: return
-        // «Watching Now» — служебная папка-костыль (см. WatchingNowRepository), в диалоге выбора
-        // подборок её не показываем: пользователь работает с ней только через «Буду смотреть».
-        updateState { it.copy(bookmarkFolders = folders.filterNot { it.title == WATCHING_NOW_FOLDER_TITLE }) }
+        updateState { it.copy(bookmarkFolders = folders) }
         scanMemberships(folders)
     }
 
@@ -331,7 +296,7 @@ class DetailsScreenModel(
      */
     private suspend fun scanMemberships(folders: List<BookmarkFolder>) {
         val item = state.item ?: return
-        val toScan = folders.filter { it.title != FAVORITES_FOLDER_TITLE && it.title != WATCHING_NOW_FOLDER_TITLE }
+        val toScan = folders.filter { it.title != FAVORITES_FOLDER_TITLE }
         scannedMemberships = coroutineScope {
             toScan.map { folder -> async { folder.id to folderContainsItem(folder.id, item.id) } }.awaitAll()
         }.filter { it.second }.map { it.first }.toSet()
@@ -341,7 +306,7 @@ class DetailsScreenModel(
     private suspend fun updateFolderMemberships() {
         val favoritesFolderId = state.bookmarkFolders.firstOrNull { it.title == FAVORITES_FOLDER_TITLE }?.id
         val memberships = scannedMemberships + listOfNotNull(favoritesFolderId.takeIf { isInFavoritesFolder })
-        updateState { it.copy(folderMemberships = memberships, isWantToWatch = isFav) }
+        updateState { it.copy(folderMemberships = memberships) }
     }
 
     private companion object {
@@ -350,8 +315,5 @@ class DetailsScreenModel(
 
         /** То же название, что и [FavoritesRepository] использует для поиска/создания своей подборки. */
         const val FAVORITES_FOLDER_TITLE = "Буду смотреть"
-
-        /** То же название, что и [WatchingNowRepository] использует для поиска/создания своей подборки. */
-        const val WATCHING_NOW_FOLDER_TITLE = "Watching Now"
     }
 }
