@@ -4,13 +4,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -19,7 +26,9 @@ import androidx.compose.ui.unit.sp
 import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
+import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvMetrics
+import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvPosterGrid
 import com.filmax.core.tv.designsystem.TvServerRetryNotification
@@ -28,8 +37,12 @@ import com.filmax.core.tv.designsystem.posterMeta
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
+import com.filmax.feature.collections.common.CollectionDetailEvent
 import com.filmax.feature.collections.common.CollectionDetailScreenModel
 import org.koin.androidx.compose.koinViewModel
+
+/** За сколько хвостовых рядов сетки до конца просить следующую страницу подборки. */
+private const val LOAD_MORE_TAIL = 3
 
 /**
  * TV-экран одной подборки: сетка постеров поверх общего [CollectionDetailScreenModel]
@@ -45,6 +58,20 @@ fun TvCollectionDetailScreen(
     val state by screenModel.collectAsState()
     val retryNotice by screenModel.collectServerRetryNoticeAsState()
     val focus = rememberTvScreenFocus()
+    val gridState = rememberLazyGridState()
+    ScrollToTopOnNavFocus(gridState)
+
+    // Догрузка следующей страницы: подборки бывают крупнее одной страницы, а грид без хвостового
+    // детектора обрезал бы их молча. derivedStateOf пересчитывается без рекомпозиции, дёргает её
+    // только смена «пора/не пора»; повторные вызовы гасит идемпотентность модели.
+    val loadMore by remember {
+        derivedStateOf {
+            val info = gridState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            info.totalItemsCount > 0 && lastVisible >= info.totalItemsCount - LOAD_MORE_TAIL
+        }
+    }
+    LaunchedEffect(loadMore) { if (loadMore) screenModel.dispatch(CollectionDetailEvent.LoadMore) }
 
     Box(
         modifier = modifier
@@ -68,11 +95,15 @@ fun TvCollectionDetailScreen(
             }
 
             when {
-                state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                }
+                // Полноэкранный спиннер — только когда показать совсем нечего: с кэшем
+                // (см. CollectionItemsCache) сетка красится сразу, а ревалидация идёт тихо.
+                state.loading && state.items.isEmpty() ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    }
 
                 else -> TvPosterGrid(
+                    state = gridState,
                     modifier = focus.containerModifier,
                 ) {
                     items(state.items, key = { item -> item.id }) { item ->
@@ -81,6 +112,11 @@ fun TvCollectionDetailScreen(
                             modifier = focus.item("collection:${item.id}"),
                             onClick = { onOpenItem(item.id) },
                         )
+                    }
+                    if (state.loadingMore) {
+                        item(key = "loading_more", span = { GridItemSpan(maxLineSpan) }) {
+                            CollectionLoadingMore()
+                        }
                     }
                 }
             }
@@ -91,6 +127,14 @@ fun TvCollectionDetailScreen(
                 .align(Alignment.BottomCenter)
                 .padding(bottom = TvMetrics.SafeVertical),
         )
+    }
+}
+
+/** Хвостовой индикатор догрузки страницы — невысокий, чтобы не дёргать сетку. */
+@Composable
+private fun CollectionLoadingMore() {
+    Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(color = TvOnSurfaceVariant, modifier = Modifier.size(28.dp))
     }
 }
 
