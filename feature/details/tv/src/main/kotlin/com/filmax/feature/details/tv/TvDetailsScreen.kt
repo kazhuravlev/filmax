@@ -131,9 +131,6 @@ import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
-/** Ширина текстового блока в hero (макет: 600dp из 960) — правее лежит открытый бэкдроп. */
-private val HeroTextWidth = 600.dp
-
 /** Ширина меты/рейтинга в hero: уже заголовка — рядом теперь постер (см. [HeroPoster]). */
 private val HeroInfoWidth = 420.dp
 
@@ -578,13 +575,14 @@ private fun DetailsHero(
                     bottom = 22.dp,
                 ),
         ) {
+            // Заголовок всегда виден целиком: без maxLines/ellipsis (обрезать нельзя) и без
+            // marquee (не единственный фокусируемый элемент кадра, гонять текст туда-сюда
+            // назойливо). Не влезает в строку — переносится: fillMaxWidth на всю ширину кадра.
             Text(
                 item.title,
                 style = MaterialTheme.typography.headlineMedium,
                 color = TvOnSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = HeroTextWidth),
+                modifier = Modifier.fillMaxWidth(),
             )
             Row(Modifier.weight(1f).padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 HeroPoster(item)
