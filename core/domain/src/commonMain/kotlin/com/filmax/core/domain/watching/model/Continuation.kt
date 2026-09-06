@@ -8,6 +8,8 @@ import com.filmax.core.domain.common.getOrNull
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /** Последние 90 секунд финальной серии считаем завершением, а не точкой continuation. */
 const val CONTINUATION_FINISH_THRESHOLD_SECONDS = 90
@@ -99,17 +101,27 @@ fun calculateContinuation(item: Item, history: WatchHistory? = null): Continuati
  * Загружает детали только для записей истории и применяет [calculateContinuation] ко всем экранам.
  * Если детали отдельного тайтла не доехали, запись не показываем: без полного tracklist нельзя
  * безопасно решить, является ли её эпизод последним.
+ *
+ * Запросы ограничены [CONTINUATION_DETAILS_CONCURRENCY] одновременных — на холодном кэше история
+ * может содержать до пары десятков записей, и залп из стольких же параллельных запросов к серверу
+ * не нужен (тот же приём и то же число, что и `LibraryScreenModel.loadTitleDetails`,
+ * `TITLE_DETAILS_CONCURRENCY` — там объяснена та же причина). Без ограничения кэш-промах по всей
+ * истории означал ещё и до 20 сетевых походов одновременно, что на медленной сети удлиняло
+ * появление continuation куда сильнее, чем последовательная очередь с разумной шириной.
  */
 class ContinuationResolver(private val catalog: CatalogRepository) {
     suspend fun resolve(history: List<WatchHistory>): List<Continuation> = coroutineScope {
+        val limiter = Semaphore(CONTINUATION_DETAILS_CONCURRENCY)
         history.map { entry ->
             async {
-                catalog.getItemDetails(entry.itemId).getOrNull()
+                limiter.withPermit { catalog.getItemDetails(entry.itemId).getOrNull() }
                     ?.let { item -> calculateContinuation(item, entry) }
             }
         }.awaitAll().filterNotNull()
     }
 }
+
+private const val CONTINUATION_DETAILS_CONCURRENCY = 4
 
 private fun Item.isSeriesForContinuation(): Boolean =
     type == ItemType.SERIES || type == ItemType.ANIME || type == ItemType.DOCUMENTARY
