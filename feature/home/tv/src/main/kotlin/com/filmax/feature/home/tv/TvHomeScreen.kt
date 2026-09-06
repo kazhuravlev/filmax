@@ -33,8 +33,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.catalog.model.Collection
@@ -216,7 +218,12 @@ private fun LazyListScope.tvRails(
 ) {
     state.rows.forEach { row ->
         if (row.isEmpty) return@forEach
-        if (row.loading) {
+        // Скелетон — только когда в ряду ещё вообще нет карточек (холодный старт без затравки
+        // из кэша), а не по [HomeRow.loading]: тот становится true на КАЖДОМ рефетче (в том числе
+        // ре-выборе таб-бара через RefreshOnTopNavReselect), и раньше это на мгновение подменяло
+        // уже показанные карточки скелетоном и тут же возвращало обратно — видимый «моргает» ряд
+        // и потерянный фокус. Тот же приём, что и у hero чуть выше: сначала контент, потом флаг.
+        if (!row.hasContent) {
             item(key = "${row.id}-skeleton") { TvRailSkeleton(title = row.title) }
             return@forEach
         }
@@ -227,6 +234,15 @@ private fun LazyListScope.tvRails(
         }
     }
 }
+
+/** Есть ли в ряду хоть одна карточка — от этого, а не от [HomeRow.loading], зависит скелетон
+ * в [tvRails]: рефетч не должен на время прятать уже показанный контент. */
+private val HomeRow.hasContent: Boolean
+    get() = when (this) {
+        is HomeRow.Continue -> entries.isNotEmpty()
+        is HomeRow.Titles -> paging.items.isNotEmpty()
+        is HomeRow.Collections -> paging.items.isNotEmpty()
+    }
 
 private fun LazyListScope.tvContinueRail(row: HomeRow.Continue, actions: TvHomeActions, focus: TvScreenFocus) {
     val onPlay = actions.onPlay
@@ -265,6 +281,19 @@ private fun LazyListScope.tvPosterRail(row: HomeRow.Titles, actions: TvHomeActio
                     modifier = focus.item(returnKey(row.id, catalogItem.id)),
                 )
             }
+            // Догрузка следующей страницы уже в пути: карточка-заглушка со спиннером на хвосте
+            // ряда — без неё «вправо» на последней карточке выглядит мёртвой клавишей на весь
+            // round-trip запроса. Без ключа фокуса намеренно: фокус остаётся на последней реальной
+            // карточке, а когда страница придёт, свежие карточки лягут правее неё же.
+            if (row.paging.loadingMore) {
+                item(key = "${row.id}-loading-more") {
+                    TvRailLoadingMoreCard(
+                        width = TvMetrics.PosterWidth,
+                        height = TvMetrics.PosterHeight,
+                        shape = TvMetrics.PosterShape,
+                    )
+                }
+            }
         }
     }
 }
@@ -291,6 +320,16 @@ private fun LazyListScope.tvCollectionsRail(
                     modifier = focus.item(returnKey(row.id, collection.id)),
                 )
             }
+            // См. комментарий в tvPosterRail — тот же приём для подборок, у них своя пагинация.
+            if (row.paging.loadingMore) {
+                item(key = "${row.id}-loading-more") {
+                    TvRailLoadingMoreCard(
+                        width = TvMetrics.PosterWidth,
+                        height = TvMetrics.PosterHeight,
+                        shape = TvMetrics.PosterShape,
+                    )
+                }
+            }
         }
     }
 }
@@ -301,11 +340,12 @@ private fun LazyListScope.tvCollectionsRail(
 private const val SKELETON_CARD_COUNT = 6
 
 /**
- * Ряд, который ещё грузится: заголовок уже на месте, вместо карточек — статичные
- * градиентные плейсхолдеры ([GradientPosterPlaceholder], тот же, что и под непрогруженным
- * постером). БЕЗ shimmer-анимации: `PosterImage.kt` уже документирует, почему бесконечная
- * shimmer-анимация на каждой из карточек одновременно роняла FPS на ТВ — статичный плейсхолдер
- * даёт «тут что-то грузится» без повторения той ошибки.
+ * Ряд без единой карточки — холодный старт без затравки из кэша (см. [HomeRow.hasContent]
+ * в [tvRails]): заголовок уже на месте, вместо карточек — статичные градиентные плейсхолдеры
+ * ([GradientPosterPlaceholder], тот же, что и под непрогруженным постером). БЕЗ shimmer-анимации:
+ * `PosterImage.kt` уже документирует, почему бесконечная shimmer-анимация на каждой из карточек
+ * одновременно роняла FPS на ТВ — статичный плейсхолдер даёт «тут что-то грузится» без повторения
+ * той ошибки. Если карточки уже есть, этот скелетон вообще не рисуется — рефетч их не трогает.
  */
 @Composable
 private fun TvRailSkeleton(title: String) {
@@ -318,6 +358,31 @@ private fun TvRailSkeleton(title: String) {
                     .clip(TvMetrics.PosterShape),
             )
         }
+    }
+}
+
+/**
+ * Хвостовая карточка ряда на время догрузки следующей страницы (`paging.loadingMore`) —
+ * подложка та же, что у [TvRailSkeleton], но со спиннером внутри вместо статичного плейсхолдера:
+ * здесь важно показать именно «идёт запрос», а не «пока нет данных» — разные состояния одного
+ * и того же визуального места в ряду. Размер карточки передаётся вызывающей стороной, чтобы
+ * совпадать с реальными карточками ряда (постер или подборка — оба [TvMetrics.PosterWidth]/
+ * [TvMetrics.PosterHeight] сегодня, но это не должно быть зашито здесь).
+ */
+@Composable
+private fun TvRailLoadingMoreCard(width: Dp, height: Dp, shape: Shape) {
+    Box(
+        modifier = Modifier
+            .size(width = width, height = height)
+            .clip(shape)
+            .background(TvSurfaceContainerHigh),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator(
+            color = TvAccent,
+            strokeWidth = 2.dp,
+            modifier = Modifier.size(28.dp),
+        )
     }
 }
 

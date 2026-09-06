@@ -58,8 +58,9 @@ class HomeScreenModel(
         screenModelScope { _ ->
             // Первый вызов после (пере)создания модели — состояние ещё пустое, берём то, что было
             // при прошлом успешном проходе, из DI-кэша. Повторный вызов (HomeEvent.Load) — на
-            // экране уже что-то есть, используем это как затравку: скелетоны покажут прежний
-            // контент, пока грузится свежий, а не мигнут пустотой.
+            // экране уже что-то есть, используем это как затравку: экран (см. TvHomeScreen.tvRails)
+            // держит эти карточки на месте, пока грузится свежий ответ, вместо того чтобы мигать
+            // скелетоном поверх уже показанного контента.
             val seed = if (state.hero == null && state.rows.isEmpty()) snapshotCache.get() else state.asSnapshot()
             updateState { it.copy(loading = false, heroLoading = true, hero = seed?.hero, rows = initialRows(seed)) }
 
@@ -265,9 +266,10 @@ private fun HomeState.asSnapshot(): HomeSnapshot = HomeSnapshot(
     catalogRows = rows.filterIsInstance<HomeRow.Titles>().associate { it.id to it.paging.items },
 )
 
-/** Начальные ряды на входе в [HomeScreenModel.onFetchData]: `loading = true` для всех — экран
- * рисует скелетон, пока конкретный ряд ждёт свои данные; содержимое — из затравки, если есть
- * (см. [HomeSnapshot]), чтобы не мигать пустотой поверх уже показанного контента при рефетче. */
+/** Начальные ряды на входе в [HomeScreenModel.onFetchData]: `loading = true` для всех, но экран
+ * смотрит не на этот флаг, а на наличие карточек (см. [HomeRow.loading]) — содержимое здесь из
+ * затравки, если есть (см. [HomeSnapshot]), и остаётся на экране без скелетона до свежего ответа;
+ * для ряда без затравки (холодный старт) карточек нет, и скелетон покажется как обычно. */
 private fun initialRows(seed: HomeSnapshot?): List<HomeRow> = buildList {
     add(HomeRow.Continue(entries = seed?.continueWatching.orEmpty(), loading = true))
     HOME_CATALOG_ROWS.forEach { spec ->
