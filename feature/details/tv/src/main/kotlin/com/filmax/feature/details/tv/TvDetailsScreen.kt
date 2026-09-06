@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,7 +34,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
@@ -149,10 +149,14 @@ private const val CONTENT_START_INDEX = 1
 /** Сколько кадров пропустить перед прокруткой к стейту (см. [rememberHeroFocusScroller]). */
 private const val FRAMES_BEFORE_STATE_SCROLL = 2
 
-/** Чип человека (актёр/режиссёр, см. [TvPersonChip]): высота, круглый аватар, макс. ширина и зазор в ряду. */
-private val PersonChipHeight = 56.dp
-private val PersonChipAvatarSize = 40.dp
-private val PersonChipMaxWidth = 260.dp
+/**
+ * Чип человека (актёр/режиссёр, см. [TvPersonChip]): портретное фото сверху, имя под ним.
+ * Форма — та же, что и у плашки в целом ([PersonChipShape]): скругление не отдельное для фото,
+ * а общее. Ширина не фиксируется — [IntrinsicSize.Min] на карточке отдаёт её имени (см. ниже),
+ * поэтому здесь только высота фото и зазор в ряду.
+ */
+private val PersonChipShape = TvMetrics.CardShape
+private val PersonPhotoHeight = 132.dp
 private val PersonChipGap = 12.dp
 
 /** Размер постера-обложки в hero (см. [HeroPoster]) — компактнее каталожного, рядом с бэкдропом. */
@@ -796,52 +800,55 @@ private fun LazyListScope.peopleSection(
     }
 }
 
-/** Чип человека: круглый аватар (фото TMDB/угаданное или инициалы) + имя рядом, одной строкой. */
+/**
+ * Чип человека: портретное фото сверху (TMDB/угаданное или инициалы), имя под ним одной строкой.
+ * Ширина карточки не фиксируется — [IntrinsicSize.Min] заставляет её взять ровно ту ширину,
+ * которую требует полное имя (без переноса и без обрезки многоточием); фото под неё же
+ * растягивается на всю ширину. Поэтому в ряду ([FlowRow]) число чипов на строке не фиксировано:
+ * оно определяется тем, сколько имён поместится при их естественной ширине.
+ */
 @Composable
 private fun TvPersonChip(member: CastMember, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val dim = rememberDimAlpha(focused)
     TvFocusCard(
         onClick = onClick,
-        shape = TvMetrics.ChipShape,
+        shape = PersonChipShape,
         modifier = Modifier
-            .height(PersonChipHeight)
-            .widthIn(max = PersonChipMaxWidth)
+            .width(IntrinsicSize.Min)
             .onFocusChanged { focused = it.hasFocus }
             .alpha(dim),
     ) {
-        Row(
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .clip(TvMetrics.ChipShape)
-                .background(TvSurfaceContainerHigh)
-                .padding(end = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                .clip(PersonChipShape)
+                .background(TvSurfaceContainerHigh),
         ) {
-            PersonAvatar(member)
+            PersonPhoto(member = member, modifier = Modifier.fillMaxWidth().height(PersonPhotoHeight))
             Text(
                 member.name,
                 style = MaterialTheme.typography.bodyMedium,
                 color = TvOnSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                softWrap = false,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             )
         }
     }
 }
 
 /**
- * Круглый аватар чипа: фото (TMDB надёжное, угаданное по MD5 имени на kino.watch CDN — нет, часть
- * ссылок честно 404) или инициалы. Здесь нужен именно `AsyncImage`, а не общий `PosterImage`: тот
- * при ошибке загрузки рисует значок «фото нет» (правильно для настоящих постеров), а для
+ * Портретное фото чипа: фото (TMDB надёжное, угаданное по MD5 имени на kino.watch CDN — нет,
+ * часть ссылок честно 404) или инициалы. Скругление — то же [PersonChipShape], что и у плашки
+ * целиком: отдельной формы у фото нет. Здесь нужен именно `AsyncImage`, а не общий `PosterImage`:
+ * тот при ошибке загрузки рисует значок «фото нет» (правильно для настоящих постеров), а для
  * угаданного аватара лучше молча откатиться на инициалы. Ключ ремембера — photoUrl: при
  * переиспользовании чипа в ряду флаг ошибки сбрасывается.
  */
 @Composable
-private fun PersonAvatar(member: CastMember) {
+private fun PersonPhoto(member: CastMember, modifier: Modifier = Modifier) {
     Box(
-        Modifier.size(PersonChipAvatarSize).clip(CircleShape).background(TvSurfaceContainerHighest),
+        modifier.clip(PersonChipShape).background(TvSurfaceContainerHighest),
         contentAlignment = Alignment.Center,
     ) {
         val photo = member.photoUrl
@@ -859,7 +866,7 @@ private fun PersonAvatar(member: CastMember) {
                 onState = { state -> loadFailed = state is AsyncImagePainter.State.Error },
             )
         } else {
-            Text(initials(member.name), style = MaterialTheme.typography.labelLarge, color = TvOnSurfaceVariant)
+            Text(initials(member.name), style = MaterialTheme.typography.titleMedium, color = TvOnSurfaceVariant)
         }
     }
 }
