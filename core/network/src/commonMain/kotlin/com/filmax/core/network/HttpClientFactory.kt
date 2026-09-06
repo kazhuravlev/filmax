@@ -3,6 +3,7 @@ package com.filmax.core.network
 import com.filmax.core.domain.cache.ImagePrefetchThrottle
 import com.filmax.core.domain.network.ApiHostRepository
 import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
 import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.ClientRequestException
@@ -50,42 +51,9 @@ fun buildHttpClient(
 ): HttpClient = HttpClient(engine) {
     expectSuccess = true
 
-    // Без этого таймаут был бесконечным (OkHttp callTimeout не выставлен): подвисший на
-    // приёме данных сервер вешал запрос навечно — пользователь видел вечный спиннер вместо
-    // ошибки, по которой экран мог бы предложить Retry. requestTimeoutMillis можно смело
-    // выставлять глобально: этот клиент не используется для больших закачек (обновление
-    // приложения качает APK через голый HttpURLConnection в :app, см. GitHubUpdateRepository;
-    // картинки идут через отдельный OkHttp в CoreUiModule/FilmaxImageLoaderFactory) — здесь
-    // только короткие JSON-ответы kino.watch.
-    install(HttpTimeout) {
-        requestTimeoutMillis = REQUEST_TIMEOUT_MS
-        connectTimeoutMillis = CONNECT_TIMEOUT_MS
-        socketTimeoutMillis = SOCKET_TIMEOUT_MS
-    }
+    installResilience()
 
-    // Единичный сетевой «чих» (обрыв сокета, 502/503 от балансера) не должен долетать до
-    // пользователя как ошибка экрана — до maxRetries попыток он тихо повторяется сам. Ретраим
-    // только идемпотентные GET/HEAD: повторный POST (история просмотра, закладки) на транзиентной
-    // ошибке рискует продублировать действие, если сервер всё-таки применил первый запрос.
-    // 401 сюда не попадает — retryIf смотрит только на 5xx, а обновление токена и повтор запроса
-    // с новым access — забота плагина Auth выше по цепочке, задваивать эту логику здесь не нужно.
-    install(HttpRequestRetry) {
-        maxRetries = MAX_RETRIES
-        retryOnExceptionIf { request, cause -> request.method in IDEMPOTENT_METHODS && cause is IOException }
-        retryIf { request, response ->
-            request.method in IDEMPOTENT_METHODS && response.status.value >= HTTP_SERVER_ERROR
-        }
-        exponentialDelay()
-    }
-
-    // Любой запрос основного API-клиента — это «пользователь сейчас чем-то занят» для фоновой
-    // закачки картинок (см. ImagePrefetchThrottle): она придушивает себя на 10 секунд после
-    // такой активности, чтобы не отъедать канал у того, что реально нужно прямо сейчас.
-    install(
-        createClientPlugin("ActivityTrackingPlugin") {
-            onRequest { _, _ -> ImagePrefetchThrottle.touch() }
-        },
-    )
+    installActivityTracking()
 
     install(ContentNegotiation) {
         json(networkJson)
@@ -165,6 +133,50 @@ fun buildHttpClient(
         // Хвостовой слеш — как у прежнего BASE_URL: относительные пути ("api/v1/...") иначе
         // резолвятся без последнего сегмента хоста.
         url(hostRepository.currentHost.value + "/")
+    }
+}
+
+/**
+ * Таймауты + тихие ретраи основного API-клиента.
+ *
+ * Без [HttpTimeout] таймаут был бесконечным (OkHttp callTimeout не выставлен): подвисший на
+ * приёме данных сервер вешал запрос навечно — пользователь видел вечный спиннер вместо ошибки,
+ * по которой экран мог бы предложить Retry. requestTimeoutMillis можно смело выставлять
+ * глобально: этот клиент не используется для больших закачек (обновление приложения качает APK
+ * через голый HttpURLConnection в :app, см. GitHubUpdateRepository; картинки идут через отдельный
+ * OkHttp в FilmaxImageLoaderFactory) — здесь только короткие JSON-ответы kino.watch.
+ *
+ * [HttpRequestRetry]: единичный сетевой «чих» (обрыв сокета, 502/503 от балансера) не должен
+ * долетать до пользователя как ошибка экрана — до [MAX_RETRIES] попыток он тихо повторяется сам.
+ * Ретраим только идемпотентные GET/HEAD: повторный POST (история просмотра, закладки) на
+ * транзиентной ошибке рискует продублировать действие, если сервер всё-таки применил первый
+ * запрос. 401 сюда не попадает — retryIf смотрит только на 5xx, а обновление токена и повтор
+ * запроса с новым access — забота плагина Auth выше по цепочке.
+ */
+/** Любой запрос основного API-клиента — это «пользователь сейчас чем-то занят» для фоновой
+ * закачки картинок (см. [ImagePrefetchThrottle]): она придушивает себя на 10 секунд после
+ * такой активности, чтобы не отъедать канал у того, что реально нужно прямо сейчас. */
+private fun HttpClientConfig<*>.installActivityTracking() {
+    install(
+        createClientPlugin("ActivityTrackingPlugin") {
+            onRequest { _, _ -> ImagePrefetchThrottle.touch() }
+        },
+    )
+}
+
+private fun HttpClientConfig<*>.installResilience() {
+    install(HttpTimeout) {
+        requestTimeoutMillis = REQUEST_TIMEOUT_MS
+        connectTimeoutMillis = CONNECT_TIMEOUT_MS
+        socketTimeoutMillis = SOCKET_TIMEOUT_MS
+    }
+    install(HttpRequestRetry) {
+        maxRetries = MAX_RETRIES
+        retryOnExceptionIf { request, cause -> request.method in IDEMPOTENT_METHODS && cause is IOException }
+        retryIf { request, response ->
+            request.method in IDEMPOTENT_METHODS && response.status.value >= HTTP_SERVER_ERROR
+        }
+        exponentialDelay()
     }
 }
 

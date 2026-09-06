@@ -222,17 +222,15 @@ private fun CatalogContent(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        if (gridItems.isEmpty()) {
-            // Идёт поиск/первая загрузка витрины и показать пока нечего — не путать с «Ничего не
-            // найдено»: тот рисуем только когда запрос реально завершился пустым результатом.
-            // Пока идёт УТОЧНЕНИЕ уже непустой выдачи (пользователь допечатал буквы), прежние
-            // карточки остаются на месте — collectLatest в SearchScreenModel не даст устаревшему
-            // ответу их перезаписать, а этот индикатор здесь просто не нужен.
-            if (state.loading) {
-                item(key = "loading", span = { GridItemSpan(maxLineSpan) }) { CatalogSearchLoading() }
-            } else {
-                item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { CatalogEmpty() }
-            }
+        // Идёт поиск/первая загрузка витрины и показать пока нечего — не путать с «Ничего не
+        // найдено»: тот рисуем только когда запрос реально завершился пустым результатом.
+        // Пока идёт УТОЧНЕНИЕ уже непустой выдачи (пользователь допечатал буквы), прежние
+        // карточки остаются на месте — collectLatest в SearchScreenModel не даст устаревшему
+        // ответу их перезаписать, а этот индикатор здесь просто не нужен.
+        when {
+            gridItems.isNotEmpty() -> Unit
+            state.loading -> item(key = "loading", span = { GridItemSpan(maxLineSpan) }) { CatalogSearchLoading() }
+            else -> item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { CatalogEmpty() }
         }
         items(gridItems, key = { it.id }) { item ->
             CatalogPoster(

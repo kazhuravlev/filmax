@@ -79,20 +79,7 @@ fun TvCollectionDetailScreen(
             .background(MaterialTheme.colorScheme.background),
     ) {
         Column(Modifier.fillMaxSize().padding(top = TvMetrics.ContentTop)) {
-            Column(Modifier.padding(horizontal = TvMetrics.SafeHorizontal)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    "Подборка",
-                    fontSize = 16.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp, bottom = 20.dp),
-                )
-            }
+            CollectionHeader(title)
 
             when {
                 // Полноэкранный спиннер — только когда показать совсем нечего: с кэшем
@@ -126,6 +113,25 @@ fun TvCollectionDetailScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = TvMetrics.SafeVertical),
+        )
+    }
+}
+
+/** Заголовок подборки над сеткой. */
+@Composable
+private fun CollectionHeader(title: String) {
+    Column(Modifier.padding(horizontal = TvMetrics.SafeHorizontal)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            "Подборка",
+            fontSize = 16.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp, bottom = 20.dp),
         )
     }
 }
