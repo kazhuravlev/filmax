@@ -2,6 +2,7 @@ package com.filmax.feature.library.common
 
 import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.catalog.model.Item
+import com.filmax.core.domain.common.LastValueCache
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.firstErrorMessage
 import com.filmax.core.domain.common.getOrNull
@@ -30,6 +31,7 @@ class LibraryScreenModel(
     private val user: UserRepository,
     private val favoritesRepo: FavoritesRepository,
     private val catalog: CatalogRepository,
+    private val snapshotCache: LastValueCache<LibrarySnapshot>,
 ) : BaseScreenModel<LibraryState, LibrarySideEffect, LibraryEvent>(LibraryState()) {
 
     init {
@@ -313,6 +315,16 @@ class LibraryScreenModel(
      */
     override fun onFetchData() {
         screenModelScope {
+            // Первый вызов после (пере)создания модели — `watching`/`lists` ещё пусты (холодный
+            // старт либо повтор через retry() по пустому экрану). Берём то, что было при прошлом
+            // успешном проходе ИЛИ что фоновый прогрев AppWarmup уже успел подложить в кэш (см.
+            // LastValueCache.putIfAbsent) — так стартовый сегмент «В процессе» и список папок
+            // отрисуются сразу вместо скелетона. Обычный фетч ниже всё равно идёт следом и красит
+            // актуальные данные поверх, когда придут — затравка лишь мгновенная картинка на её время.
+            val seed = if (state.watching.isEmpty() && state.lists.isEmpty()) snapshotCache.get() else null
+            if (seed != null) {
+                updateState { it.copy(loading = false, watching = seed.watching, lists = seed.folders) }
+            }
             coroutineScope {
                 val watchingDeferred = async { loadWatchingSection() }
                 val listsDeferred = async { user.getBookmarkFolders() }
@@ -333,6 +345,10 @@ class LibraryScreenModel(
                 }
                 if (lists is RequestResult.Error) DataInvalidation.markDirty(DataDomain.BOOKMARKS)
                 if (error != null) showServerRetryNotice()
+                // Кэш обновляем только когда ОБА независимых источника (секция «В процессе» и
+                // список папок) реально ответили — частичный/ошибочный проход не должен затирать
+                // последний хороший снимок, на который рассчитывает следующий холодный старт/прогрев.
+                if (error == null && lists !is RequestResult.Error) snapshotCache.put(state.asSnapshot())
             }
         }
     }
@@ -584,10 +600,6 @@ class LibraryScreenModel(
     private companion object {
         /** Первая страница содержимого папки (нумерация kino.watch — с единицы). */
         const val FIRST_PAGE = 1
-
-        /** Единственные два значения `type`, которые понимает `watching/{type}`. */
-        const val TYPE_MOVIES = "movies"
-        const val TYPE_SERIALS = "serials"
         const val TITLE_DETAILS_CONCURRENCY = 4
 
         /** Название подборки, чей свимлейн показывается внизу «В процессе». */
@@ -597,3 +609,56 @@ class LibraryScreenModel(
 
 private fun <T> List<T>.preserveEmpty(previous: List<T>, error: String?): List<T> =
     if (error != null && isEmpty()) previous else this
+
+/** Единственные два значения `type`, которые понимает `watching/{type}` — общие для
+ * [LibraryScreenModel] и [fetchLibrarySnapshot] (прогрев), поэтому вынесены на файл. */
+private const val TYPE_MOVIES = "movies"
+private const val TYPE_SERIALS = "serials"
+
+/**
+ * Тайтлы «в процессе» обоих типов параллельно — общая точка входа для [LibraryScreenModel] и
+ * фонового прогрева [fetchLibrarySnapshot]: одинаковый вызов `watching/{movies|serials}`, чтобы
+ * не разъезжаться при будущих правках API. private: используется только внутри этого файла —
+ * наружу (в `AppWarmup` другого модуля) торчит только сам [fetchLibrarySnapshot].
+ */
+private suspend fun fetchWatchingTitles(watching: WatchingRepository): List<WatchingItem> = coroutineScope {
+    val moviesDeferred = async { watching.getWatchingTitles(TYPE_MOVIES) }
+    val serialsDeferred = async { watching.getWatchingTitles(TYPE_SERIALS) }
+    moviesDeferred.await().getOrNull().orEmpty() + serialsDeferred.await().getOrNull().orEmpty()
+}
+
+/**
+ * Последний успешно загруженный лёгкий снимок раздела «Моё» — офлайн-устойчивость и, отдельно,
+ * затравка для фонового прогрева `AppWarmup` (см. [com.filmax.core.domain.common.LastValueCache]).
+ *
+ * Специально НЕ полное [LibraryState]: только то, что красит стартовый сегмент «В процессе»
+ * (TV открывает его первым по умолчанию) и список папок для сегмента «Подборки» — история,
+ * детали тайтлов, рейл «Буду смотреть» и превью папок сюда намеренно не входят, чтобы снимок
+ * оставался маленьким. Пишется только когда оба независимых источника ([LibraryScreenModel.onFetchData])
+ * реально ответили; читается один раз, как затравка, при (пере)создании модели.
+ */
+data class LibrarySnapshot(
+    val watching: List<WatchingItem> = emptyList(),
+    val folders: List<BookmarkFolder> = emptyList(),
+)
+
+private fun LibraryState.asSnapshot(): LibrarySnapshot = LibrarySnapshot(watching = watching, folders = lists)
+
+/**
+ * Собирает [LibrarySnapshot] из сети напрямую — используется ТОЛЬКО фоновым прогревом `AppWarmup`
+ * из модуля `:app` (см. `app/warmup/AppWarmup.kt`), который кладёт результат через `putIfAbsent`,
+ * если экран ещё ни разу не открывался в этой сессии процесса — отсюда публичная видимость
+ * (не `internal`: `:app` — отдельный Gradle-модуль, `internal` был бы ему не виден). Сам
+ * [LibraryScreenModel] в кэш этим путём не ходит: он собирает снимок из уже загруженного
+ * [LibraryState] после своего полного прохода ([LibraryScreenModel.onFetchData]) — здесь же те же
+ * самые репозиторные вызовы (тайтлы «в процессе» + папки), но без остальной механики экрана
+ * (истории, деталей, рейла).
+ */
+suspend fun fetchLibrarySnapshot(
+    watching: WatchingRepository,
+    user: UserRepository,
+): LibrarySnapshot = coroutineScope {
+    val watchingDeferred = async { fetchWatchingTitles(watching) }
+    val foldersDeferred = async { user.getBookmarkFolders().getOrNull().orEmpty() }
+    LibrarySnapshot(watching = watchingDeferred.await(), folders = foldersDeferred.await())
+}

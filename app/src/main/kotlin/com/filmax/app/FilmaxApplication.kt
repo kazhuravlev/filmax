@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import coil3.SingletonImageLoader
 import com.filmax.app.di.appModule
 import com.filmax.app.image.FilmaxImageLoaderFactory
+import com.filmax.app.warmup.AppWarmup
 import com.filmax.core.domain.common.ErrorReporting
 import com.filmax.core.network.di.networkModule
 import com.filmax.core.network.di.platformNetworkModule
@@ -45,7 +46,7 @@ class FilmaxApplication :
         initErrorReporting()
         seedDemoTokenIfNeeded()
         runOneTimeHousekeeping()
-        startKoin {
+        val koinApp = startKoin {
             androidLogger(Level.ERROR)
             androidContext(this@FilmaxApplication)
             // Ключ TMDB отдаём модулю свойством, а не в коде: секрет живёт в BuildConfig (из
@@ -75,6 +76,10 @@ class FilmaxApplication :
                 appModule,
             )
         }
+        // Фоновый прогрев вкладок «Моё»/«Каталог» (главная прогревает себя сама — см. doc
+        // AppWarmup). Сам себя ограничивает по авторизации и одноразовости — здесь только запуск
+        // на фоновом скоупе, чтобы не задерживать onCreate.
+        koinApp.koin.get<AppWarmup>().start(CoroutineScope(Dispatchers.IO))
     }
 
     /**

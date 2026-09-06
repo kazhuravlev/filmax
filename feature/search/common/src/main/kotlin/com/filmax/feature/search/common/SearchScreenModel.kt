@@ -1,11 +1,19 @@
+// Экран совмещает две роли (поиск + витрина каталога с фильтрами), отсюда и количество
+// коротких обработчиков — дробить их по файлам ради лимита незачем (тот же компромисс,
+// что у HomeScreenModel).
+@file:Suppress("TooManyFunctions")
+
 package com.filmax.feature.search.common
 
 import com.filmax.core.domain.catalog.CatalogFilters
 import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.catalog.CatalogSort
 import com.filmax.core.domain.catalog.SortOption
+import com.filmax.core.domain.catalog.model.Country
+import com.filmax.core.domain.catalog.model.Genre
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
+import com.filmax.core.domain.common.LastValueCache
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.getOrNull
 import com.filmax.core.domain.search.SearchRepository
@@ -79,6 +87,20 @@ private data class CatalogRequest(
         } else {
             items
         }
+
+    /** Витрина «Все» без единого фильтра/жанра при дефолтной сортировке — то, что открывает
+     * первый вход в каталог и то, что кэширует [SearchScreenModel] для затравки (см.
+     * [CatalogSnapshot]). Выборка с активными фильтрами не кэшируется — она сиюминутная. */
+    fun isDefaultCatalogRequest(): Boolean = this == DEFAULT_CATALOG_REQUEST
+
+    companion object {
+        private val DEFAULT_CATALOG_REQUEST = CatalogRequest(
+            filter = null,
+            selectedGenreId = null,
+            filters = CatalogFilters(),
+            sort = SortOption(CatalogSort.VIEWS),
+        )
+    }
 }
 
 private data class CatalogPage(
@@ -108,6 +130,7 @@ private val TrendingQueries = listOf(
 class SearchScreenModel(
     private val search: SearchRepository,
     private val catalog: CatalogRepository,
+    private val catalogSnapshotCache: LastValueCache<CatalogSnapshot>,
 ) : BaseScreenModel<SearchState, SearchSideEffect, SearchEvent>(SearchState()) {
 
     private val queryFlow = MutableStateFlow("")
@@ -145,18 +168,36 @@ class SearchScreenModel(
                 updateState { it.copy(recentQueries = emptyList()) }
             }
 
-            SearchEvent.LoadCatalog -> {
-                if (!state.catalogEnabled) {
-                    screenModelScope { _ ->
-                        updateState { it.copy(catalogEnabled = true) }
-                        reload()
-                    }
-                    loadCatalogMetadata()
-                }
-            }
+            SearchEvent.LoadCatalog -> onLoadCatalog()
             SearchEvent.Refresh -> retryVisibleContent()
             SearchEvent.LoadMoreCatalog -> onLoadMoreCatalog()
         }
+    }
+
+    /** Первое включение витрины каталога в этой сессии ScreenModel; повторные вызовы — no-op. */
+    private fun onLoadCatalog() {
+        if (state.catalogEnabled) return
+        screenModelScope { _ ->
+            // Единственная точка входа, откуда мы вообще читаем [catalogSnapshotCache]: если
+            // фоновый прогрев AppWarmup уже успел положить туда дефолтную выдачу и жанры/страны,
+            // красим ими сразу, вместо пустой сетки со спиннером на время первого сетевого
+            // прохода. reload() ниже всё равно уходит в сеть и красит актуальный ответ поверх.
+            val seed = if (state.catalogItems.isEmpty() && state.genres.isEmpty()) {
+                catalogSnapshotCache.get()
+            } else {
+                null
+            }
+            updateState {
+                it.copy(
+                    catalogEnabled = true,
+                    catalogItems = seed?.items ?: it.catalogItems,
+                    genres = seed?.genres ?: it.genres,
+                    countries = seed?.countries ?: it.countries,
+                )
+            }
+            reload()
+        }
+        loadCatalogMetadata()
     }
 
     @OptIn(FlowPreview::class)
@@ -214,12 +255,26 @@ class SearchScreenModel(
         }
     }
 
-    /** Метаданные грузятся параллельно сетке, но их ошибки больше не скрываются от пользователя. */
+    /**
+     * Метаданные грузятся параллельно сетке, но их ошибки больше не скрываются от пользователя.
+     * Жанры и страны — общий для всех фильтров справочник (грузится ровно раз за жизнь модели,
+     * см. охрану `!state.catalogEnabled` в [dispatch]), поэтому его самого безопасно класть в
+     * [catalogSnapshotCache] сразу по готовности. А вот [SearchState.catalogItems] в этот момент
+     * уже мог смениться на выдачу по фильтру (зритель успел щёлкнуть чип раньше, чем мы сюда
+     * дошли) — на всякий случай кладём снимок, только пока витрина всё ещё дефолтная
+     * (см. [CatalogRequest.isDefaultCatalogRequest]), иначе следующий переход на дефолт затравил
+     * бы себя чужой отфильтрованной выдачей.
+     */
     private fun loadCatalogMetadata() {
         screenModelScope { _ ->
             when (val result = catalog.getGenres()) {
-                is RequestResult.Success -> updateState {
-                    it.copy(genres = result.data.filter { genre -> genre.type in VIDEO_GENRE_TYPES })
+                is RequestResult.Success -> {
+                    updateState {
+                        it.copy(genres = result.data.filter { genre -> genre.type in VIDEO_GENRE_TYPES })
+                    }
+                    if (state.catalogRequest().isDefaultCatalogRequest()) {
+                        catalogSnapshotCache.put(state.asCatalogSnapshot())
+                    }
                 }
 
                 is RequestResult.Error -> showServerRetryNotice()
@@ -227,7 +282,13 @@ class SearchScreenModel(
         }
         screenModelScope { _ ->
             when (val result = catalog.getCountries()) {
-                is RequestResult.Success -> updateState { it.copy(countries = result.data) }
+                is RequestResult.Success -> {
+                    updateState { it.copy(countries = result.data) }
+                    if (state.catalogRequest().isDefaultCatalogRequest()) {
+                        catalogSnapshotCache.put(state.asCatalogSnapshot())
+                    }
+                }
+
                 is RequestResult.Error -> showServerRetryNotice()
             }
         }
@@ -277,6 +338,12 @@ class SearchScreenModel(
                             error = null,
                         )
                     }
+                    // Кэшируем только ДЕФОЛТНУЮ витрину (без фильтров/жанра/сортировки —
+                    // см. [isDefaultCatalogRequest]): она одна нужна как затравка следующего
+                    // холодного старта и фоновому прогреву AppWarmup, выборка по фильтрам —
+                    // сиюминутная и её кэшировать незачем.
+                    request.takeIf { it.isDefaultCatalogRequest() }
+                        ?.let { catalogSnapshotCache.put(state.asCatalogSnapshot()) }
                     first.data.takeIf(CatalogPage::hadErrors)?.let {
                         showServerRetryNotice()
                     }
@@ -448,10 +515,63 @@ private fun sortLocally(items: List<Item>, sort: SortOption): List<Item> {
 
 /**
  * Склейка выдачи нескольких типов по кругу (для чипа «Все»). Простой `flatten()` дал бы
- * 20 фильмов, потом 20 сериалов — до аниме зритель не долистал бы никогда.
+ * 20 фильмов, потом 20 сериалов — до аниме зритель не долистал бы никогда. Тот же приём
+ * переиспользует [fetchDefaultCatalogItems] (прогрев) в этом же файле.
  */
 private fun interleave(lists: List<List<Item>>): List<Item> {
     if (lists.size == 1) return lists.first()
     val depth = lists.maxOf { it.size }
     return (0 until depth).flatMap { index -> lists.mapNotNull { it.getOrNull(index) } }
+}
+
+/**
+ * Последний успешно загруженный лёгкий снимок ДЕФОЛТНОЙ витрины каталога — офлайн-устойчивость и,
+ * отдельно, затравка для фонового прогрева `AppWarmup` (см. [com.filmax.core.domain.common.LastValueCache]).
+ *
+ * Специально только дефолт (без фильтра/жанра/сортировки, см. [CatalogRequest.isDefaultCatalogRequest])
+ * и никогда — состояние текущего поискового запроса: тот сиюминутный и кэшировать его как «то, что
+ * покажет каталог по умолчанию» было бы неверно. Пишется из [SearchScreenModel] на каждый успешный
+ * независимый источник (первая страница витрины / жанры / страны — см. [SearchScreenModel.loadCatalog]
+ * и [SearchScreenModel.loadCatalogMetadata]); читается один раз, как затравка, при первом открытии
+ * витрины (см. [SearchEvent.LoadCatalog]).
+ */
+data class CatalogSnapshot(
+    val items: List<Item> = emptyList(),
+    val genres: List<Genre> = emptyList(),
+    val countries: List<Country> = emptyList(),
+)
+
+private fun SearchState.asCatalogSnapshot(): CatalogSnapshot =
+    CatalogSnapshot(items = catalogItems, genres = genres, countries = countries)
+
+/**
+ * Первая страница ДЕФОЛТНОЙ витрины (без фильтра/жанра, сортировка «Просмотры») — общая точка
+ * входа для [fetchCatalogSnapshot] (прогрев). [SearchScreenModel] сам эту функцию не зовёт: его
+ * [SearchScreenModel.fetchCatalogPage] — более общий путь с пагинацией/жанром/сортировкой/учётом
+ * уже исчерпанных типов, здесь же нужна только первая страница дефолта, без остальной механики.
+ */
+private suspend fun fetchDefaultCatalogItems(catalog: CatalogRepository): List<Item> = coroutineScope {
+    val pages = BrowseTypes.map { type ->
+        async { catalog.getItems(type, null, CatalogFilters(), SortOption(CatalogSort.VIEWS)) }
+    }.awaitAll().mapNotNull { it.getOrNull() }
+    interleave(pages.map { it.items })
+}
+
+/**
+ * Собирает [CatalogSnapshot] из сети напрямую — используется ТОЛЬКО фоновым прогревом `AppWarmup`
+ * из модуля `:app` (см. `app/warmup/AppWarmup.kt`), который кладёт результат через `putIfAbsent`,
+ * если витрина ещё ни разу не открывалась в этой сессии процесса — отсюда публичная видимость
+ * (не `internal`: `:app` — отдельный Gradle-модуль, `internal` был бы ему не виден).
+ */
+suspend fun fetchCatalogSnapshot(catalog: CatalogRepository): CatalogSnapshot = coroutineScope {
+    val itemsDeferred = async { fetchDefaultCatalogItems(catalog) }
+    val genresDeferred = async {
+        catalog.getGenres().getOrNull()?.filter { genre -> genre.type in VIDEO_GENRE_TYPES }.orEmpty()
+    }
+    val countriesDeferred = async { catalog.getCountries().getOrNull().orEmpty() }
+    CatalogSnapshot(
+        items = itemsDeferred.await(),
+        genres = genresDeferred.await(),
+        countries = countriesDeferred.await(),
+    )
 }

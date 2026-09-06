@@ -18,4 +18,12 @@ class LastValueCache<T : Any> {
     suspend fun get(): T? = mutex.withLock { cached }
 
     suspend fun put(value: T) = mutex.withLock { cached = value }
+
+    /**
+     * Пишет значение, только если кэш ещё пуст — атомарно под тем же [mutex], что и [put]/[get].
+     * Нужен фоновому прогреву (`AppWarmup`): экран — единственный источник истины для этого кэша,
+     * и прогрев обязан лишь подложить данные под пустой экран, а не перезаписать то, что экран уже
+     * успел сам туда положить (иначе можно словить рассинхрон между показанным и закэшированным).
+     */
+    suspend fun putIfAbsent(value: T) = mutex.withLock { if (cached == null) cached = value }
 }
