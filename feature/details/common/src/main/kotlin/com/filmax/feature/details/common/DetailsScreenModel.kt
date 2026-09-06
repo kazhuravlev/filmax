@@ -193,10 +193,16 @@ class DetailsScreenModel(
     private suspend fun findHistoryEntry() =
         watching.getHistory().getOrNull()?.firstOrNull { it.itemId == route.itemId }
 
-    /** «Буду смотреть» — кнопка hero-блока: нативный `watching/togglewatchlist`, без своей логики. */
+    /**
+     * «Буду смотреть» — кнопка hero-блока: нативный `watching/togglewatchlist`, без своей логики.
+     * Сердечко переключается оптимистично — пользователь должен увидеть результат сразу, сервер
+     * догоняет в фоне; сбой запроса тихо остаётся в оптимистичном состоянии, как и [FavoritesRepository].
+     */
     private fun toggleWantToWatch() {
         val item = state.item ?: return
         screenModelScope {
+            val optimistic = !state.isWantToWatch
+            updateState { it.copy(isWantToWatch = optimistic) }
             watching.toggleWatchlist(item.id).getOrNull()?.let { isWantToWatch ->
                 updateState { it.copy(isWantToWatch = isWantToWatch) }
             }

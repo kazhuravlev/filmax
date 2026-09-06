@@ -360,6 +360,7 @@ private fun DetailsContent(
                         onOpenFolderPicker = { folderPicker.pickerOpen = true },
                         onToggleWantToWatch = actions.onToggleWantToWatch,
                         isWantToWatch = isWantToWatch,
+                        showWantToWatch = item.isSeries(),
                         onHeroFocusChanged = onHeroFocusChanged,
                         onTrailer = trailerUrl?.let { ::playTrailer },
                     ),
@@ -523,6 +524,9 @@ private data class HeroPlayback(
     val onToggleWantToWatch: () -> Unit,
     /** Текущее состояние «Буду смотреть» — см. [DetailsState.isWantToWatch]. */
     val isWantToWatch: Boolean,
+    /** У kino.watch `watching/togglewatchlist` добавляет в «Я смотрю» только сериалы — у фильма
+     * кнопки нет вовсе, а не задизейблена. */
+    val showWantToWatch: Boolean,
     /** Фокус зашёл на кнопки hero или ушёл с них — экран переключает стейт полотна. */
     val onHeroFocusChanged: (Boolean) -> Unit,
     /** null — у тайтла нет играбельного трейлера, кнопки нет. */
@@ -689,14 +693,16 @@ private fun HeroButtons(
             )
             // «Буду смотреть»: нативный watchlist kino.watch, переключается в один клик
             // (см. DetailsEvent.ToggleWantToWatch) — та же красная заливка, что и у кнопки
-            // подборок, сигнализирует «уже добавлено».
-            TvButton(
-                text = if (playback.isWantToWatch) "Буду смотреть" else "Хочу посмотреть",
-                onClick = playback.onToggleWantToWatch,
-                primary = false,
-                leadingIcon = if (playback.isWantToWatch) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                leadingIconTint = if (playback.isWantToWatch) TvError else null,
-            )
+            // подборок, сигнализирует «уже добавлено». Только у сериалов (см. [showWantToWatch]).
+            if (playback.showWantToWatch) {
+                TvButton(
+                    text = if (playback.isWantToWatch) "Буду смотреть" else "Хочу посмотреть",
+                    onClick = playback.onToggleWantToWatch,
+                    primary = false,
+                    leadingIcon = if (playback.isWantToWatch) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    leadingIconTint = if (playback.isWantToWatch) TvError else null,
+                )
+            }
         }
     }
 }
