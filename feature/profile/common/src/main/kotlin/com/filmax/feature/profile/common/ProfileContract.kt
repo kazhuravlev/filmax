@@ -1,7 +1,6 @@
 package com.filmax.feature.profile.common
 
 import com.filmax.core.domain.cache.ImageCacheStats
-import com.filmax.core.domain.cache.ItemCacheTtl
 import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.domain.user.model.UserProfile
 
@@ -21,18 +20,14 @@ data class ProfileState(
     val availableApiHosts: List<String> = emptyList(),
     /** Включён ли прокси изображений (см. [com.filmax.core.domain.cache.ImageProxyRepository]). */
     val imageProxyEnabled: Boolean = true,
-    /** Включена ли фоновая тихая подгрузка изображений (см. [com.filmax.core.domain.cache.ImagePrefetcher]). */
-    val imagePrefetchEnabled: Boolean = true,
-    /** Сколько картинок фоновая закачка уже скачала с момента старта приложения. */
-    val imagePrefetchDownloaded: Int = 0,
-    /** Сколько картинок ещё стоит в очереди фоновой закачки. */
-    val imagePrefetchRemaining: Int = 0,
+    /** Единый выключатель ВСЕЙ автоматической фоновой докачки — картинок и информации о тайтлах
+     * (см. [com.filmax.core.domain.cache.BackgroundFetchSettings]). */
+    val backgroundFetchEnabled: Boolean = true,
     /** Сколько сейчас реально занято на диске кэшем изображений — для подписи на кнопке сброса. */
     val imageCacheStats: ImageCacheStats = ImageCacheStats(),
-    /** Срок жизни кэша статической информации о тайтлах (см. [com.filmax.core.domain.cache.ItemDetailsCache]). */
-    val itemCacheTtl: ItemCacheTtl = ItemCacheTtl.MONTH,
-    /** Сколько тайтлов сейчас в этом кэше — для подписи на кнопке сброса; растёт не сканированием,
-     * а счётчиком в самой реализации (см. `ItemDetailsCacheImpl`). */
+    /** Сколько тайтлов сейчас в кэше статической информации (см.
+     * [com.filmax.core.domain.cache.ItemDetailsCache]) — для подписи на кнопке сброса; растёт не
+     * сканированием, а счётчиком в самой реализации (см. `ItemDetailsCacheImpl`). */
     val itemCacheCount: Int = 0,
     val loading: Boolean = true,
     val error: String? = null,
@@ -47,9 +42,8 @@ sealed interface ProfileEvent {
     data class SetApiHost(val host: String) : ProfileEvent
     data object ClearImageCache : ProfileEvent
     data class SetImageProxyEnabled(val enabled: Boolean) : ProfileEvent
-    data class SetImagePrefetchEnabled(val enabled: Boolean) : ProfileEvent
+    data class SetBackgroundFetchEnabled(val enabled: Boolean) : ProfileEvent
     data object ClearItemCache : ProfileEvent
-    data class SetItemCacheTtl(val ttl: ItemCacheTtl) : ProfileEvent
 }
 
 sealed interface ProfileSideEffect {

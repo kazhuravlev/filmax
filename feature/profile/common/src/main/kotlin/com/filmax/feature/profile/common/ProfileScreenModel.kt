@@ -1,10 +1,9 @@
 package com.filmax.feature.profile.common
 
 import com.filmax.core.domain.auth.AuthRepository
+import com.filmax.core.domain.cache.BackgroundFetchSettings
 import com.filmax.core.domain.cache.ImageCacheRepository
-import com.filmax.core.domain.cache.ImagePrefetcher
 import com.filmax.core.domain.cache.ImageProxyRepository
-import com.filmax.core.domain.cache.ItemCacheTtl
 import com.filmax.core.domain.cache.ItemDetailsCache
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.favorites.FavoritesRepository
@@ -26,7 +25,7 @@ class ProfileScreenModel(
     private val apiHost: ApiHostRepository,
     private val imageCache: ImageCacheRepository,
     private val imageProxy: ImageProxyRepository,
-    private val imagePrefetcher: ImagePrefetcher,
+    private val backgroundFetch: BackgroundFetchSettings,
     private val itemCache: ItemDetailsCache,
 ) : BaseScreenModel<ProfileState, ProfileSideEffect, ProfileEvent>(ProfileState()) {
 
@@ -36,7 +35,7 @@ class ProfileScreenModel(
         observePlaybackSettings()
         observeApiHost()
         observeImageProxy()
-        observeImagePrefetch()
+        observeBackgroundFetch()
         observeImageCacheStats()
         observeItemCache()
     }
@@ -73,20 +72,10 @@ class ProfileScreenModel(
         }
     }
 
-    private fun observeImagePrefetch() {
+    private fun observeBackgroundFetch() {
         screenModelScope {
-            imagePrefetcher.enabled.collect { enabled ->
-                updateState { it.copy(imagePrefetchEnabled = enabled) }
-            }
-        }
-        screenModelScope {
-            imagePrefetcher.progress.collect { progress ->
-                updateState {
-                    it.copy(
-                        imagePrefetchDownloaded = progress.downloaded,
-                        imagePrefetchRemaining = progress.remaining,
-                    )
-                }
+            backgroundFetch.enabled.collect { enabled ->
+                updateState { it.copy(backgroundFetchEnabled = enabled) }
             }
         }
     }
@@ -100,11 +89,6 @@ class ProfileScreenModel(
     }
 
     private fun observeItemCache() {
-        screenModelScope {
-            itemCache.ttl.collect { ttl ->
-                updateState { it.copy(itemCacheTtl = ttl) }
-            }
-        }
         screenModelScope {
             itemCache.count.collect { count ->
                 updateState { it.copy(itemCacheCount = count) }
@@ -122,18 +106,13 @@ class ProfileScreenModel(
             is ProfileEvent.SetApiHost -> setApiHost(event.host)
             ProfileEvent.ClearImageCache -> clearImageCache()
             is ProfileEvent.SetImageProxyEnabled -> setImageProxyEnabled(event.enabled)
-            is ProfileEvent.SetImagePrefetchEnabled -> setImagePrefetchEnabled(event.enabled)
+            is ProfileEvent.SetBackgroundFetchEnabled -> setBackgroundFetchEnabled(event.enabled)
             ProfileEvent.ClearItemCache -> clearItemCache()
-            is ProfileEvent.SetItemCacheTtl -> setItemCacheTtl(event.ttl)
         }
     }
 
     private fun clearItemCache() = screenModelScope {
         itemCache.clear()
-    }
-
-    private fun setItemCacheTtl(ttl: ItemCacheTtl) = screenModelScope {
-        itemCache.setTtl(ttl)
     }
 
     private fun setApiHost(host: String) = screenModelScope {
@@ -144,8 +123,8 @@ class ProfileScreenModel(
         imageProxy.setEnabled(enabled)
     }
 
-    private fun setImagePrefetchEnabled(enabled: Boolean) = screenModelScope {
-        imagePrefetcher.setEnabled(enabled)
+    private fun setBackgroundFetchEnabled(enabled: Boolean) = screenModelScope {
+        backgroundFetch.setEnabled(enabled)
     }
 
     private fun setQuality(quality: String) = screenModelScope {

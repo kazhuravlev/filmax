@@ -1,5 +1,6 @@
 package com.filmax.data.catalog
 
+import com.filmax.core.domain.cache.BackgroundFetchSettings
 import com.filmax.core.domain.cache.ImageDiscovery
 import com.filmax.core.domain.cache.ItemDetailsCache
 import com.filmax.core.domain.cache.ItemDiscovery
@@ -43,10 +44,15 @@ private const val FETCH_TIMEOUT_MS = 15_000L
  * не эта очередь, а [CatalogRepository.getItemDetails] — обе стороны зовут один и тот же метод,
  * и `CatalogRepositoryImpl` схлопывает совпадающие по id запросы в один сетевой вызов с общим
  * результатом (см. её doc). Здесь достаточно не гнать по сети то, что уже свежее в кэше.
+ *
+ * [BackgroundFetchSettings.enabled] проверяем первым делом на каждый id: выключенная фоновая
+ * загрузка — это «совсем ничего не делаем», даже кэш-хитовую ветку без единого похода в сеть,
+ * а не «делаем только то, что бесплатно».
  */
 internal class TitleBackgroundFetcherImpl(
     private val catalog: CatalogRepository,
     private val itemCache: ItemDetailsCache,
+    private val backgroundFetch: BackgroundFetchSettings,
 ) : TitleBackgroundFetcher {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -73,6 +79,7 @@ internal class TitleBackgroundFetcherImpl(
     }
 
     private suspend fun fetchThenPrefetchPoster(id: Int) {
+        if (!backgroundFetch.enabled.value) return
         val cached = itemCache.get(itemCacheKey(id))
         if (cached != null) {
             val item = networkJson.decodeFromString<ItemDto>(cached).toDomainOnly()

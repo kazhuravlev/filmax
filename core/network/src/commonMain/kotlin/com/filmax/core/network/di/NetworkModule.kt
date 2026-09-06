@@ -1,8 +1,10 @@
 package com.filmax.core.network.di
 
+import com.filmax.core.domain.cache.BackgroundFetchSettings
 import com.filmax.core.domain.cache.ItemDetailsCache
 import com.filmax.core.domain.network.ApiHostRepository
 import com.filmax.core.network.ApiHostRepositoryImpl
+import com.filmax.core.network.BackgroundFetchSettingsImpl
 import com.filmax.core.network.ItemDetailsCacheImpl
 import com.filmax.core.network.TokenStorage
 import com.filmax.core.network.buildHttpClient
@@ -23,6 +25,12 @@ val networkModule = module {
     // ItemDetailsCacheAccess, без DI, и должен найти уже готовую реализацию с первого же тайтла.
     single<ItemDetailsCache>(createdAtStart = true) {
         ItemDetailsCacheImpl(settings = get(named(ITEM_CACHE_SETTINGS)))
+    }
+    // createdAtStart — оба фетчера (TitleBackgroundFetcherImpl в data:catalog,
+    // ImagePrefetcherImpl в core:ui) — тоже createdAtStart и читают этот флаг с первого элемента
+    // своей очереди.
+    single<BackgroundFetchSettings>(createdAtStart = true) {
+        BackgroundFetchSettingsImpl(settings = get(named(BG_FETCH_SETTINGS)))
     }
     single<HttpClient> {
         buildHttpClient(

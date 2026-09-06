@@ -19,15 +19,13 @@ data class PrefetchProgress(val downloaded: Int = 0, val remaining: Int = 0)
  * Очередь фоновой закачки картинок в кэш. Порядок не гарантирован явно, но реализация обрабатывает
  * его последовательно (одна закачка за раз) — см. `ImagePrefetcherImpl` в core:ui.
  *
- * [enabled] — персистентная настройка «Фоновая загрузка изображений», по умолчанию включена;
- * выключение не трогает уже закэшированное — оно лишь останавливает тихий прогрев картинок,
- * которые пользователь ещё не открывал (экраны продолжат грузить их как обычно по мере просмотра).
+ * Включена/выключена — общим [BackgroundFetchSettings], а не своей настройкой: выключение не
+ * трогает уже закэшированное, оно лишь останавливает тихий прогрев картинок, которые пользователь
+ * ещё не открывал (экраны продолжат грузить их как обычно по мере просмотра).
  */
 interface ImagePrefetcher {
-    val enabled: StateFlow<Boolean>
     val progress: StateFlow<PrefetchProgress>
 
-    suspend fun setEnabled(enabled: Boolean)
     fun enqueue(images: List<PrefetchImage>)
 }
 
@@ -49,8 +47,6 @@ object ImageDiscovery {
 }
 
 private object NoopImagePrefetcher : ImagePrefetcher {
-    override val enabled: StateFlow<Boolean> = MutableStateFlow(true)
     override val progress: StateFlow<PrefetchProgress> = MutableStateFlow(PrefetchProgress())
-    override suspend fun setEnabled(enabled: Boolean) = Unit
     override fun enqueue(images: List<PrefetchImage>) = Unit
 }

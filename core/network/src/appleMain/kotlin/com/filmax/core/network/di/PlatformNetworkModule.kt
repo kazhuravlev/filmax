@@ -13,5 +13,6 @@ import org.koin.dsl.module
 actual val platformNetworkModule: Module = module {
     single<Settings> { KeychainSettings(service = "filmax_tokens") }
     single<Settings>(named(ITEM_CACHE_SETTINGS)) { KeychainSettings(service = "filmax_item_cache") }
+    single<Settings>(named(BG_FETCH_SETTINGS)) { KeychainSettings(service = "filmax_bg_fetch") }
     single<HttpClientEngine> { Darwin.create() }
 }

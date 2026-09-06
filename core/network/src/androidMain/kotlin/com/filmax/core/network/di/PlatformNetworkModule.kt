@@ -24,6 +24,13 @@ actual val platformNetworkModule: Module = module {
             androidContext().getSharedPreferences("filmax_item_cache", Context.MODE_PRIVATE),
         )
     }
+    // Свой файл под общий выключатель фоновой докачки — сброс кэша тайтлов/изображений не должен
+    // заодно включать фоновую загрузку обратно (см. BackgroundFetchSettingsImpl).
+    single<Settings>(named(BG_FETCH_SETTINGS)) {
+        SharedPreferencesSettings(
+            androidContext().getSharedPreferences("filmax_bg_fetch", Context.MODE_PRIVATE),
+        )
+    }
     single { ChuckerInterceptor.Builder(androidContext()).build() }
     single<HttpClientEngine> {
         OkHttp.create { addInterceptor(get<ChuckerInterceptor>()) }

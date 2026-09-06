@@ -6,6 +6,7 @@ import coil3.SingletonImageLoader
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import coil3.request.ImageRequest
+import com.filmax.core.domain.cache.BackgroundFetchSettings
 import com.filmax.core.domain.cache.ImageDiscovery
 import com.filmax.core.domain.cache.ImagePrefetcher
 import com.filmax.core.domain.cache.PrefetchImage
@@ -38,18 +39,17 @@ import java.util.concurrent.ConcurrentHashMap
  * (одни и те же постеры перекачивались повторно). Кроме того, не поставить один и тот же ключ в
  * очередь дважды, пока первый ещё не обработан ([queuedKeys]).
  *
- * [enabled] персистится в SharedPreferences (тот же подход, что и у [ImageProxyRepositoryImpl]
- * рядом) и по умолчанию включён. Выключение не отменяет уже стоящую в очереди картинку — очередь
- * просто перестаёт забирать из неё сеть, пропуская элементы без похода в сеть (см. [processOne]),
- * так что [PrefetchProgress.remaining] всё равно корректно стекает к нулю, а не зависает.
+ * Включена/выключена — общим [BackgroundFetchSettings] (единый выключатель ВСЕЙ фоновой докачки,
+ * не только картинок). Выключение не отменяет уже стоящую в очереди картинку — очередь просто
+ * перестаёт забирать из неё сеть, пропуская элементы без похода в сеть (см. [processOne]), так
+ * что [PrefetchProgress.remaining] всё равно корректно стекает к нулю, а не зависает.
  */
-internal class ImagePrefetcherImpl(private val context: Context) : ImagePrefetcher {
+internal class ImagePrefetcherImpl(
+    private val context: Context,
+    private val backgroundFetch: BackgroundFetchSettings,
+) : ImagePrefetcher {
 
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val enabledState = MutableStateFlow(prefs.getBoolean(KEY_ENABLED, true))
     private val progressState = MutableStateFlow(PrefetchProgress())
-
-    override val enabled: StateFlow<Boolean> = enabledState.asStateFlow()
     override val progress: StateFlow<PrefetchProgress> = progressState.asStateFlow()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -69,13 +69,8 @@ internal class ImagePrefetcherImpl(private val context: Context) : ImagePrefetch
         }
     }
 
-    override suspend fun setEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_ENABLED, enabled).apply()
-        enabledState.value = enabled
-    }
-
     override fun enqueue(images: List<PrefetchImage>) {
-        if (!enabledState.value) return
+        if (!backgroundFetch.enabled.value) return
         for (image in images) {
             // add() возвращает false, если ключ уже стоит в очереди/обрабатывается — второй раз
             // тот же тайтл из другого списка (например, попал и в «Похожее», и в поиск) не дублируем.
@@ -89,7 +84,7 @@ internal class ImagePrefetcherImpl(private val context: Context) : ImagePrefetch
     /** Пропускает картинку без похода в сеть, если фоновая загрузка выключена уже после
      * постановки в очередь — экран всё равно догрузит её сам, когда пользователь до неё дойдёт. */
     private suspend fun processOne(image: PrefetchImage) {
-        if (!enabledState.value) return
+        if (!backgroundFetch.enabled.value) return
         runCatching { withTimeoutOrNull(PREFETCH_TIMEOUT_MS) { prefetchOne(image) } }
     }
 
@@ -114,7 +109,5 @@ internal class ImagePrefetcherImpl(private val context: Context) : ImagePrefetch
 
     private companion object {
         const val PREFETCH_TIMEOUT_MS = 15_000L
-        const val PREFS_NAME = "filmax_image_settings"
-        const val KEY_ENABLED = "prefetch_enabled"
     }
 }

@@ -15,5 +15,7 @@ val coreUiModule = module {
     // createdAtStart — очередь обнаружения (ImageDiscovery) должна быть готова ДО первого списка
     // тайтлов: CatalogMapper.toDomain() зовёт её напрямую, без DI, и без этого флага синглтон
     // создался бы лениво, только когда кто-то явно его инжектит (см. ImagePrefetcherImpl).
-    single<ImagePrefetcher>(createdAtStart = true) { ImagePrefetcherImpl(androidContext()) }
+    single<ImagePrefetcher>(createdAtStart = true) {
+        ImagePrefetcherImpl(context = androidContext(), backgroundFetch = get())
+    }
 }

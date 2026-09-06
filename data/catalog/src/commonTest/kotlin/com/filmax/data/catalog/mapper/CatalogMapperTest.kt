@@ -91,9 +91,7 @@ class CatalogMapperTest {
 
     private class FakeImagePrefetcher : ImagePrefetcher {
         val enqueued = mutableListOf<PrefetchImage>()
-        override val enabled: StateFlow<Boolean> = MutableStateFlow(true)
         override val progress: StateFlow<PrefetchProgress> = MutableStateFlow(PrefetchProgress())
-        override suspend fun setEnabled(enabled: Boolean) = Unit
         override fun enqueue(images: List<PrefetchImage>) {
             enqueued += images
         }

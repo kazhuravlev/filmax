@@ -13,6 +13,6 @@ val catalogModule = module {
     // createdAtStart — WatchingItemDto/HistoryEntryDto (data:watching) зовут ItemDiscovery
     // напрямую, без DI, и должны найти уже готовую реализацию с первого же «лёгкого» тайтла.
     single<TitleBackgroundFetcher>(createdAtStart = true) {
-        TitleBackgroundFetcherImpl(catalog = get(), itemCache = get())
+        TitleBackgroundFetcherImpl(catalog = get(), itemCache = get(), backgroundFetch = get())
     }
 }
