@@ -91,6 +91,20 @@ class ContinuationTest {
         assertEquals(1_200, result.progress.durationSeconds)
     }
 
+    @Test
+    fun `movie resumes its first track when history omits video number`() {
+        val item = series(episode(season = 0, number = 0)).copy(type = ItemType.MOVIE)
+
+        val result = calculateContinuation(
+            item,
+            history(season = null, video = null, time = 2_405, duration = 7_200),
+        )
+
+        assertNotNull(result)
+        assertTrue(result.isActualContinuation)
+        assertEquals(2_405, result.savedPositionSeconds)
+    }
+
     private fun series(vararg tracks: MediaTrack) = Item(
         id = 1,
         title = "Test series",
@@ -129,7 +143,7 @@ class ContinuationTest {
         watchStatus = watchStatus,
     )
 
-    private fun history(season: Int, video: Int, time: Int, duration: Int) = WatchHistory(
+    private fun history(season: Int?, video: Int?, time: Int, duration: Int) = WatchHistory(
         itemId = 1,
         title = "Test series",
         posterSmall = null,

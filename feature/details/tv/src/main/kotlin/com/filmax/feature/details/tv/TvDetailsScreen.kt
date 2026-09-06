@@ -183,6 +183,7 @@ private const val NO_SEASON = -1
 
 private const val MAX_META_GENRES = 2
 private const val SECONDS_IN_MINUTE = 60
+private const val MINUTES_IN_HOUR = 60
 
 /**
  * TV-Детали. Фильм и сериал — один вертикальный поток: hero, описание, эпизоды (сериал),
@@ -433,15 +434,23 @@ private fun DetailsContent(
                     hasAnyFolder = folderMemberships.isNotEmpty(),
                     playback = HeroPlayback(
                         playModifier = focus.item(HERO_PLAY_KEY),
-                        playLabel = remember(series?.resume, target) { playLabel(series?.resume, target) },
+                        playLabel = remember(continuation, series?.resume, target) {
+                            playLabel(continuation, series?.resume, target)
+                        },
                         // Фильм играется целиком (videoId = -1), сериал — конкретной серией. Сериал
                         // без серий играть нечем — кнопка молчит. В плеер уходят НОМЕР серии и
                         // СЕЗОН: номер уникален только внутри сезона.
                         onPlay = {
-                            if (series == null) {
-                                actions.onPlay(NO_SEASON, MOVIE_VIDEO_ID, NO_RESUME_POSITION)
-                            } else {
-                                playScope.launch {
+                            playScope.launch {
+                                val resolved = actions.awaitContinuation()
+                                    ?.takeIf { it.isActualContinuation }
+                                if (series == null) {
+                                    actions.onPlay(
+                                        NO_SEASON,
+                                        MOVIE_VIDEO_ID,
+                                        resolved?.savedPositionSeconds ?: NO_RESUME_POSITION,
+                                    )
+                                } else {
                                     // ГОНКА (см. doc DetailsScreenModel.loadContinuation): пока
                                     // continuation не пришла, `continuation`/`target` в этой
                                     // композиции — временный дефолт (null / первая серия сезона),
@@ -449,9 +458,7 @@ private fun DetailsContent(
                                     // хотя прогресс уже есть — «потерял моё место». Ждём реальный
                                     // ответ (с таймаутом на случай медленного сервера) и пересчитываем
                                     // серию/позицию по НЕМУ, а не по тому, что успело попасть в кадр.
-                                    val resolved = actions.awaitContinuation()
                                     val resolvedResume = resolved
-                                        ?.takeIf { it.isActualContinuation }
                                         ?.let { c ->
                                             item.tracklist.firstOrNull { track ->
                                                 track.seasonNumber == c.season && track.number == c.videoId
@@ -1477,15 +1484,36 @@ private fun metaParts(item: Item, series: SeriesData?): List<String> = buildList
 }
 
 /**
- * «Продолжить · S2E5» — сериал с недосмотренной серией; «Смотреть · S1E1» — сериал без
- * continuation (кнопка всё равно сыграет конкретную серию — первую недосмотренную сезона или
- * первую серию вовсе, см. `target` в [DetailsContent]); «Смотреть» — фильм, где сезона/серии нет.
+ * «Продолжить с 40:05 · S2E5» — сериал с недосмотренной серией; «Продолжить с 40:05» — фильм;
+ * «Смотреть · S1E1» — сериал без continuation (кнопка всё равно сыграет конкретную серию — первую
+ * недосмотренную сезона или первую серию вовсе, см. `target` в [DetailsContent]); «Смотреть» —
+ * фильм без сохранённой позиции.
  */
-private fun playLabel(resume: MediaTrack?, target: MediaTrack?): String = when {
-    resume != null -> "Продолжить · ${episodeTag(resume)}"
+private fun playLabel(
+    continuation: Continuation?,
+    resume: MediaTrack?,
+    target: MediaTrack?,
+): String = when {
+    continuation?.isActualContinuation == true -> buildString {
+        append("Продолжить с ${formatResumePosition(continuation.savedPositionSeconds)}")
+        resume?.let { append(" · ${episodeTag(it)}") }
+    }
     target != null -> "Смотреть · ${episodeTag(target)}"
     else -> "Смотреть"
 }
+
+/** «40:05» / «1:12:03» — сохранённая позиция на кнопке «Продолжить». */
+private fun formatResumePosition(positionSeconds: Int): String {
+    val totalMinutes = positionSeconds / SECONDS_IN_MINUTE
+    val seconds = positionSeconds % SECONDS_IN_MINUTE
+    if (totalMinutes < MINUTES_IN_HOUR) return "$totalMinutes:${seconds.twoDigits()}"
+
+    val hours = totalMinutes / MINUTES_IN_HOUR
+    val minutes = totalMinutes % MINUTES_IN_HOUR
+    return "$hours:${minutes.twoDigits()}:${seconds.twoDigits()}"
+}
+
+private fun Int.twoDigits(): String = toString().padStart(length = 2, padChar = '0')
 
 private fun episodeTag(track: MediaTrack): String =
     if (track.seasonNumber > 0) "S${track.seasonNumber}E${track.number}" else "Серия ${track.number}"

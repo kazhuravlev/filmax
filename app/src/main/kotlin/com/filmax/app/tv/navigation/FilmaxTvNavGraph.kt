@@ -64,9 +64,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.serialization.Serializable
 import org.koin.androidx.compose.koinViewModel
 
-@Serializable
-private object TvSplashRoute
-
 // Корневой composable намеренно оркестрирует auth, back, focus, tab navigation и общие
 // CompositionLocal-сигналы в одном месте: разносить связанное состояние по владельцам рискованнее.
 @Suppress("LongMethod")
@@ -135,10 +132,6 @@ fun FilmaxTvNavGraph(
     val refreshRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
 
     // Переход по вкладкам: единственный экземпляр + сохранение/восстановление состояния.
-    // Попап — до TvHomeRoute, реального корня вкладок: стартовый destination графа — сплэш,
-    // которого после логина нет в стеке (popUpTo{inclusive}), и попап по нему молча не
-    // срабатывал — каждый заход на вкладку создавал свежую энтри, а restoreState не
-    // восстанавливал ни выбранный сегмент, ни скролл.
     fun navigateTab(route: Any) {
         navController.navigate(route) {
             popUpTo<TvHomeRoute> { saveState = true }
@@ -159,7 +152,7 @@ fun FilmaxTvNavGraph(
         ) {
             NavHost(
                 navController = navController,
-                startDestination = TvSplashRoute,
+                startDestination = TvHomeRoute,
                 modifier = Modifier
                     .fillMaxSize()
                     .focusRequester(contentFocus)
@@ -226,8 +219,6 @@ private fun NavGraphBuilder.tvDestinations(
     navController: NavHostController,
     onCheckUpdates: () -> Unit,
 ) {
-    composable<TvSplashRoute> { TvSplashScreen() }
-
     tvOnboardingScreen(
         onAuthenticated = {
             navController.navigate(TvHomeRoute) { popUpTo(TvOnboardingRoute) { inclusive = true } }
@@ -247,7 +238,8 @@ private fun NavGraphBuilder.tvDestinations(
     // «Подборки» больше не вкладка — это контент внутри Каталога. Экран содержимого
     // подборки остаётся push-экраном: в него ведёт Каталог.
     tvCollectionDetailScreen(onOpenItem = { navController.navigate(DetailsRoute(it)) })
-    // Карточки «Я смотрю» ведут в карточку тайтла — играть оттуда: кнопка «Продолжить · SxEy».
+    // Карточки «Я смотрю» ведут в детали: кнопка там показывает таймкод продолжения и, для
+    // сериала, номер эпизода.
     tvWatchingScreen(
         onOpenItem = { navController.navigate(DetailsRoute(it)) },
     )

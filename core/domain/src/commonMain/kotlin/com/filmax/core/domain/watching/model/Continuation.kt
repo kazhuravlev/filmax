@@ -49,13 +49,11 @@ fun calculateContinuation(item: Item, history: WatchHistory? = null): Continuati
     if (tracks.isEmpty()) return null
 
     val historyProgress = history?.progress
-    val fromHistory = historyProgress?.let { progress ->
-        tracks.firstOrNull { track ->
-            track.number == progress.videoId && (progress.season == null || track.seasonNumber == progress.season)
-        }
-    }
-    // Нельзя переносить позицию/кадр history на другой трек, найденный лишь по watchStatus.
-    // История адресует конкретную серию, поэтому несовпадение означает устаревшие данные.
+    val fromHistory = historyProgress?.let { progress -> findHistoryTrack(item, tracks, progress) }
+    // У сериала нельзя переносить позицию/кадр history на другую серию, найденную лишь по
+    // watchStatus. История адресует конкретный эпизод, поэтому несовпадение означает устаревшие
+    // данные. У фильма findHistoryTrack безопасно выбирает первую/единственную дорожку даже когда
+    // /history не прислал media.number: плеер для фильма использует ту же первую дорожку.
     if (history != null && fromHistory == null) return null
     val inProgress = tracks.firstOrNull { it.watchStatus == WATCH_STATUS_IN_PROGRESS }
     val lastFinished = tracks.lastOrNull { it.watchStatus == WATCH_STATUS_FINISHED }
@@ -97,6 +95,11 @@ fun calculateContinuation(item: Item, history: WatchHistory? = null): Continuati
         history = history,
     )
 }
+
+private fun findHistoryTrack(item: Item, tracks: List<MediaTrack>, progress: WatchProgress): MediaTrack? =
+    tracks.firstOrNull { track ->
+        track.number == progress.videoId && (progress.season == null || track.seasonNumber == progress.season)
+    } ?: tracks.firstOrNull().takeIf { !item.isSeriesForContinuation() }
 
 /**
  * Загружает детали только для записей истории и применяет [calculateContinuation] ко всем экранам.

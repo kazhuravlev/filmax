@@ -147,10 +147,10 @@ class DetailsScreenModel(
     }
 
     /**
-     * История (для continuation — «Продолжить · SxEy» на кнопке hero) — отдельным запросом, не
-     * блокируя показ самого тайтла. До ответа кнопка играет разумный дефолт (первый недосмотренный
-     * эпизод сезона либо первый вовсе, см. `target` в TvDetailsScreen) и тихо обновляется, если
-     * найдётся реальный прогресс.
+     * История (для continuation — «Продолжить с 40:05», у сериала ещё и `SxEy`, на кнопке hero) —
+     * отдельным запросом, не блокируя показ самого тайтла. До ответа кнопка играет разумный дефолт
+     * (первая дорожка фильма, первый недосмотренный эпизод сезона либо первый вовсе, см. `target`
+     * в TvDetailsScreen) и тихо обновляется, если найдётся реальный прогресс.
      *
      * ГОНКА: `state.continuation` до ответа этой корутины — `null`, а фокус пульта долетает до
      * кнопки «Смотреть» почти мгновенно (экран стартует с фокусом именно на ней). Нажатие Play
@@ -179,8 +179,8 @@ class DetailsScreenModel(
      * раньше — серия играет с нуля), а не блокируется бесконечно.
      */
     suspend fun awaitContinuation(): Continuation? {
-        if (!state.continuationLoading) return state.continuation
-        return withTimeoutOrNull(CONTINUATION_AWAIT_TIMEOUT_MS) { continuationJob?.await() } ?: state.continuation
+        val pending = continuationJob ?: return state.continuation
+        return withTimeoutOrNull(CONTINUATION_AWAIT_TIMEOUT_MS) { pending.await() } ?: state.continuation
     }
 
     /**
@@ -245,7 +245,7 @@ class DetailsScreenModel(
         }
     }
 
-    /** История ведётся по сериям — под текущий тайтл достаём только его запись. */
+    /** История ведётся по тайтлам (для сериала — с номером серии); достаём запись текущего. */
     private suspend fun findHistoryEntry() =
         watching.getHistory().getOrNull()?.firstOrNull { it.itemId == route.itemId }
 
