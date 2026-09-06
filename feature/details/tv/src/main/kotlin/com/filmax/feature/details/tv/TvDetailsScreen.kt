@@ -134,8 +134,8 @@ import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
-/** Ширина меты/рейтинга в hero: уже заголовка — рядом теперь постер (см. [HeroPoster]). */
-private val HeroInfoWidth = 420.dp
+/** Типовая ширина плашки меты в скелетоне; реальная плашка растёт по своему содержимому. */
+private val SkeletonInfoPanelWidth = 420.dp
 
 /** Непрозрачность чёрной подложки под метой/рейтингами — та же, что у [TvRatingPill]. */
 private const val HERO_INFO_SCRIM_ALPHA = 0.72f
@@ -258,7 +258,11 @@ private fun TvDetailsSkeleton(modifier: Modifier = Modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             SkeletonBlock(width = HeroPosterWidth, height = HeroPosterHeight, shape = TvMetrics.PosterShape)
             Column {
-                SkeletonBlock(width = HeroInfoWidth, height = SkeletonInfoPanelHeight, shape = TvMetrics.PanelShape)
+                SkeletonBlock(
+                    width = SkeletonInfoPanelWidth,
+                    height = SkeletonInfoPanelHeight,
+                    shape = TvMetrics.PanelShape,
+                )
                 Spacer(Modifier.height(18.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     SkeletonBlock(
@@ -705,8 +709,7 @@ private fun DetailsHero(
                 HeroPoster(item)
                 Column {
                     HeroInfoPanel(item = item, series = series)
-                    // Кнопки НЕ зажаты в HeroInfoWidth: в узкой колонке подборки/«хочу
-                    // посмотреть» обрезались бы почти до одной иконки.
+                    // Кнопки измеряются независимо от плашки: длинные подписи не обрезаются.
                     HeroButtons(
                         hasAnyFolder = hasAnyFolder,
                         playback = playback,
@@ -732,14 +735,11 @@ private fun HeroInfoPanel(item: Item, series: SeriesData?) {
     ) {
         TvMetaRow(
             parts = remember(item, series) { metaParts(item, series) },
-            modifier = Modifier.width(HeroInfoWidth),
         )
         RatingsRow(
             rating = item.rating,
             views = item.views,
-            modifier = Modifier
-                .width(HeroInfoWidth)
-                .padding(top = 9.dp),
+            modifier = Modifier.padding(top = 9.dp),
         )
     }
 }
