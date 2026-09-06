@@ -109,6 +109,7 @@ import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.core.tv.designsystem.posterMeta
+import com.filmax.core.tv.designsystem.qualityLabel
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberDimAlpha
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
@@ -1419,6 +1420,7 @@ private fun LazyListScope.posterRail(
                     imdbRating = ratingLabel(railItem.rating.imdb),
                     kinopoiskRating = ratingLabel(railItem.rating.kinopoisk),
                     advert = railItem.advert,
+                    quality = qualityLabel(railItem.quality),
                 ) { url, modifier ->
                     PosterImage(
                         url = url,

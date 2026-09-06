@@ -34,6 +34,10 @@ data class ItemDto(
     val finished: Boolean = false,
     // Флаг «в видео есть реклама» — карточка постера рисует по нему предупреждающий бейдж.
     val advert: Boolean = false,
+    // Максимальное доступное качество — высота кадра в пикселях (2160/1080/720/480…), как в
+    // конфиге kino.watch (`quality_list`/`quality_list_w`: 4K/FHD/HD/SD). 0 — сервер не прислал
+    // (тайтл без загруженного видео) — бейдж качества на карточке в этом случае не рисуем.
+    val quality: Int = 0,
     @SerialName("in_watchlist") val inWatchlist: Boolean = false,
     @SerialName("posters") val posters: PostersDto? = null,
     val duration: DurationDto = DurationDto(),

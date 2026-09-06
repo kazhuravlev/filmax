@@ -61,6 +61,9 @@ enum class TvCardSize(val width: Dp, val height: Dp) {
  *
  * [advert] — в видео тайтла есть реклама (kino.watch `advert`): рисуем маленький бейдж-предупреждение
  * в противоположном от рейтинга углу (TopStart), чтобы они никогда не накладывались друг на друга.
+ *
+ * [quality] — максимальное доступное качество (см. [qualityLabel]): нижний правый угол, свободный
+ * и от рейтинга (TopEnd), и от рекламы (TopStart) — единственный незанятый угол карточки.
  */
 // Компонент дизайн-системы: параметры — его публичный API (Compose-конвенция: modifier прямым
 // параметром, хвост — опции с дефолтами). Обёртка в data-класс сломала бы «минимальный API».
@@ -77,6 +80,7 @@ fun TvPosterCard(
     imdbRating: String? = null,
     kinopoiskRating: String? = null,
     advert: Boolean = false,
+    quality: String? = null,
     focusRequester: FocusRequester? = null,
     badgeContent: (@Composable RowScope.() -> Unit)? = null,
     posterContent: @Composable (url: String, modifier: Modifier) -> Unit,
@@ -117,6 +121,9 @@ fun TvPosterCard(
                 }
                 if (advert) {
                     TvAdvertBadge(modifier = Modifier.align(Alignment.TopStart).padding(8.dp))
+                }
+                if (quality != null) {
+                    TvQualityBadge(quality, modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp))
                 }
             }
         }
@@ -252,6 +259,26 @@ fun TvAdvertBadge(modifier: Modifier = Modifier) {
 }
 
 /**
+ * Бейдж максимального доступного качества (SD/HD/FHD/4K, см. [qualityLabel]) — нижний правый
+ * угол карточки-постера, единственный, свободный от рейтинга ([TvRatingPill], TopEnd) и
+ * предупреждения о рекламе ([TvAdvertBadge], TopStart). Тот же визуальный язык — полупрозрачная
+ * тёмная подложка формы постера.
+ */
+@Composable
+fun TvQualityBadge(quality: String, modifier: Modifier = Modifier) {
+    Text(
+        quality,
+        style = MaterialTheme.typography.labelSmall,
+        color = TvOnSurface,
+        fontWeight = FontWeight.Bold,
+        modifier = modifier
+            .clip(TvMetrics.PosterShape)
+            .background(TvSurface.copy(alpha = 0.72f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    )
+}
+
+/**
  * Круглый бейдж-счётчик поверх постера — количество непросмотренных серий. Единственное
  * цветное пятно интерфейса, наравне с ошибками ([TvError]): число, которое должно бросаться
  * в глаза раньше, чем зритель успеет прочитать постер.
@@ -349,3 +376,21 @@ fun ratingLabel(raw: String?): String? = ratingLabel(raw?.toDoubleOrNull())
 fun ratingLabel(value: Double?): String? =
     value?.takeIf { it > 0 }
         ?.let { String.format(Locale.US, "%.1f", it) }
+
+/**
+ * Лейбл максимального доступного качества (`Item.quality` — высота кадра в пикселях) для
+ * [TvQualityBadge]. Bucketed на границах и лейблах из конфига kino.watch (`quality_list`):
+ * 2160+ → 4K, 1080+ → FHD, 720+ → HD, иначе SD. 0 (сервер не прислал/тайтл без видео) — null,
+ * бейджа нет вовсе — как и с [ratingLabel], ноль здесь не «худшее качество», а «нет данных».
+ */
+fun qualityLabel(heightPx: Int): String? = when {
+    heightPx <= 0 -> null
+    heightPx >= QUALITY_4K_HEIGHT -> "4K"
+    heightPx >= QUALITY_FHD_HEIGHT -> "FHD"
+    heightPx >= QUALITY_HD_HEIGHT -> "HD"
+    else -> "SD"
+}
+
+private const val QUALITY_HD_HEIGHT = 720
+private const val QUALITY_FHD_HEIGHT = 1080
+private const val QUALITY_4K_HEIGHT = 2160

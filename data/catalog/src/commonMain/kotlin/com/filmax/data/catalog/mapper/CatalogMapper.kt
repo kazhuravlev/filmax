@@ -9,6 +9,7 @@ package com.filmax.data.catalog.mapper
 import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.cache.ImageDiscovery
 import com.filmax.core.domain.cache.ItemDetailsCacheAccess
+import com.filmax.core.domain.cache.ItemDiscovery
 import com.filmax.core.domain.cache.PrefetchImage
 import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.CollectionPage
@@ -52,9 +53,10 @@ internal fun similarCacheKey(id: Int): String = "similar:$id"
 
 /**
  * Полный маппинг + «заявки» в фоновые кэши: любой тайтл, прошедший через API (список, поиск,
- * похожее, детали) — кандидат на фоновую закачку постера, даже если экран его ещё не отрисовал.
- * Единственное место, где этот побочный эффект запускается — повторный вызов [toDomainOnly]
- * (кэш-хит в `CatalogRepositoryImpl`) его МИНУЕТ, иначе постер грузился бы заново при каждом
+ * похожее, детали) — кандидат на фоновую докачку и постера ([ImageDiscovery]), и полных деталей
+ * тайтла целиком ([ItemDiscovery]), даже если экран его ещё не отрисовал. Единственное место, где
+ * оба побочных эффекта запускаются — повторный вызов [toDomainOnly] (кэш-хит в
+ * `CatalogRepositoryImpl`) их МИНУЕТ, иначе постер/детали грузились бы заново при каждом
  * повторном просмотре списка.
  *
  * В кэш деталей ([ItemDetailsCacheAccess]) тайтл кладём, ТОЛЬКО если в DTO реально есть треклист
@@ -64,13 +66,18 @@ internal fun similarCacheKey(id: Int): String = "similar:$id"
  * экране деталей переставала знать, какую серию играть (см. `CatalogRepositoryImpl.getItemDetails`,
  * который на кэш-хите доверяет сохранённому DTO целиком).
  *
- * НЕ шлём id в [ItemDiscovery] здесь: эта функция мапит КАЖДЫЙ тайтл КАЖДОГО спискового ответа
- * (все ряды главной, каталог, поиск, похожее, подборки) — фоновая докачка `items/{id}} на каждый
- * из них означала бы один сетевой запрос и одну запись в [ItemDetailsCacheAccess] (persist на диск,
- * без потолка размера) на каждую карточку, когда-либо промелькнувшую в любом списке — с обычным
- * скроллом это тысячи записей за сессию, распухающий файл кэша переживает даже перезапуск
- * приложения. [ItemDiscovery] — точечно, только там, где реально нужны полные детали тайтла,
- * известного пока лишь по «лёгкой» ссылке: `WatchingItemDto`/`HistoryEntryDto` в data:watching.
+ * Шлём id КАЖДОГО тайтла КАЖДОГО спискового ответа (все ряды главной, каталог, поиск, похожее,
+ * подборки) в [ItemDiscovery] — раньше это было намеренно запрещено (см. историю в doc-комментарии
+ * [ItemDiscovery]): кэш деталей был файлом `Settings`/SharedPreferences без потолка размера, и
+ * обычный скролл раздувал бы его тысячами записей, переживающих даже перезапуск приложения.
+ * Ограничение снято: [ItemDetailsCacheAccess.cache] теперь — SQLite (`ItemDetailsCacheDb`,
+ * core:network) с жёстким потолком строк и TTL-вытеснением, а сама очередь фоновой докачки —
+ * строго последовательная, с собственным потолком (drop-newest) и паузой на время активности
+ * пользователя (см. `TitleBackgroundFetcherImpl`). Самозацикливания нет: пока фетчер обрабатывает
+ * id, тот числится «в работе» в его внутреннем множестве, и `discovered(id)` из результата ЭТОГО
+ * ЖЕ запроса (тот же тайтл, повторно прошедший через `toDomain()`) молча отклоняется как дубликат;
+ * а кэш-хит по уже свежим деталям фетчер обрабатывает вовсе без похода в сеть — так что повторный
+ * маппинг одного и того же id из разных списков почти бесплатен.
  */
 fun ItemDto.toDomain(): Item {
     val item = toDomainOnly()
@@ -78,6 +85,7 @@ fun ItemDto.toDomain(): Item {
         ItemDetailsCacheAccess.cache.remember(itemCacheKey(id), networkJson.encodeToString(this))
     }
     ImageDiscovery.discovered(item.posterPrefetchImages())
+    ItemDiscovery.discovered(item.id)
     return item
 }
 
@@ -114,6 +122,7 @@ internal fun ItemDto.toDomainOnly(): Item = Item(
     imdbId = imdb?.toString(),
     views = views,
     advert = advert,
+    quality = quality,
 )
 
 /**

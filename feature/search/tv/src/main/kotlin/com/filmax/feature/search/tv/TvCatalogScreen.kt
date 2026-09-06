@@ -81,6 +81,7 @@ import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.core.tv.designsystem.gridPosterMeta
+import com.filmax.core.tv.designsystem.qualityLabel
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
@@ -612,6 +613,7 @@ private fun CatalogPoster(item: Item, modifier: Modifier, onClick: () -> Unit) {
         imdbRating = ratingLabel(item.rating.imdb),
         kinopoiskRating = ratingLabel(item.rating.kinopoisk),
         advert = item.advert,
+        quality = qualityLabel(item.quality),
     ) { url, posterModifier ->
         PosterImage(
             url = url,

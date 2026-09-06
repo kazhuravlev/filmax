@@ -86,6 +86,7 @@ import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.core.tv.designsystem.gridPosterMeta
+import com.filmax.core.tv.designsystem.qualityLabel
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
@@ -555,6 +556,7 @@ private fun LazyGridScope.folderPosters(
             imdbRating = ratingLabel(item.rating.imdb),
             kinopoiskRating = ratingLabel(item.rating.kinopoisk),
             advert = item.advert,
+            quality = qualityLabel(item.quality),
             posterContent = { url, posterModifier ->
                 FolderPoster(
                     url,
@@ -669,6 +671,7 @@ private fun LibraryTitleCard(
         height = TvMetrics.CompactPosterHeight,
         imdbRating = ratingLabel(details?.rating?.imdb),
         kinopoiskRating = ratingLabel(details?.rating?.kinopoisk),
+        quality = details?.quality?.let(::qualityLabel),
         badgeContent = badgeContent,
         posterContent = { url, posterModifier ->
             val cacheKey = details?.let { ImageCacheKeys.poster(it.type.apiValue, it.id, ImageCacheKeys.SIZE_MEDIUM) }

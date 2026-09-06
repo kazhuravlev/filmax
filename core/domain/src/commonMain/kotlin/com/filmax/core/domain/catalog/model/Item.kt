@@ -23,6 +23,10 @@ data class Item(
     val views: Int = 0,
     /** В видео тайтла есть реклама (kino.watch `advert`) — показываем бейдж на карточке-постере. */
     val advert: Boolean = false,
+    /** Максимальное доступное качество — высота кадра в пикселях (kino.watch `quality`, например
+     * 2160). 0 — сервер не прислал (тайтл без загруженного видео). Бейдж SD/HD/FHD/4K на
+     * карточке-постере — см. `qualityLabel()` в core:tv-designsystem. */
+    val quality: Int = 0,
 )
 
 enum class ItemType(val apiValue: String) {

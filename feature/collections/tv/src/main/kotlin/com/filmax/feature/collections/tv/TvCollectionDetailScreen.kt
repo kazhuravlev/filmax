@@ -34,6 +34,7 @@ import com.filmax.core.tv.designsystem.TvPosterGrid
 import com.filmax.core.tv.designsystem.TvServerRetryNotification
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 import com.filmax.core.tv.designsystem.posterMeta
+import com.filmax.core.tv.designsystem.qualityLabel
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.PosterImage
@@ -157,6 +158,7 @@ private fun CollectionPoster(item: Item, modifier: Modifier, onClick: () -> Unit
         imdbRating = ratingLabel(item.rating.imdb),
         kinopoiskRating = ratingLabel(item.rating.kinopoisk),
         advert = item.advert,
+        quality = qualityLabel(item.quality),
         modifier = modifier,
     ) { url, posterModifier ->
         PosterImage(

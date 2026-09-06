@@ -60,6 +60,7 @@ import com.filmax.core.tv.designsystem.TvServerRetryNotification
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.core.tv.designsystem.posterMeta
+import com.filmax.core.tv.designsystem.qualityLabel
 import com.filmax.core.tv.designsystem.ratingLabel
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.ui.components.GradientPosterPlaceholder
@@ -542,6 +543,7 @@ private fun TvHomePosterCard(item: Item, onClick: () -> Unit, modifier: Modifier
         imdbRating = ratingLabel(item.rating.imdb),
         kinopoiskRating = ratingLabel(item.rating.kinopoisk),
         advert = item.advert,
+        quality = qualityLabel(item.quality),
         onClick = onClick,
         posterContent = { url, posterModifier ->
             PosterImage(
