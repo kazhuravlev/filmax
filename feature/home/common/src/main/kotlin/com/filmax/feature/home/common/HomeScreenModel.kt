@@ -40,10 +40,7 @@ class HomeScreenModel(
 
     override fun dispatch(event: HomeEvent) {
         when (event) {
-            HomeEvent.Load -> {
-                resetServerRetryCycle()
-                onFetchData()
-            }
+            HomeEvent.Load -> onFetchData()
             is HomeEvent.LoadMoreRow -> loadMoreRow(event.id)
         }
     }
@@ -104,7 +101,7 @@ class HomeScreenModel(
             val error = allResults.firstNotNullOfOrNull { (it as? RequestResult.Error)?.message }
             val allSucceeded = allResults.all { it is RequestResult.Success<*> }
             if (allSucceeded) snapshotCache.put(state.asSnapshot())
-            if (error != null) scheduleServerRetry(::onFetchData)
+            if (error != null) showServerRetryNotice()
             when {
                 // Пусто + ошибка — блокирующая модалка.
                 state.isEmpty && error != null -> showError(error)
@@ -176,7 +173,7 @@ class HomeScreenModel(
             val error = results.firstNotNullOfOrNull { (it as? RequestResult.Error)?.message }
             if (error != null) {
                 updateTitlesRow(row.id) { it.copy(paging = it.paging.copy(loadingMore = false)) }
-                scheduleServerRetry { loadMoreRow(row.id) }
+                showServerRetryNotice()
             } else {
                 val pages = results.mapNotNull { it.getOrNull() }
                 val merged = pages.flatMap { it.items }
@@ -204,7 +201,7 @@ class HomeScreenModel(
 
                 is RequestResult.Error -> updateCollectionsRow { it.copy(paging = it.paging.copy(loadingMore = false)) }
             }
-            if (result is RequestResult.Error) scheduleServerRetry { loadMoreRow(row.id) }
+            if (result is RequestResult.Error) showServerRetryNotice()
         }
     }
 

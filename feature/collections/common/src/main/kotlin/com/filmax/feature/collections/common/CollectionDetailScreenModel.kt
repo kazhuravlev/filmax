@@ -34,7 +34,7 @@ class CollectionDetailScreenModel(
                 is RequestResult.Error -> {
                     updateState { it.copy(loading = false, error = result.message) }
                     showError(result)
-                    scheduleServerRetry(::onFetchData)
+                    showServerRetryNotice()
                 }
             }
         }

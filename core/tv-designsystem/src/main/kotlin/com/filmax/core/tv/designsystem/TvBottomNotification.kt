@@ -35,7 +35,6 @@ fun TvBottomNotification(
 @Composable
 fun TvServerRetryNotification(
     visible: Boolean,
-    retriesExhausted: Boolean,
     modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(
@@ -44,12 +43,6 @@ fun TvServerRetryNotification(
         exit = fadeOut(),
         modifier = modifier,
     ) {
-        TvBottomNotification(
-            text = if (retriesExhausted) {
-                "Сервер всё ещё не отвечает. Попробуйте обновить раздел позже"
-            } else {
-                "Сервер не вернул данные. Повторим запрос через 3 секунды"
-            },
-        )
+        TvBottomNotification(text = "Сервер не отвечает, попробуйте позже")
     }
 }

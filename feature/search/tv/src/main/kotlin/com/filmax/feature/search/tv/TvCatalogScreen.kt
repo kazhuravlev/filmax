@@ -65,7 +65,6 @@ import com.filmax.core.domain.catalog.SortOption
 import com.filmax.core.domain.catalog.model.Genre
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
-import com.filmax.core.presentation.ServerRetryNotice
 import com.filmax.core.tv.designsystem.RefreshOnTopNavReselect
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvChip
@@ -155,8 +154,7 @@ fun TvCatalogScreen(
             onLoadMore = { screenModel.dispatch(SearchEvent.LoadMoreCatalog) },
         )
         TvServerRetryNotification(
-            visible = retryNotice != null,
-            retriesExhausted = retryNotice is ServerRetryNotice.Exhausted,
+            visible = retryNotice,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = TvMetrics.SafeVertical),

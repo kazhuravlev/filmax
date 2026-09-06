@@ -19,7 +19,6 @@ import androidx.compose.ui.unit.sp
 import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
-import com.filmax.core.presentation.ServerRetryNotice
 import com.filmax.core.tv.designsystem.TvMetrics
 import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvPosterGrid
@@ -87,8 +86,7 @@ fun TvCollectionDetailScreen(
             }
         }
         TvServerRetryNotification(
-            visible = retryNotice != null,
-            retriesExhausted = retryNotice is ServerRetryNotice.Exhausted,
+            visible = retryNotice,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = TvMetrics.SafeVertical),

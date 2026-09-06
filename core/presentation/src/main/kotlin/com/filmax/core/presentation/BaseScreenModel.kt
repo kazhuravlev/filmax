@@ -58,11 +58,9 @@ abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
     /** Показан ли ненавязчивый баннер «нет сети» (issue #42): контент из кэша при офлайне. */
     private val _offlineBanner: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
-    /** Нижнее TV-уведомление о сбое сервера и состоянии автоматического повтора. */
-    private val _serverRetryNotice: MutableStateFlow<ServerRetryNotice?> = MutableStateFlow(null)
-    private var serverRetryJob: Job? = null
-    private var retryRecoveryJob: Job? = null
-    private var automaticRetryCount = 0
+    /** Нижнее TV-уведомление «сервер не отвечает» — само пропадает через 3 секунды. */
+    private val _serverRetryNotice: MutableStateFlow<Boolean> = MutableStateFlow(false)
+    private var serverRetryNoticeJob: Job? = null
 
     /** Текущий снимок состояния. Доступен подклассам для чтения внутри корутин. */
     protected val state: STATE
@@ -148,64 +146,25 @@ abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
         return _offlineBanner.collectAsState()
     }
 
-    /** Подписка TV-экрана на нижнее уведомление об автоматическом повторе запроса. */
+    /** Подписка TV-экрана на нижнее уведомление «сервер не отвечает». */
     @Composable
-    fun collectServerRetryNoticeAsState(): State<ServerRetryNotice?> {
+    fun collectServerRetryNoticeAsState(): State<Boolean> {
         return _serverRetryNotice.collectAsState()
     }
 
     /**
-     * Показывает уведомление и один раз вызывает [retryAction] через три секунды. Повторные
-     * ошибки образуют ограниченную серию: после трёх попыток запросы автоматически больше не
-     * отправляются, а пользователь получает честное сообщение вместо ложного пустого состояния.
+     * Показывает уведомление «Сервер не отвечает, попробуйте позже» на 3 секунды — само прячется
+     * по таймеру. Никакого автоматического повтора запроса: сбой одноразовый, повторный поход в
+     * сеть — только по явному действию пользователя ([retry]/`Refresh`).
      */
-    protected fun scheduleServerRetry(retryAction: () -> Unit) = scheduleRetry(silent = false, retryAction)
-
-    /**
-     * Как [scheduleServerRetry], но без баннера «Сервер не вернул данные», пока автоматические
-     * попытки не исчерпаны. Для неявной (не по действию пользователя) первой загрузки экрана,
-     * когда на экране уже могут быть пригодные данные с прошлого раза ([preserveEmpty]-подобный
-     * приём): баннер «повторим через 3 секунды» на фоне уже показанного контента только пугает,
-     * не неся никакой полезной информации — а через 3 секунды всё равно тихо чинится само.
-     * Стойкий сбой (см. [MAX_AUTOMATIC_SERVER_RETRIES]) всё равно показывается — это уже не шум.
-     */
-    protected fun scheduleSilentServerRetry(retryAction: () -> Unit) = scheduleRetry(silent = true, retryAction)
-
-    private fun scheduleRetry(silent: Boolean, retryAction: () -> Unit) {
-        retryRecoveryJob?.cancel()
-        retryRecoveryJob = null
-        if (serverRetryJob?.isActive == true) return
-        if (automaticRetryCount >= MAX_AUTOMATIC_SERVER_RETRIES) {
-            _serverRetryNotice.value = ServerRetryNotice.Exhausted
-            return
+    protected fun showServerRetryNotice() {
+        serverRetryNoticeJob?.cancel()
+        _serverRetryNotice.value = true
+        serverRetryNoticeJob = screenModelScope.launch(mainThreadDispatcher) {
+            delay(SERVER_RETRY_NOTICE_MILLIS)
+            _serverRetryNotice.value = false
+            serverRetryNoticeJob = null
         }
-
-        automaticRetryCount += 1
-        if (!silent) _serverRetryNotice.value = ServerRetryNotice.Scheduled
-        serverRetryJob = screenModelScope.launch(mainThreadDispatcher) {
-            delay(SERVER_RETRY_DELAY_MILLIS)
-            _serverRetryNotice.value = null
-            serverRetryJob = null
-            retryAction()
-            // Если повтор снова упадёт, scheduleRetry отменит этот таймер. Если новых
-            // ошибок нет, считаем серию завершённой и следующий сбой снова получит три попытки.
-            retryRecoveryJob = screenModelScope.launch(mainThreadDispatcher) {
-                delay(SERVER_RETRY_RECOVERY_MILLIS)
-                automaticRetryCount = 0
-                _serverRetryNotice.value = null
-                retryRecoveryJob = null
-            }
-        }
-    }
-
-    /** Новое явное действие пользователя начинает отдельную серию автоматических повторов. */
-    protected fun resetServerRetryCycle() {
-        serverRetryJob?.cancel()
-        retryRecoveryJob?.cancel()
-        serverRetryJob = null
-        retryRecoveryJob = null
-        automaticRetryCount = 0
-        _serverRetryNotice.value = null
     }
 
     /** Закрывает модалку ошибки. Вызывается из UI. */
@@ -217,7 +176,6 @@ abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
     fun retry() {
         _error.value = null
         _offlineBanner.value = false
-        resetServerRetryCycle()
         onFetchData()
     }
 
@@ -249,18 +207,9 @@ abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
 
     override fun onCleared() {
         sideEffectsSubscriber = null
-        serverRetryJob?.cancel()
-        retryRecoveryJob?.cancel()
+        serverRetryNoticeJob?.cancel()
         super.onCleared()
     }
 }
 
-/** Состояние нижнего уведомления: повтор запланирован либо лимит повторов исчерпан. */
-sealed interface ServerRetryNotice {
-    data object Scheduled : ServerRetryNotice
-    data object Exhausted : ServerRetryNotice
-}
-
-private const val SERVER_RETRY_DELAY_MILLIS = 3_000L
-private const val SERVER_RETRY_RECOVERY_MILLIS = 10_000L
-private const val MAX_AUTOMATIC_SERVER_RETRIES = 3
+private const val SERVER_RETRY_NOTICE_MILLIS = 3_000L

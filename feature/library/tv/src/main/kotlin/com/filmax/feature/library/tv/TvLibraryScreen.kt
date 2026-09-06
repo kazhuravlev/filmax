@@ -64,7 +64,6 @@ import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchingItem
-import com.filmax.core.presentation.ServerRetryNotice
 import com.filmax.core.tv.designsystem.RefreshOnTopNavReselect
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvAccent
@@ -214,10 +213,9 @@ fun TvLibraryScreen(
 }
 
 @Composable
-private fun BoxScope.TvLibraryRetryNotification(notice: ServerRetryNotice?) {
+private fun BoxScope.TvLibraryRetryNotification(visible: Boolean) {
     TvServerRetryNotification(
-        visible = notice != null,
-        retriesExhausted = notice is ServerRetryNotice.Exhausted,
+        visible = visible,
         modifier = Modifier
             .align(Alignment.BottomCenter)
             .padding(bottom = TvMetrics.SafeVertical),

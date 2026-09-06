@@ -47,10 +47,7 @@ class LibraryScreenModel(
 
     override fun dispatch(event: LibraryEvent) {
         when (event) {
-            is LibraryEvent.Refresh -> {
-                resetServerRetryCycle()
-                refresh(event.section)
-            }
+            is LibraryEvent.Refresh -> refresh(event.section)
             is LibraryEvent.RefreshIfDirty -> refreshIfDirty(event.section)
             is LibraryEvent.RemoveFromHistory -> removeFromHistory(event.itemId)
             LibraryEvent.ClearHistory -> clearHistory()
@@ -141,7 +138,7 @@ class LibraryScreenModel(
                     error = watchingResult.error,
                 )
             }
-            if (watchingResult.error != null) scheduleServerRetry(::refreshWatching)
+            if (watchingResult.error != null) showServerRetryNotice()
         }
     }
 
@@ -150,9 +147,9 @@ class LibraryScreenModel(
      *
      * Ошибка [loadTitleDetails] намеренно НЕ попадает в общий [WatchingResult.error]: это
      * декоративное обогащение карточек (жанр/год/рейтинг), а не сами списки. Если сбой
-     * привязан к конкретному тайтлу (например, он удалён/битый на сервере), он не «лечится»
-     * повтором и раньше вечно держал баннер [scheduleServerRetry] висящим — хотя списки уже
-     * загрузились и показывают реальные данные.
+     * привязан к конкретному тайтлу (например, он удалён/битый на сервере) — карточка просто
+     * останется без обогащения, а не покажет баннер [showServerRetryNotice] поверх уже
+     * загрузившихся и показывающих реальные данные списков.
      */
     private suspend fun loadWatchingSection(): WatchingResult = coroutineScope {
         val titlesDeferred = async { loadWatchingTitles() }
@@ -196,8 +193,8 @@ class LibraryScreenModel(
      * одновременных запросов к серверу.
      *
      * Сбой по отдельному тайтлу (например, он удалён/битый на сервере) не считаем ошибкой
-     * экрана: карточка просто останется без обогащения (жанр/год/рейтинг), а не подвесит
-     * баннер [scheduleServerRetry] — сам сбой уже ушёл в телеметрию через `safeRequest`
+     * экрана: карточка просто останется без обогащения (жанр/год/рейтинг), а не покажет
+     * баннер [showServerRetryNotice] — сам сбой уже ушёл в телеметрию через `safeRequest`
      * внутри `catalog.getItemDetails`.
      */
     private suspend fun loadTitleDetails(itemIds: List<Int>): Map<Int, Item> = coroutineScope {
@@ -226,7 +223,7 @@ class LibraryScreenModel(
             val foldersResult = user.getBookmarkFolders()
             val itemsResult = openedFolder?.let { user.getDedupedBookmarkItems(it.id) }
             val error = applyRefreshedBookmarks(openedFolder, foldersResult, itemsResult)
-            if (error != null) scheduleServerRetry(::refreshBookmarks)
+            if (error != null) showServerRetryNotice()
         }
     }
 
@@ -267,11 +264,6 @@ class LibraryScreenModel(
     }
 
     /**
-     * Неявная первая загрузка (не по действию пользователя) — в отличие от [refreshWatching]/
-     * [refreshBookmarks], сбой ретраится тихо ([scheduleSilentServerRetry]): баннер «сервер не
-     * вернул данные» на фоне уже показанных с прошлого раза данных только пугает, хотя через
-     * 3 секунды тихий повтор чаще всего сам всё чинит (см. `scheduleSilentServerRetry`).
-     *
      * «В процессе» и «Подборки» — независимые источники: сбой подборок не должен подвешивать
      * баннер над «В процессе» (и наоборот), поэтому в общий [error] попадает только ошибка
      * [loadWatchingSection] — сбой подборок просто помечает раздел «грязным», следующий заход
@@ -296,7 +288,7 @@ class LibraryScreenModel(
                     )
                 }
                 if (lists is RequestResult.Error) DataInvalidation.markDirty(DataDomain.BOOKMARKS)
-                if (error != null) scheduleSilentServerRetry(::onFetchData)
+                if (error != null) showServerRetryNotice()
             }
         }
     }
@@ -371,7 +363,7 @@ class LibraryScreenModel(
                     loadingFolderPreviews = current.loadingFolderPreviews - folder.id,
                 )
             }
-            if (result is RequestResult.Error) scheduleServerRetry { openFolder(folder) }
+            if (result is RequestResult.Error) showServerRetryNotice()
         }
     }
 
@@ -408,7 +400,7 @@ class LibraryScreenModel(
                     },
                 )
             }
-            if (result is RequestResult.Error) scheduleServerRetry { loadFolderPreview(folder) }
+            if (result is RequestResult.Error) showServerRetryNotice()
         }
     }
 
@@ -445,7 +437,7 @@ class LibraryScreenModel(
                     ),
                 )
             }
-            if (result is RequestResult.Error) scheduleServerRetry(::loadMoreFolderItems)
+            if (result is RequestResult.Error) showServerRetryNotice()
         }
     }
 
@@ -511,7 +503,7 @@ class LibraryScreenModel(
         val result = user.getBookmarkFolders()
         val folders = result.getOrNull()
         if (folders == null) {
-            scheduleServerRetry { screenModelScope { reloadFolders() } }
+            showServerRetryNotice()
             return
         }
         val folderIds = folders.mapTo(mutableSetOf()) { it.id }

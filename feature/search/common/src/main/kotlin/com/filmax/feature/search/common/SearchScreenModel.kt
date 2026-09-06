@@ -107,7 +107,7 @@ class SearchScreenModel(
     /** Типы, у которых страницы кончились: их не запрашиваем при догрузке. */
     private var exhaustedTypes = setOf<ItemType>()
 
-    /** Повторяет текущую выдачу и справочники, не сбрасывая серию автоповторов. */
+    /** Повторяет текущую выдачу и справочники. */
     private val retryVisibleContent: () -> Unit = {
         screenModelScope { _ -> reload() }
         if (state.catalogEnabled) loadCatalogMetadata()
@@ -126,7 +126,6 @@ class SearchScreenModel(
             is SearchEvent.ApplyFilters -> updateAndReload { it.copy(filters = event.filters) }
             SearchEvent.ResetFilters -> updateAndReload { it.copy(filters = CatalogFilters()) }
             is SearchEvent.SubmitQuery -> {
-                resetServerRetryCycle()
                 onQueryChange(event.query)
                 screenModelScope { _ -> performSearch(event.query) }
             }
@@ -144,10 +143,7 @@ class SearchScreenModel(
                     loadCatalogMetadata()
                 }
             }
-            SearchEvent.Refresh -> {
-                resetServerRetryCycle()
-                retryVisibleContent()
-            }
+            SearchEvent.Refresh -> retryVisibleContent()
             SearchEvent.LoadMoreCatalog -> onLoadMoreCatalog()
         }
     }
@@ -180,7 +176,6 @@ class SearchScreenModel(
 
     /** Смена любого фильтра — это всегда «поправь состояние и перезапроси выдачу». */
     private fun updateAndReload(change: (SearchState) -> SearchState) {
-        resetServerRetryCycle()
         screenModelScope { _ ->
             updateState(change)
             reload()
@@ -195,13 +190,13 @@ class SearchScreenModel(
                     it.copy(genres = result.data.filter { genre -> genre.type in VIDEO_GENRE_TYPES })
                 }
 
-                is RequestResult.Error -> scheduleServerRetry(retryVisibleContent)
+                is RequestResult.Error -> showServerRetryNotice()
             }
         }
         screenModelScope { _ ->
             when (val result = catalog.getCountries()) {
                 is RequestResult.Success -> updateState { it.copy(countries = result.data) }
-                is RequestResult.Error -> scheduleServerRetry(retryVisibleContent)
+                is RequestResult.Error -> showServerRetryNotice()
             }
         }
     }
@@ -230,7 +225,7 @@ class SearchScreenModel(
                 it.copy(loading = false, error = result.message)
             }
         }
-        if (result is RequestResult.Error) scheduleServerRetry(retryVisibleContent)
+        if (result is RequestResult.Error) showServerRetryNotice()
     }
 
     private suspend fun loadCatalog() {
@@ -251,7 +246,7 @@ class SearchScreenModel(
                         )
                     }
                     first.data.takeIf(CatalogPage::hadErrors)?.let {
-                        scheduleServerRetry(retryVisibleContent)
+                        showServerRetryNotice()
                     }
                 }
             }
@@ -262,7 +257,7 @@ class SearchScreenModel(
                         // Не превращаем сетевой сбой в настоящее пустое состояние каталога.
                         it.copy(loading = false, error = first.message)
                     }
-                    scheduleServerRetry(retryVisibleContent)
+                    showServerRetryNotice()
                 }
             }
         }
@@ -300,12 +295,12 @@ class SearchScreenModel(
                             catalogEndReached = request.activeTypes.all { it in next.data.exhaustedTypes },
                         )
                     }
-                    if (next.data.hadErrors) scheduleServerRetry { onLoadMoreCatalog() }
+                    if (next.data.hadErrors) showServerRetryNotice()
                 }
 
                 is RequestResult.Error -> if (state.matches(request)) {
                     updateState { it.copy(catalogLoadingMore = false) }
-                    scheduleServerRetry { onLoadMoreCatalog() }
+                    showServerRetryNotice()
                 }
             }
         }
