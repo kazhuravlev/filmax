@@ -71,6 +71,23 @@ data class BookmarkFolderDto(
     @SerialName("updated_at") val updatedAt: Int? = null,
 )
 
+/**
+ * Ответ `bookmarks/get-item-folders`: список папок тайтла. Из полей нужен только `id` — остальное
+ * (название, счётчик) уже есть в общем списке `bookmarks`; лишние ключи JSON игнорируются.
+ * `folders` намеренно nullable без дефолта: ответ 200 БЕЗ этого ключа — не «тайтл ни в одной
+ * папке», а незнакомая форма ответа, и репозиторий обязан отдать ошибку (вызывающий тогда
+ * откатится на постраничный обход папок), а не тихую пустоту.
+ */
+@Serializable
+data class ItemFoldersDto(
+    val folders: List<ItemFolderRefDto>? = null,
+)
+
+@Serializable
+data class ItemFolderRefDto(
+    val id: Int,
+)
+
 @Serializable
 data class FolderStatusDto(
     val status: Int,

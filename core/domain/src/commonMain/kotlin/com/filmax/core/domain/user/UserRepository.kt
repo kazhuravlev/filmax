@@ -6,6 +6,8 @@ import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.user.model.DeviceSettings
 import com.filmax.core.domain.user.model.UserProfile
 
+// Контракт профиля/устройства/закладок целиком — дробить интерфейс ради лимита незачем.
+@Suppress("TooManyFunctions")
 interface UserRepository {
 
     suspend fun getProfile(): RequestResult<UserProfile>
@@ -19,6 +21,13 @@ interface UserRepository {
     suspend fun getBookmarkFolders(): RequestResult<List<BookmarkFolder>>
 
     suspend fun getBookmarkItems(folderId: Int, page: Int = 1): RequestResult<ItemPage>
+
+    /**
+     * Id папок-закладок, в которых лежит [itemId] — одним запросом (`bookmarks/get-item-folders`,
+     * тот же эндпоинт, которым эталонный веб-клиент kino.watch красит галочки в диалоге подборок).
+     * Заменяет постраничный обход каждой папки ради одного тайтла (см. [isItemInBookmark]).
+     */
+    suspend fun getItemBookmarkFolderIds(itemId: Int): RequestResult<Set<Int>>
 
     suspend fun createBookmarkFolder(title: String): RequestResult<BookmarkFolder>
 

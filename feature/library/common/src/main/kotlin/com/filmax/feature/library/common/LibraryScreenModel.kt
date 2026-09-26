@@ -20,6 +20,8 @@ import com.filmax.core.presentation.DataInvalidation
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
@@ -92,8 +94,8 @@ class LibraryScreenModel(
     /** Как [refreshWatching], но без `loading` и без баннера при сбое — попытка невидима снаружи. */
     private fun refreshWatchingSilently() {
         screenModelScope {
-            val watchingResult = loadWatchingSection()
-            if (watchingResult.error != null) {
+            val titles = loadWatchingTitlesPhase()
+            if (titles.error != null) {
                 // Не портим уже показанное сбойным пустым ответом и не теряем пометку:
                 // следующий возврат на экран попробует обновиться ещё раз.
                 DataInvalidation.markDirty(DataDomain.WATCHING)
@@ -101,12 +103,12 @@ class LibraryScreenModel(
             }
             updateState { current ->
                 current.copy(
-                    watching = watchingResult.titles,
-                    history = watchingResult.history,
-                    titleDetails = current.titleDetails + watchingResult.titleDetails,
-                    watchLaterRail = watchingResult.watchLaterRail,
+                    watching = titles.titles,
+                    titleDetails = current.titleDetails + titles.titleDetails,
                 )
             }
+            val historyError = loadWatchingTailPhase(titles.titles)
+            if (historyError != null) DataInvalidation.markDirty(DataDomain.WATCHING)
         }
     }
 
@@ -129,53 +131,80 @@ class LibraryScreenModel(
         }
     }
 
+    /** Явное обновление по действию пользователя — историю читаем мимо кэша репозитория. */
     private fun refreshWatching() {
         screenModelScope {
             updateState { it.copy(loading = true, error = null) }
-            val watchingResult = loadWatchingSection()
-            updateState { current ->
-                current.copy(
-                    loading = false,
-                    watching = watchingResult.titles.preserveEmpty(current.watching, watchingResult.error),
-                    history = watchingResult.history.preserveEmpty(current.history, watchingResult.error),
-                    titleDetails = current.titleDetails + watchingResult.titleDetails,
-                    watchLaterRail = watchingResult.watchLaterRail
-                        .preserveEmpty(current.watchLaterRail, watchingResult.error),
-                    error = watchingResult.error,
-                )
+            val titles = loadWatchingTitlesPhase()
+            applyWatchingTitles(titles)
+            val historyError = loadWatchingTailPhase(titles.titles, forceRefreshHistory = true)
+            val error = titles.error ?: historyError
+            if (error != null) {
+                updateState { it.copy(error = error) }
+                showServerRetryNotice()
             }
-            if (watchingResult.error != null) showServerRetryNotice()
         }
     }
 
     /**
-     * «В процессе» и история — разные серверные источники и должны загружаться независимо.
-     *
-     * Ошибка [loadTitleDetails] намеренно НЕ попадает в общий [WatchingResult.error]: это
-     * декоративное обогащение карточек (жанр/год/рейтинг), а не сами списки. Если сбой
-     * привязан к конкретному тайтлу (например, он удалён/битый на сервере) — карточка просто
-     * останется без обогащения, а не покажет баннер [showServerRetryNotice] поверх уже
-     * загрузившихся и показывающих реальные данные списков.
+     * Первый такт «В процессе»: сам список тайтлов — и только он — снимает спиннер. Раньше экран
+     * ждал ещё историю (десяток последовательных страниц), обход всех страниц публичных подборок
+     * ради рейла «Буду смотреть» и догрузку деталей КАЖДОГО тайтла из сети — и «Я смотрю», самый
+     * посещаемый пункт меню, открывался секундами, хотя список приходит за два быстрых запроса.
+     * Всё остальное — [loadWatchingTailPhase], поверх уже показанного экрана.
      */
-    private suspend fun loadWatchingSection(): WatchingResult = coroutineScope {
-        val titlesDeferred = async { loadWatchingTitles() }
-        val historyDeferred = async { watching.getHistory() }
-        val watchLaterDeferred = async { loadWatchLaterCollectionItems() }
-        val titles = titlesDeferred.await()
-        val history = historyDeferred.await()
-        val watchLaterAll = watchLaterDeferred.await()
-        val historyItems = history.getOrNull().orEmpty()
-        val watchingIds = titles.titles.mapTo(mutableSetOf(), WatchingItem::itemId)
-        val remainingIds = (titles.titles.map(WatchingItem::itemId) + historyItems.map(WatchHistory::itemId))
-            .distinct()
-        val titleDetails = loadTitleDetails(remainingIds)
-        WatchingResult(
-            titles = titles.titles,
-            history = historyItems,
-            titleDetails = titleDetails,
-            watchLaterRail = watchLaterAll.filter { it.id !in watchingIds },
-            error = titles.error ?: firstErrorMessage(history),
-        )
+    private suspend fun applyWatchingTitles(titles: WatchingResult) {
+        updateState { current ->
+            current.copy(
+                loading = false,
+                watching = titles.titles.preserveEmpty(current.watching, titles.error),
+                titleDetails = current.titleDetails + titles.titleDetails,
+                error = titles.error,
+            )
+        }
+    }
+
+    /**
+     * Тайтлы «в процессе» плюс то, что о них УЖЕ лежит в локальном кэше деталей (preview или полный
+     * ответ — для карточки хватает и preview: год/жанры/рейтинг). Локальное чтение — миллисекунды,
+     * поэтому карточки с первого же кадра выходят с метаданными, а не «голыми» до ответа сети.
+     */
+    private suspend fun loadWatchingTitlesPhase(): WatchingResult {
+        val titles = loadWatchingTitles()
+        val cached = readCachedTitleDetails(titles.titles.map(WatchingItem::itemId))
+        return titles.copy(titleDetails = cached)
+    }
+
+    /**
+     * Второй такт «В процессе» — три независимые фоновые ветки поверх уже показанного списка:
+     * история (сегмент «История»), рейл «Буду смотреть» и сетевая догрузка деталей тех карточек,
+     * которых не оказалось в кэше. Каждая ветка красит своё в state сама, как только ответит.
+     * Возвращает ошибку истории (единственная из трёх, о которой стоит сообщить): детали и рейл —
+     * декоративные, их сбой карточку не ломает (см. doc [loadTitleDetails]).
+     */
+    private suspend fun loadWatchingTailPhase(
+        titles: List<WatchingItem>,
+        forceRefreshHistory: Boolean = false,
+    ): String? = coroutineScope {
+        val watchingIds = titles.mapTo(mutableSetOf(), WatchingItem::itemId)
+        val detailsJob = launch { loadTitleDetails(titles.map(WatchingItem::itemId)) }
+        launch {
+            val rail = loadWatchLaterCollectionItems().filter { it.id !in watchingIds }
+            updateState { it.copy(watchLaterRail = rail) }
+        }
+        val historyResult = watching.getHistory(forceRefresh = forceRefreshHistory)
+        val history = historyResult.getOrNull()
+        if (history != null) {
+            val historyIds = history.map(WatchHistory::itemId)
+            val cached = readCachedTitleDetails(historyIds)
+            updateState { current ->
+                current.copy(history = history, titleDetails = current.titleDetails + cached)
+            }
+            // Детали истории — после деталей «В процессе»: тот сегмент открыт по умолчанию.
+            detailsJob.join()
+            loadTitleDetails(historyIds)
+        }
+        firstErrorMessage(historyResult)
     }
 
     /**
@@ -186,19 +215,38 @@ class LibraryScreenModel(
      * Любой сбой на этом пути — просто пустой рейл, а не баннер: раздел декоративный.
      */
     private suspend fun loadWatchLaterCollectionItems(): List<Item> {
-        val collectionId = findCollectionIdByTitle(WATCH_LATER_COLLECTION_TITLE) ?: return emptyList()
+        val collectionId = resolveWatchLaterCollectionId() ?: return emptyList()
         return loadAllCollectionItems(collectionId)
     }
 
-    private suspend fun findCollectionIdByTitle(title: String): Int? {
+    /**
+     * Id подборки «Буду смотреть» ищется по имени обходом страниц публичных подборок — дорого,
+     * поэтому результат (в т.ч. «такой подборки нет») запоминается на жизнь модели: каждое
+     * обновление раздела раньше повторяло весь обход заново. Сетевой сбой посреди обхода НЕ
+     * запоминаем — следующая попытка честно поищет ещё раз. Потолок страниц — предохранитель от
+     * бесконечного листания каталога подборок ради одного рейла.
+     */
+    private suspend fun resolveWatchLaterCollectionId(): Int? {
+        watchLaterLookup?.let { return it.collectionId }
+        var found: Int? = null
+        var networkFailed = false
+        var morePages = true
         var page = FIRST_PAGE
-        while (true) {
+        while (found == null && morePages && !networkFailed) {
             val collections = catalog.getCollections(page).getOrNull()
-            if (collections.isNullOrEmpty()) return null
-            collections.firstOrNull { it.title == title }?.let { return it.id }
+            networkFailed = collections == null
+            found = collections?.firstOrNull { it.title == WATCH_LATER_COLLECTION_TITLE }?.id
             page++
+            morePages = !collections.isNullOrEmpty() && page <= WATCH_LATER_MAX_COLLECTION_PAGES
         }
+        if (!networkFailed) watchLaterLookup = WatchLaterLookup(found)
+        return found
     }
+
+    private class WatchLaterLookup(val collectionId: Int?)
+
+    /** Результат поиска подборки «Буду смотреть» — см. [resolveWatchLaterCollectionId]. */
+    private var watchLaterLookup: WatchLaterLookup? = null
 
     private suspend fun loadAllCollectionItems(collectionId: Int): List<Item> {
         val items = mutableListOf<Item>()
@@ -226,27 +274,43 @@ class LibraryScreenModel(
 
     private data class WatchingResult(
         val titles: List<WatchingItem>,
-        val history: List<WatchHistory> = emptyList(),
         val titleDetails: Map<Int, Item> = emptyMap(),
-        val watchLaterRail: List<Item> = emptyList(),
         val error: String?,
     )
+
+    /** Что о тайтлах уже знает локальный кэш деталей — без сети, параллельно, только промахи пропускаем. */
+    private suspend fun readCachedTitleDetails(itemIds: List<Int>): Map<Int, Item> = coroutineScope {
+        itemIds.distinct()
+            .filter { it !in state.titleDetails }
+            .map { itemId -> async { catalog.getCachedItemDetails(itemId) } }
+            .awaitAll()
+            .filterNotNull()
+            .associateBy(Item::id)
+    }
 
     /**
      * Эндпоинты `watching` не отдают год, жанры и рейтинги. Детали подгружаются ограниченно
      * параллельно: это сохраняет универсальную карточку, но не устраивает залп из десятков
-     * одновременных запросов к серверу.
+     * одновременных запросов к серверу. Каждый ответ красится в state сразу, не дожидаясь
+     * соседей — карточки дозаполняются по одной, а не все разом в конце. Тайтлы, чьи детали уже
+     * есть в state (из кэша или прошлого прохода), сеть не трогают.
      *
      * Сбой по отдельному тайтлу (например, он удалён/битый на сервере) не считаем ошибкой
      * экрана: карточка просто останется без обогащения (жанр/год/рейтинг), а не покажет
      * баннер [showServerRetryNotice] — сам сбой уже ушёл в телеметрию через `safeRequest`
      * внутри `catalog.getItemDetails`.
      */
-    private suspend fun loadTitleDetails(itemIds: List<Int>): Map<Int, Item> = coroutineScope {
+    private suspend fun loadTitleDetails(itemIds: List<Int>) = coroutineScope {
         val limiter = Semaphore(PerformanceTuning.ForegroundDetailsConcurrency.LIBRARY_TITLE_DETAILS)
-        itemIds.distinct().map { itemId ->
-            async { limiter.withPermit { catalog.getItemDetails(itemId).getOrNull() } }
-        }.awaitAll().filterNotNull().associateBy(Item::id)
+        itemIds.distinct()
+            .filter { it !in state.titleDetails }
+            .map { itemId ->
+                launch {
+                    val item = limiter.withPermit { catalog.getItemDetails(itemId).getOrNull() } ?: return@launch
+                    updateState { it.copy(titleDetails = it.titleDetails + (itemId to item)) }
+                }
+            }
+            .joinAll()
     }
 
     private fun refreshBookmarks() {
@@ -311,8 +375,8 @@ class LibraryScreenModel(
     /**
      * «В процессе» и «Подборки» — независимые источники: сбой подборок не должен подвешивать
      * баннер над «В процессе» (и наоборот), поэтому в общий [error] попадает только ошибка
-     * [loadWatchingSection] — сбой подборок просто помечает раздел «грязным», следующий заход
-     * в «Подборки» тихо перечитает список (см. [refreshIfDirty]).
+     * [loadWatchingTitlesPhase]/истории — сбой подборок просто помечает раздел «грязным», следующий
+     * заход в «Подборки» тихо перечитает список (см. [refreshIfDirty]).
      */
     override fun onFetchData() {
         screenModelScope {
@@ -327,29 +391,22 @@ class LibraryScreenModel(
                 updateState { it.copy(loading = false, watching = seed.watching, lists = seed.folders) }
             }
             coroutineScope {
-                val watchingDeferred = async { loadWatchingSection() }
                 val listsDeferred = async { user.getBookmarkFolders() }
-                val watchingResult = watchingDeferred.await()
+                val titles = loadWatchingTitlesPhase()
+                applyWatchingTitles(titles)
                 val lists = listsDeferred.await()
-                val error = watchingResult.error
-                updateState { current ->
-                    current.copy(
-                        loading = false,
-                        watching = watchingResult.titles.preserveEmpty(current.watching, error),
-                        history = watchingResult.history.preserveEmpty(current.history, error),
-                        titleDetails = current.titleDetails + watchingResult.titleDetails,
-                        watchLaterRail = watchingResult.watchLaterRail
-                            .preserveEmpty(current.watchLaterRail, error),
-                        lists = lists.getOrNull() ?: current.lists,
-                        error = error,
-                    )
-                }
+                updateState { current -> current.copy(lists = lists.getOrNull() ?: current.lists) }
                 if (lists is RequestResult.Error) DataInvalidation.markDirty(DataDomain.BOOKMARKS)
-                if (error != null) showServerRetryNotice()
                 // Кэш обновляем только когда ОБА независимых источника (секция «В процессе» и
                 // список папок) реально ответили — частичный/ошибочный проход не должен затирать
                 // последний хороший снимок, на который рассчитывает следующий холодный старт/прогрев.
-                if (error == null && lists !is RequestResult.Error) snapshotCache.put(state.asSnapshot())
+                if (titles.error == null && lists !is RequestResult.Error) snapshotCache.put(state.asSnapshot())
+                val historyError = loadWatchingTailPhase(titles.titles)
+                val error = titles.error ?: historyError
+                if (error != null) {
+                    updateState { it.copy(error = error) }
+                    showServerRetryNotice()
+                }
             }
         }
     }
@@ -604,6 +661,9 @@ class LibraryScreenModel(
 
         /** Название подборки, чей свимлейн показывается внизу «В процессе». */
         const val WATCH_LATER_COLLECTION_TITLE = "Буду смотреть"
+
+        /** Потолок страниц публичных подборок при поиске [WATCH_LATER_COLLECTION_TITLE] по имени. */
+        const val WATCH_LATER_MAX_COLLECTION_PAGES = 10
     }
 }
 

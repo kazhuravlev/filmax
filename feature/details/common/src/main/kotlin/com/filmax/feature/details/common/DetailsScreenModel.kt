@@ -98,6 +98,10 @@ class DetailsScreenModel(
      * не блокируя [DetailsState.loading].
      */
     override fun onFetchData() {
+        // Подборки не зависят от самого тайтла (id известен из маршрута) — стартуют параллельно
+        // с ним, а не после: раньше кнопка «В подборках» ждала сначала тайтл, потом список папок,
+        // потом постраничный скан каждой папки, и на пульте это выглядело зависшим экраном.
+        screenModelScope { _ -> reloadBookmarkFolders() }
         screenModelScope { _ ->
             // Список, из которого открыли экран, уже положил почти всю карточку в кэш. Показываем
             // её сразу; getItemDetails ниже отличает preview от полного ответа и в фоне дочитает
@@ -123,9 +127,6 @@ class DetailsScreenModel(
                     loadDirectorFilms(item)
                     loadSimilar()
                     loadContinuation(item)
-                    // Подборки грузим только теперь: скан принадлежности (см. scanMemberships)
-                    // читает state.item, который до этого момента ещё null.
-                    reloadBookmarkFolders()
                 }
 
                 is RequestResult.Error -> {
@@ -161,7 +162,13 @@ class DetailsScreenModel(
      */
     private fun loadContinuation(item: Item) {
         continuationJob = screenModelScope.async {
-            updateState { it.copy(continuationLoading = true) }
+            // Мгновенная оценка по самому тайтлу: `items/{id}` уже несёт статус/позицию каждой
+            // дорожки (`watching.time/status`), и calculateContinuation умеет считать по ним без
+            // истории. Кнопка сразу показывает «Продолжить · SxEy», а не дефолт «первая серия» на
+            // время ответа /history; тот лишь уточнит позицию, когда придёт (обычно из кэша
+            // репозитория — мгновенно, см. WatchingRepository.getHistory).
+            val fromItem = runCatching { calculateContinuation(item) }.getOrNull()
+            updateState { it.copy(continuation = fromItem, continuationLoading = true) }
             // runCatching, а не голый вызов: этот Deferred читает awaitContinuation() через
             // .await(), и необработанное исключение всплыло бы там, в обработчике клика Play, а
             // не осталось изолированным сбоем одной корутины, как у соседних screenModelScope{}.
@@ -350,22 +357,30 @@ class DetailsScreenModel(
     private suspend fun folderContainsItem(folderId: Int, itemId: Int): Boolean =
         user.isItemInBookmark(itemId, folderId, FOLDER_SCAN_MAX_PAGES)
 
-    private suspend fun reloadBookmarkFolders() {
-        val folders = user.getBookmarkFolders().getOrNull() ?: return
+    /** Список папок и принадлежность тайтла к ним — два независимых запроса, параллельно. */
+    private suspend fun reloadBookmarkFolders() = coroutineScope {
+        val membershipsDeferred = async { user.getItemBookmarkFolderIds(route.itemId).getOrNull() }
+        val folders = user.getBookmarkFolders().getOrNull() ?: return@coroutineScope
         updateState { it.copy(bookmarkFolders = folders) }
-        scanMemberships(folders)
+        scanMemberships(folders, membershipsDeferred.await())
     }
 
     /**
-     * Принадлежность «Буду смотреть» уже известна реактивно ([isInFavoritesFolder]) — сканируем
-     * только остальные подборки, по одной странице на каждую параллельно (см. [folderContainsItem]).
+     * Принадлежность «Буду смотреть» уже известна реактивно ([isInFavoritesFolder]) — учитываем
+     * только остальные подборки. [serverMemberships] — ответ `bookmarks/get-item-folders` одним
+     * запросом; постраничный обход каждой папки ([folderContainsItem]) остаётся лишь запасным
+     * путём на случай, если тот эндпоинт ответил ошибкой.
      */
-    private suspend fun scanMemberships(folders: List<BookmarkFolder>) {
-        val item = state.item ?: return
+    private suspend fun scanMemberships(folders: List<BookmarkFolder>, serverMemberships: Set<Int>?) {
         val toScan = folders.filter { it.title != FAVORITES_FOLDER_TITLE }
-        scannedMemberships = coroutineScope {
-            toScan.map { folder -> async { folder.id to folderContainsItem(folder.id, item.id) } }.awaitAll()
-        }.filter { it.second }.map { it.first }.toSet()
+        scannedMemberships = if (serverMemberships != null) {
+            toScan.mapTo(mutableSetOf()) { it.id }.intersect(serverMemberships)
+        } else {
+            coroutineScope {
+                toScan.map { folder -> async { folder.id to folderContainsItem(folder.id, route.itemId) } }
+                    .awaitAll()
+            }.filter { it.second }.map { it.first }.toSet()
+        }
         updateFolderMemberships()
     }
 

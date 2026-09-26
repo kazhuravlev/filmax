@@ -14,6 +14,8 @@ import com.filmax.data.catalog.mapper.toDomain
 import com.filmax.data.user.remote.UpdateDeviceSettingsParams
 import com.filmax.data.user.remote.UserApi
 
+// Реализация всего контракта UserRepository — столько же методов, дробить незачем.
+@Suppress("TooManyFunctions")
 internal class UserRepositoryImpl(
     private val api: UserApi,
 ) : UserRepository {
@@ -79,6 +81,11 @@ internal class UserRepositoryImpl(
 
     override suspend fun getBookmarkItems(folderId: Int, page: Int): RequestResult<ItemPage> =
         safeRequest { api.getBookmarkItems(folderId, page).toDomain() }
+
+    override suspend fun getItemBookmarkFolderIds(itemId: Int): RequestResult<Set<Int>> = safeRequest {
+        val folders = requireNotNull(api.getItemFolders(itemId).folders) { "get-item-folders: no `folders` field" }
+        folders.mapTo(mutableSetOf()) { it.id }
+    }
 
     override suspend fun createBookmarkFolder(title: String): RequestResult<BookmarkFolder> = safeRequest {
         val result = api.createBookmark(title)

@@ -13,12 +13,17 @@ private const val BOOKMARK_SCAN_MAX_PAGES = 10
  * перед [UserRepository.addToBookmark], чтобы не плодить дубликаты, когда локальное состояние
  * (StateFlow, `scannedMemberships`) отстало от реальности: переустановка, другое устройство, ручной
  * вызов API в обход приложения.
+ *
+ * Сначала — один запрос [UserRepository.getItemBookmarkFolderIds] (сервер сам знает папки тайтла);
+ * постраничный обход папки остаётся только запасным путём на случай, если этот эндпоинт ответил
+ * ошибкой — так экран деталей не ждёт до [maxPages] запросов на КАЖДУЮ папку.
  */
 suspend fun UserRepository.isItemInBookmark(
     itemId: Int,
     folderId: Int,
     maxPages: Int = BOOKMARK_SCAN_MAX_PAGES,
 ): Boolean {
+    getItemBookmarkFolderIds(itemId).getOrNull()?.let { return folderId in it }
     var page = 1
     var found = false
     var hasMore = true

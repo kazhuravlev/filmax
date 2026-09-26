@@ -61,6 +61,10 @@ class HomeScreenModel(
             // экране уже что-то есть, используем это как затравку: экран (см. TvHomeScreen.tvRails)
             // держит эти карточки на месте, пока грузится свежий ответ, вместо того чтобы мигать
             // скелетоном поверх уже показанного контента.
+            // Повторный проход (ряды уже есть) — явное обновление по действию пользователя: историю
+            // для «Продолжить просмотр» читаем мимо кэша репозитория, иначе он отдал бы ту же
+            // картину, что и минуту назад (см. WatchingRepository.getHistory).
+            val isRefresh = state.rows.isNotEmpty()
             val seed = if (state.hero == null && state.rows.isEmpty()) snapshotCache.get() else state.asSnapshot()
             updateState { it.copy(loading = false, heroLoading = true, hero = seed?.hero, rows = initialRows(seed)) }
 
@@ -72,7 +76,7 @@ class HomeScreenModel(
                 result
             }
             val continueResult = async {
-                val historyDeferred = async { watching.getHistory() }
+                val historyDeferred = async { watching.getHistory(forceRefresh = isRefresh) }
                 // Эталонный алгоритм kino.watch (веб-клиент, getAwaitItems): «Продолжить просмотр»
                 // строится ПЕРЕСЕЧЕНИЕМ `/history` (точная позиция) с `/watching/{type}` (родной
                 // список сервера «в процессе»). Наша локальная эвристика `isActualContinuation`

@@ -7,7 +7,13 @@ import com.filmax.core.domain.watching.model.WatchingItem
 
 interface WatchingRepository {
 
-    suspend fun getHistory(type: String = "all"): RequestResult<List<WatchHistory>>
+    /**
+     * История просмотров (по тайтлам, свежие первыми). Реализация кэширует последний успешный
+     * ответ в памяти и сама сбрасывает его при локальных мутациях прогресса (marktime, отметка
+     * «просмотрено», очистка) — обычному читателю [forceRefresh] не нужен. `true` — явное
+     * обновление по действию пользователя (повторный выбор вкладки «Я смотрю»): кэш минуем.
+     */
+    suspend fun getHistory(type: String = "all", forceRefresh: Boolean = false): RequestResult<List<WatchHistory>>
 
     /**
      * Тайтлы «в процессе» одним запросом на тип (`watching/{type}`) — без обхода `/history` по

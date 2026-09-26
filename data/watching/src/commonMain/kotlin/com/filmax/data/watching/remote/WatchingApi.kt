@@ -31,10 +31,15 @@ internal class WatchingApi(private val client: HttpClient) {
     /**
      * История с прогрессом: `time` по каждому просмотренному видео + сам тайтл и `media`
      * (серия, её кадр и длительность). Отсортирована сервером по свежести.
+     *
+     * [perPage] — размер страницы СЫРЫХ записей (по сериям): тот же параметр `perpage`, которым
+     * пользуется эталонный веб-клиент kino.watch (`/history?perpage=N&page=1`). Крупная страница
+     * позволяет набрать нужное число разных тайтлов одним запросом вместо десятка последовательных.
      */
-    suspend fun getHistoryList(page: Int = 1): HistoryListResponseDto =
+    suspend fun getHistoryList(page: Int = 1, perPage: Int? = null): HistoryListResponseDto =
         client.get("api/v1/history") {
             parameter("page", page)
+            perPage?.let { parameter("perpage", it) }
         }.body()
 
     suspend fun saveProgress(id: Int, video: Int, time: Int) {

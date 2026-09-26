@@ -459,7 +459,7 @@ private fun SettingsGrid(ui: TvPlayerUiState, menu: PlayerActions, modifier: Mod
         horizontalArrangement = Arrangement.spacedBy(SettingsGridGap),
         verticalAlignment = Alignment.Top,
     ) {
-        menu.items.chunked(SettingsGridRows).forEach { column ->
+        menu.items.chunked(SETTINGS_GRID_ROWS).forEach { column ->
             Column(verticalArrangement = Arrangement.spacedBy(SettingsGridGap)) {
                 column.forEach { action ->
                     val index = menu.items.indexOf(action)
@@ -626,7 +626,6 @@ private val PauseFocusInner = 56.dp
 private val EpisodeNavButtonSize = 34.dp
 private val EpisodeNavFocusOuter = 44.dp
 private val EpisodeNavFocusInner = 40.dp
-private const val SettingsGridRows = 2
 private val SettingsGridGap = 8.dp
 private val SettingsButtonWidth = 136.dp
 private val SettingsButtonHeight = 58.dp

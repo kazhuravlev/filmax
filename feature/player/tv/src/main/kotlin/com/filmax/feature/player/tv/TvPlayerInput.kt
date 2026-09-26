@@ -245,26 +245,33 @@ internal class TvPlayerUiState(val player: Player) {
         return true
     }
 
+    /**
+     * Сетка настроек — по геометрии (см. [SettingsGridNavigation]): ◄/► ходят между столбцами,
+     * ▲/▼ — внутри столбца. Слева от первого столбца — Play (транспорт); выше верхней строки —
+     * стрелки серий под Play, если они есть, иначе сам Play.
+     */
     private fun onSettingsKey(key: Key, menu: PlayerActions): Boolean {
         when (key) {
-            Key.DirectionLeft -> moveInSettingsGrid(menu, -SETTINGS_GRID_ROWS, returnToTransport = true)
-            Key.DirectionRight -> moveInSettingsGrid(menu, SETTINGS_GRID_ROWS)
-            Key.DirectionUp -> if (settingsCursor % SETTINGS_GRID_ROWS == 0) {
-                // Если под Play есть стрелки серий — они между Play и настройками, а не Play напрямую.
-                mode = if (menu.hasPreviousEpisode || menu.hasNextEpisode) {
-                    PlayerMode.EpisodeNav
-                } else {
-                    PlayerMode.Transport
-                }
-            } else {
-                moveInSettingsGrid(menu, -1)
+            Key.DirectionLeft -> {
+                val next = menu.neighbourColumn(settingsCursor, -1)
+                if (next == null) mode = PlayerMode.Transport else settingsCursor = next
             }
+            Key.DirectionRight -> menu.neighbourColumn(settingsCursor, +1)?.let { settingsCursor = it }
+            Key.DirectionUp -> {
+                val above = menu.sameColumnNeighbour(settingsCursor, -1)
+                if (above != null) settingsCursor = above else leaveSettingsUp(menu)
+            }
+            Key.DirectionDown -> menu.sameColumnNeighbour(settingsCursor, +1)?.let { settingsCursor = it }
             Key.DirectionCenter, Key.Enter -> menu.items.getOrNull(settingsCursor)?.let { activate(it, menu) }
-            Key.DirectionDown -> if (settingsCursor % SETTINGS_GRID_ROWS == 0) moveInSettingsGrid(menu, +1)
             else -> return false
         }
         touch()
         return true
+    }
+
+    /** Выход из сетки вверх: если под Play есть стрелки серий — они между Play и настройками. */
+    private fun leaveSettingsUp(menu: PlayerActions) {
+        if (menu.hasPreviousEpisode || menu.hasNextEpisode) openEpisodeNav(menu) else mode = PlayerMode.Transport
     }
 
     private fun onTransportKey(key: Key, menu: PlayerActions): Boolean {
@@ -322,14 +329,9 @@ internal class TvPlayerUiState(val player: Player) {
     private fun openSettings(menu: PlayerActions) {
         if (menu.items.isEmpty()) return
         mode = PlayerMode.Settings
-        settingsCursor = menu.firstEnabledSettingsIndex()
+        settingsCursor = SettingsGridNavigation.firstEnabled(menu.items.size) { menu.isEnabled(menu.items[it]) }
         seekLabel = null
         touch()
-    }
-
-    private fun moveInSettingsGrid(menu: PlayerActions, delta: Int, returnToTransport: Boolean = false) {
-        val next = menu.moveSettingsCursor(settingsCursor, delta)
-        if (next == settingsCursor && returnToTransport) mode = PlayerMode.Transport else settingsCursor = next
     }
 
     fun activate(action: SettingsAction, menu: PlayerActions) {
@@ -350,17 +352,13 @@ internal class TvPlayerUiState(val player: Player) {
         touch()
     }
 
-    private fun PlayerActions.firstEnabledSettingsIndex(): Int =
-        items.indexOfFirst { isEnabled(it) }.coerceAtLeast(0)
+    private fun PlayerActions.neighbourColumn(current: Int, delta: Int): Int? =
+        SettingsGridNavigation.neighbourColumn(current, delta, items.size, SETTINGS_GRID_ROWS) { isEnabled(items[it]) }
 
-    private fun PlayerActions.moveSettingsCursor(current: Int, delta: Int): Int {
-        var index = current + delta
-        while (index in items.indices) {
-            if (isEnabled(items[index])) return index
-            index += delta
+    private fun PlayerActions.sameColumnNeighbour(current: Int, delta: Int): Int? =
+        SettingsGridNavigation.sameColumnNeighbour(current, delta, items.size, SETTINGS_GRID_ROWS) {
+            isEnabled(items[it])
         }
-        return current
-    }
 
     /**
      * «Назад» при открытом интерфейсе всегда сначала скрывает его. Когда интерфейс уже скрыт,
@@ -452,5 +450,5 @@ internal const val AUTO_NEXT_WINDOW_MS = 20_000L
 /** Отсчёт до автостарта следующей серии с момента появления плашки. */
 internal const val AUTO_NEXT_COUNTDOWN_SEC = 5
 
-/** В каждом столбце сетки ровно две плитки. */
-private const val SETTINGS_GRID_ROWS = 2
+/** В каждом столбце сетки ровно две плитки — то же число, по которому `SettingsGrid` режет `items`. */
+internal const val SETTINGS_GRID_ROWS = 2

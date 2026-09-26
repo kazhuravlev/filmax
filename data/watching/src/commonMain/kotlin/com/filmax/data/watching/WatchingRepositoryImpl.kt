@@ -12,6 +12,16 @@ import com.filmax.data.watching.remote.WatchingApi
 import com.filmax.data.watching.remote.dto.HistoryEntryDto
 import com.filmax.data.watching.remote.dto.PaginationDto
 import com.filmax.data.watching.remote.dto.WatchingItemDto
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 /** `watching/{type}`: единственный трек «досмотрено» — статус 1, как и в `items/{id}`. */
 private const val WATCH_STATUS_IN_PROGRESS = 0
@@ -55,9 +65,31 @@ private fun WatchingItemDto.toDomain(isSeries: Boolean): WatchingItem {
     )
 }
 
+// Реализация всего контракта WatchingRepository плюс кэш истории при нём — дробить незачем.
+@Suppress("TooManyFunctions")
 internal class WatchingRepositoryImpl(
     private val api: WatchingApi,
 ) : WatchingRepository {
+
+    /**
+     * Последний успешный ответ [getHistory] и момент его получения (монотонные часы, как и в
+     * `CatalogRepositoryImpl.recentForceRefresh`). Историю читают ТРИ экрана подряд по одному и
+     * тому же пути пользователя: главная («Продолжить просмотр») → «Я смотрю» → детали тайтла
+     * (позиция для кнопки «Продолжить») — и каждый раньше ходил за ней в сеть заново. Между ними
+     * история не меняется (единственный её мутатор в процессе — сам плеер и очистка, см.
+     * [invalidateHistory]), поэтому повторные чтения в течение [HISTORY_TTL] отдаются из памяти
+     * мгновенно. [historyMutex] защищает пару кэш/in-flight, [inFlightHistory] схлопывает
+     * одновременные запросы (главная и прогрев/библиотека стартуют почти разом) в один поход в сеть.
+     */
+    private var cachedHistory: CachedHistory? = null
+    private var inFlightHistory: Deferred<RequestResult<List<WatchHistory>>>? = null
+    private val historyMutex = Mutex()
+
+    /** Свой скоуп для общего in-flight запроса: он не должен отменяться вместе с тем экраном,
+     * который его запустил первым, пока второй читатель ещё ждёт результат. */
+    private val historyScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private class CachedHistory(val history: List<WatchHistory>, val fetchedAt: TimeMark)
 
     /**
      * История с ТОЧНОЙ позицией — из `api/v1/history`, а не из `watching/{type}`.
@@ -80,21 +112,51 @@ internal class WatchingRepositoryImpl(
      * поэтому первая запись тайтла и есть последняя серия. Без неё ряд получал дублирующиеся
      * ключи и Compose падал с «Key … was already used».
      */
-    override suspend fun getHistory(type: String): RequestResult<List<WatchHistory>> = safeRequest {
-        val distinct = mutableMapOf<Int, WatchHistory>()
-        var page = 1
-        while (distinct.size < HISTORY_TARGET_TITLES && page <= HISTORY_MAX_PAGES) {
-            val response = api.getHistoryList(page)
-            if (response.history.isEmpty()) break
-            for (entry in response.history) {
-                val history = entry.toDomain()
-                if (history.itemId !in distinct) distinct[history.itemId] = history
+    override suspend fun getHistory(type: String, forceRefresh: Boolean): RequestResult<List<WatchHistory>> {
+        val job = historyMutex.withLock {
+            if (!forceRefresh) {
+                cachedHistory
+                    ?.takeIf { it.fetchedAt.elapsedNow() < HISTORY_TTL }
+                    ?.let { return RequestResult.Success(it.history) }
             }
-            val pagination = response.pagination ?: break
-            if (!pagination.hasNextPage()) break
-            page++
+            inFlightHistory?.takeIf { it.isActive } ?: historyScope.async { fetchHistory() }.also { job ->
+                inFlightHistory = job
+            }
         }
-        distinct.values.toList()
+        return job.await()
+    }
+
+    private suspend fun fetchHistory(): RequestResult<List<WatchHistory>> {
+        val result = safeRequest {
+            val distinct = mutableMapOf<Int, WatchHistory>()
+            var page = 1
+            while (distinct.size < HISTORY_TARGET_TITLES && page <= HISTORY_MAX_PAGES) {
+                val response = api.getHistoryList(page, HISTORY_PER_PAGE)
+                if (response.history.isEmpty()) break
+                for (entry in response.history) {
+                    val history = entry.toDomain()
+                    if (history.itemId !in distinct) distinct[history.itemId] = history
+                }
+                val pagination = response.pagination ?: break
+                if (!pagination.hasNextPage()) break
+                page++
+            }
+            distinct.values.toList()
+        }
+        if (result is RequestResult.Success) {
+            historyMutex.withLock {
+                cachedHistory = CachedHistory(result.data, TimeSource.Monotonic.markNow())
+            }
+        }
+        return result
+    }
+
+    /**
+     * Локальная мутация прогресса (marktime/toggle/очистка) — кэш истории протух: следующий
+     * [getHistory] обязан сходить в сеть, иначе «Продолжить» показал бы позицию до просмотра.
+     */
+    private suspend fun invalidateHistory() {
+        historyMutex.withLock { cachedHistory = null }
     }
 
     /** `total` у kino.watch — число страниц, а не число элементов (как и в остальных списках). */
@@ -111,25 +173,33 @@ internal class WatchingRepositoryImpl(
             api.getWatchingList(type, subscribed).items.map { it.toDomain(isSeries) }
         }
 
-    override suspend fun saveProgress(itemId: Int, videoId: Int, timeSeconds: Int): RequestResult<Unit> =
-        safeRequest { api.saveProgress(itemId, videoId, timeSeconds) }
+    override suspend fun saveProgress(itemId: Int, videoId: Int, timeSeconds: Int): RequestResult<Unit> {
+        invalidateHistory()
+        return safeRequest { api.saveProgress(itemId, videoId, timeSeconds) }
+    }
 
     override suspend fun saveProgressSerial(
         itemId: Int,
         season: Int,
         videoId: Int,
         timeSeconds: Int,
-    ): RequestResult<Unit> =
-        safeRequest { api.saveProgressSerial(itemId, season, videoId, timeSeconds) }
+    ): RequestResult<Unit> {
+        invalidateHistory()
+        return safeRequest { api.saveProgressSerial(itemId, season, videoId, timeSeconds) }
+    }
 
-    override suspend fun toggleWatched(itemId: Int): RequestResult<Boolean> =
-        safeRequest { api.toggleWatched(itemId).watched == 1 }
+    override suspend fun toggleWatched(itemId: Int): RequestResult<Boolean> {
+        invalidateHistory()
+        return safeRequest { api.toggleWatched(itemId).watched == 1 }
+    }
 
     override suspend fun toggleWatchlist(itemId: Int): RequestResult<Boolean> =
         safeRequest { api.toggleWatchlist(itemId)["watching"] == 1 }
 
-    override suspend fun clearHistory(itemId: Int): RequestResult<Unit> =
-        safeRequest { api.clearItemHistory(itemId) }
+    override suspend fun clearHistory(itemId: Int): RequestResult<Unit> {
+        invalidateHistory()
+        return safeRequest { api.clearItemHistory(itemId) }
+    }
 
     override suspend fun getNotifications(): RequestResult<List<Notification>> = safeRequest {
         api.getNotifications().notifications?.map { dto ->
@@ -157,7 +227,18 @@ internal class WatchingRepositoryImpl(
         /** Сколько РАЗНЫХ тайтлов достаточно набрать в историю — столько же ждали от одной страницы. */
         const val HISTORY_TARGET_TITLES = 20
 
+        /**
+         * Размер страницы сырых записей (`perpage`). Раньше страница была серверной по умолчанию
+         * (20 записей), и марафон по одному сериалу заставлял листать до [HISTORY_MAX_PAGES] страниц
+         * ПОСЛЕДОВАТЕЛЬНО — «Я смотрю» и детали ждали этот хвост секундами. Сотня записей за раз
+         * почти всегда закрывает [HISTORY_TARGET_TITLES] тайтлов одним запросом.
+         */
+        const val HISTORY_PER_PAGE = 100
+
         /** Потолок страниц сырых записей серий — предохранитель от бесконечной пагинации марафона. */
-        const val HISTORY_MAX_PAGES = 15
+        const val HISTORY_MAX_PAGES = 3
+
+        /** Сколько живёт кэш истории в памяти без локальных мутаций — см. [cachedHistory]. */
+        val HISTORY_TTL = 5.minutes
     }
 }

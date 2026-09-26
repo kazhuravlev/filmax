@@ -5,6 +5,7 @@ import com.filmax.data.user.remote.dto.AccountInfoDto
 import com.filmax.data.user.remote.dto.BookmarksDto
 import com.filmax.data.user.remote.dto.DeviceSettingsDto
 import com.filmax.data.user.remote.dto.FolderStatusDto
+import com.filmax.data.user.remote.dto.ItemFoldersDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.forms.submitForm
@@ -12,6 +13,8 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.http.Parameters
 
+// Один метод на эндпоинт `user`/`device`/`bookmarks` — ровно столько, сколько их у kino.watch.
+@Suppress("TooManyFunctions")
 internal class UserApi(private val client: HttpClient) {
 
     suspend fun getAccountInfo(): AccountInfoDto =
@@ -51,6 +54,12 @@ internal class UserApi(private val client: HttpClient) {
     suspend fun getBookmarkItems(id: Int, page: Int): ItemsResponseDto =
         client.get("api/v1/bookmarks/$id") {
             parameter("page", page)
+        }.body()
+
+    /** Папки, в которых лежит тайтл — `bookmarks/get-item-folders?item=` (как в веб-клиенте kino.watch). */
+    suspend fun getItemFolders(itemId: Int): ItemFoldersDto =
+        client.get("api/v1/bookmarks/get-item-folders") {
+            parameter("item", itemId)
         }.body()
 
     suspend fun createBookmark(title: String): FolderStatusDto =
