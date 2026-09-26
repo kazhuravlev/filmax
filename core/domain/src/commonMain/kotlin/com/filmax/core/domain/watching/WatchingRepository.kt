@@ -5,6 +5,9 @@ import com.filmax.core.domain.watching.model.Notification
 import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchingItem
 
+// Прогресс, история, списки «Я смотрю» и уведомления — один серверный контур kino.watch
+// (`watching/*`, `history`, `notifications`); дробить его на несколько репозиториев незачем.
+@Suppress("TooManyFunctions")
 interface WatchingRepository {
 
     /**
@@ -34,6 +37,13 @@ interface WatchingRepository {
 
     /** true — тайтл теперь отмечен «Я смотрю», false — отметка снята (см. `watching/toggle`). */
     suspend fun toggleWatched(itemId: Int): RequestResult<Boolean>
+
+    /**
+     * Отметить конкретное видео досмотренным на сервере (`watching/toggle?status=1`). Идемпотентно.
+     * [season] — 0 у фильма. Позицию в `/history` сервер не трогает — её продолжает игнорировать
+     * `calculateContinuation`, ориентируясь на `watching.status` дорожки.
+     */
+    suspend fun markWatched(itemId: Int, season: Int, videoId: Int): RequestResult<Unit>
 
     suspend fun toggleWatchlist(itemId: Int): RequestResult<Boolean>
 

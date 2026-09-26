@@ -245,7 +245,15 @@ data class PlayerState(
 )
 
 sealed interface PlayerEvent {
-    data class SaveProgress(val positionMs: Long) : PlayerEvent
+    /**
+     * Зафиксировать позицию на сервере. [durationMs] — длительность потока (0, если ещё не
+     * известна): по ней модель понимает, что позиция уже в хвосте серии, и вместе с `marktime`
+     * ставит серверную отметку «досмотрено» (см. `PlayerScreenModel.saveProgress`).
+     */
+    data class SaveProgress(val positionMs: Long, val durationMs: Long = 0L) : PlayerEvent
+
+    /** Поток дошёл до конца — серия досмотрена независимо от расхождений позиции и длительности. */
+    data object MarkWatched : PlayerEvent
     data class SelectQuality(val label: String) : PlayerEvent
     data class SelectAudio(val label: String) : PlayerEvent
     data class SelectSubtitle(val label: String) : PlayerEvent

@@ -22,6 +22,7 @@ import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.domain.playback.PlaybackSettingsRepository
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.watching.WatchingRepository
+import com.filmax.core.domain.watching.model.isFinishedByPosition
 import com.filmax.core.presentation.BaseScreenModel
 import com.filmax.core.presentation.DataDomain
 import com.filmax.core.presentation.DataInvalidation
@@ -78,6 +79,9 @@ class PlayerScreenModel(
     /** Не долбим сеть повторно, если плашка автоперехода моргнёт ещё раз (см. [prefetchNextEpisode]). */
     private var nextEpisodePrefetched = false
 
+    /** Серверная отметка «досмотрено» уже ушла для текущей дорожки — повторять её незачем. */
+    private var watchedMarked = false
+
     init {
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -109,7 +113,8 @@ class PlayerScreenModel(
 
     override fun dispatch(event: PlayerEvent) {
         when (event) {
-            is PlayerEvent.SaveProgress -> saveProgress(event.positionMs)
+            is PlayerEvent.SaveProgress -> saveProgress(event.positionMs, event.durationMs)
+            PlayerEvent.MarkWatched -> markWatched()
             is PlayerEvent.SelectQuality -> selectQuality(event.label)
             is PlayerEvent.SelectAudio -> selectAudio(event.label)
             is PlayerEvent.SelectSubtitle -> selectSubtitle(event.label)
@@ -431,11 +436,18 @@ class PlayerScreenModel(
      * случайный OK на постере/серии с мгновенным выходом из плеера всё равно успевал бы записать
      * позицию на сервер и title навсегда оседал в «Продолжить», хотя его никто не смотрел.
      */
-    private fun saveProgress(positionMs: Long) {
+    private fun saveProgress(positionMs: Long, durationMs: Long = 0L) {
         val item = state.item
         val track = selectedTrack
         if (item == null || track == null) return
         val seconds = (positionMs / MILLIS_IN_SECOND).toInt()
+        // Позиция уже на титрах — серия досмотрена. Сам `marktime` статус на сервере не ставит,
+        // поэтому «Продолжить» без этой отметки предлагал бы досмотреть последние секунды и
+        // титры вместо перехода к следующей серии. Проверка стоит ДО троттлинга: выход с экрана
+        // сразу после автосохранения на паузе тоже обязан оставить отметку.
+        // Длительность у Media3 может быть TIME_UNSET (отрицательная), пока манифест не разобран.
+        val durationSeconds = if (durationMs > 0) (durationMs / MILLIS_IN_SECOND).toInt() else 0
+        if (isFinishedByPosition(seconds, durationSeconds)) markWatched()
         val sent = lastSentSeconds
         val tooEarly = if (sent == null) {
             seconds < MIN_SECONDS_BEFORE_FIRST_SAVE
@@ -452,6 +464,25 @@ class PlayerScreenModel(
                 watching.saveProgress(item.id, track.number, seconds)
             }
             // Позиция ушла на сервер — «Я смотрю» в библиотеке может отставать до возврата туда.
+            DataInvalidation.markDirty(DataDomain.WATCHING)
+        }
+    }
+
+    /**
+     * Серверная отметка «видео досмотрено» — то, что эталонный клиент kino.watch шлёт по
+     * завершении воспроизведения (`watching/toggle?…&status=1`), см. [PlayerEvent.MarkWatched].
+     * Один раз на дорожку: отметка идемпотентна, но повторные походы в сеть не нужны. Кэш
+     * деталей тайтла сбрасываем сразу — экран деталей строит быструю оценку continuation по
+     * `watching.status` дорожек из `items/{id}` и иначе показал бы старую серию.
+     */
+    private fun markWatched() {
+        val item = state.item
+        val track = selectedTrack
+        if (item == null || track == null || watchedMarked) return
+        watchedMarked = true
+        screenModelScope {
+            watching.markWatched(item.id, track.seasonNumber, track.number)
+            catalog.invalidateItemCache(item.id)
             DataInvalidation.markDirty(DataDomain.WATCHING)
         }
     }

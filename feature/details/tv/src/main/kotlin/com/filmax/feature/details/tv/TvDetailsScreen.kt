@@ -1484,7 +1484,8 @@ private fun metaParts(item: Item, series: SeriesData?): List<String> = buildList
 }
 
 /**
- * «Продолжить с 40:05 · S2E5» — сериал с недосмотренной серией; «Продолжить с 40:05» — фильм;
+ * «Продолжить с 40:05 · S2E5» — сериал с недосмотренной серией; «Продолжить · S2E6» — сериал,
+ * у которого предыдущая серия досмотрена (следующая играет с начала); «Продолжить с 40:05» — фильм;
  * «Смотреть · S1E1» — сериал без continuation (кнопка всё равно сыграет конкретную серию — первую
  * недосмотренную сезона или первую серию вовсе, см. `target` в [DetailsContent]); «Смотреть» —
  * фильм без сохранённой позиции.
@@ -1494,8 +1495,11 @@ private fun playLabel(
     resume: MediaTrack?,
     target: MediaTrack?,
 ): String = when {
+    // Позиция 0 у актуального continuation — следующая серия после досмотренной: продолжаем
+    // сериал, а не «с 0:00».
     continuation?.isActualContinuation == true -> buildString {
-        append("Продолжить с ${formatResumePosition(continuation.savedPositionSeconds)}")
+        append("Продолжить")
+        continuation.savedPositionSeconds.takeIf { it > 0 }?.let { append(" с ${formatResumePosition(it)}") }
         resume?.let { append(" · ${episodeTag(it)}") }
     }
     target != null -> "Смотреть · ${episodeTag(target)}"

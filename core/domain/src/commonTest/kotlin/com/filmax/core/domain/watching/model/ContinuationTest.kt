@@ -39,14 +39,99 @@ class ContinuationTest {
     }
 
     @Test
-    fun `episode with next episode continues even near its end`() {
+    fun `episode stopped on credits advances to next episode from start`() {
         val item = series(episode(season = 1, number = 1), episode(season = 1, number = 2))
 
         val result = calculateContinuation(item, history(season = 1, video = 1, time = 1_140, duration = 1_200))
 
         assertNotNull(result)
-        assertFalse(result.isLastEpisode)
         assertTrue(result.isActualContinuation)
+        assertEquals(1, result.season)
+        assertEquals(2, result.videoId)
+        assertEquals(0, result.savedPositionSeconds)
+        assertTrue(result.isLastEpisode)
+    }
+
+    @Test
+    fun `episode above finish threshold with next episode resumes in place`() {
+        val item = series(episode(season = 1, number = 1), episode(season = 1, number = 2))
+
+        val result = calculateContinuation(item, history(season = 1, video = 1, time = 1_000, duration = 1_200))
+
+        assertNotNull(result)
+        assertTrue(result.isActualContinuation)
+        assertEquals(1, result.videoId)
+        assertEquals(1_000, result.savedPositionSeconds)
+        assertFalse(result.isLastEpisode)
+    }
+
+    @Test
+    fun `server finished status advances past history position to next unwatched episode`() {
+        val item = series(
+            episode(season = 1, number = 1, watchStatus = 1),
+            episode(season = 1, number = 2, watchStatus = 1),
+            episode(season = 2, number = 1),
+        )
+
+        val result = calculateContinuation(item, history(season = 1, video = 1, time = 600, duration = 1_200))
+
+        assertNotNull(result)
+        assertTrue(result.isActualContinuation)
+        assertEquals(2, result.season)
+        assertEquals(1, result.videoId)
+        assertEquals(0, result.savedPositionSeconds)
+    }
+
+    @Test
+    fun `next episode already in progress keeps its own position`() {
+        val item = series(
+            episode(season = 1, number = 1, watchStatus = 1),
+            episode(season = 1, number = 2, watchedSeconds = 300, watchStatus = 0),
+        )
+
+        val result = calculateContinuation(item, history(season = 1, video = 1, time = 1_190, duration = 1_200))
+
+        assertNotNull(result)
+        assertTrue(result.isActualContinuation)
+        assertEquals(2, result.videoId)
+        assertEquals(300, result.savedPositionSeconds)
+    }
+
+    @Test
+    fun `next episode card uses its own thumbnail instead of finished episode frame`() {
+        val item = series(episode(season = 1, number = 1), episode(season = 1, number = 2))
+        val entry = history(season = 1, video = 1, time = 1_190, duration = 1_200)
+            .copy(episodeThumbnail = "frame-of-e1.jpg")
+
+        val result = calculateContinuation(item, entry)
+
+        assertNotNull(result)
+        assertEquals("thumb-S1E2.jpg", result.wideOrPoster)
+    }
+
+    @Test
+    fun `without history finished tracks advance to first unwatched episode`() {
+        val item = series(
+            episode(season = 1, number = 1, watchedSeconds = 1_200, watchStatus = 1),
+            episode(season = 1, number = 2),
+        )
+
+        val result = calculateContinuation(item)
+
+        assertNotNull(result)
+        assertTrue(result.isActualContinuation)
+        assertEquals(2, result.videoId)
+        assertEquals(0, result.savedPositionSeconds)
+    }
+
+    @Test
+    fun `movie stopped on credits is not continuation`() {
+        val item = series(episode(season = 0, number = 1)).copy(type = ItemType.MOVIE)
+
+        val result = calculateContinuation(item, history(season = null, video = 1, time = 7_150, duration = 7_200))
+
+        assertNotNull(result)
+        assertFalse(result.isActualContinuation)
     }
 
     @Test
@@ -61,15 +146,14 @@ class ContinuationTest {
     }
 
     @Test
-    fun `continuation preserves history position regardless of finished watch status`() {
+    fun `finished last episode is not continuation even with history position`() {
         val item = series(episode(season = 1, number = 1, watchStatus = 1))
 
         val result = calculateContinuation(item, history(season = 1, video = 1, time = 600, duration = 1_200))
 
         assertNotNull(result)
-        assertTrue(result.isActualContinuation)
-        assertEquals(600, result.savedPositionSeconds)
-        assertEquals(600, result.progress.timeSeconds)
+        assertTrue(result.isLastEpisode)
+        assertFalse(result.isActualContinuation)
     }
 
     @Test
@@ -134,7 +218,7 @@ class ContinuationTest {
         number = number,
         seasonNumber = season,
         title = "S${season}E$number",
-        thumbnail = "",
+        thumbnail = "thumb-S${season}E$number.jpg",
         durationSeconds = 1_200,
         files = emptyList(),
         audios = emptyList(),

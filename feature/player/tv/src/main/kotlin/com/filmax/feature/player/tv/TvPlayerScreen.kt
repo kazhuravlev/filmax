@@ -170,14 +170,16 @@ private fun PlayerEffects(ui: TvPlayerUiState, screenModel: PlayerScreenModel, m
             // безвредны — троттлинг внутри saveProgress их отфильтрует.
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 ui.isPlaying = isPlaying
-                if (!isPlaying) screenModel.dispatch(PlayerEvent.SaveProgress(player.currentPosition))
+                if (!isPlaying) screenModel.dispatch(PlayerEvent.SaveProgress(player.currentPosition, player.duration))
             }
 
             // Серия дотекла до конца раньше тика — переходим сразу (если не отменяли «Назад»).
             override fun onPlaybackStateChanged(playbackState: Int) {
                 ui.isBuffering = playbackState == Player.STATE_BUFFERING
                 if (playbackState != Player.STATE_ENDED) return
-                screenModel.dispatch(PlayerEvent.SaveProgress(player.currentPosition))
+                screenModel.dispatch(PlayerEvent.SaveProgress(player.currentPosition, player.duration))
+                // Конец потока — серия досмотрена, что бы ни говорила разница позиции и длительности.
+                screenModel.dispatch(PlayerEvent.MarkWatched)
                 if (currentMenu.hasNextEpisode && !ui.autoNextDismissed) {
                     ui.autoNextVisible = false
                     currentMenu.onNextEpisode()
@@ -193,7 +195,7 @@ private fun PlayerEffects(ui: TvPlayerUiState, screenModel: PlayerScreenModel, m
                 reason: Int,
             ) {
                 if (reason == Player.DISCONTINUITY_REASON_SEEK) {
-                    screenModel.dispatch(PlayerEvent.SaveProgress(player.currentPosition))
+                    screenModel.dispatch(PlayerEvent.SaveProgress(player.currentPosition, player.duration))
                 }
             }
         }
@@ -203,7 +205,7 @@ private fun PlayerEffects(ui: TvPlayerUiState, screenModel: PlayerScreenModel, m
             // паузы) — единственный случай, не покрытый событиями выше: без этой финальной записи
             // прогресс потерялся бы вплоть до последнего pause/seek. Дедупликация в saveProgress
             // делает вызов безвредным, если позиция уже была сохранена только что.
-            screenModel.dispatch(PlayerEvent.SaveProgress(player.currentPosition))
+            screenModel.dispatch(PlayerEvent.SaveProgress(player.currentPosition, player.duration))
             player.removeListener(listener)
         }
     }

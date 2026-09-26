@@ -12,14 +12,18 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-/** Последние 90 секунд финальной серии считаем завершением, а не точкой continuation. */
+/**
+ * Последние 90 секунд ЛЮБОЙ серии считаем завершением, а не точкой continuation: это титры и
+ * «в следующей серии», досматривать их никто не хочет. Тот же порог применяет плеер, чтобы
+ * отметить серию досмотренной на сервере (см. `PlayerScreenModel.saveProgress`).
+ */
 const val CONTINUATION_FINISH_THRESHOLD_SECONDS = 90
 
 /**
  * Единственный результат расчёта continuation для всех экранов.
  *
- * [savedPositionSeconds] приходит из истории и намеренно не выводится из `watchStatus`: сервер
- * может уже отметить трек завершённым, хотя фактически в истории остаётся время для просмотра.
+ * [savedPositionSeconds] приходит из истории: у досмотренной серии сериала это уже позиция
+ * СЛЕДУЮЩЕЙ недосмотренной серии (0, если её не начинали), а не хвост титров предыдущей.
  */
 data class Continuation(
     val item: Item,
@@ -41,42 +45,35 @@ data class Continuation(
 /**
  * Сводит историю и детали тайтла. Эта функция намеренно не опирается на порядок `tracklist`:
  * последовательность эпизодов всегда определяется парой season/number.
+ *
+ * Эталон — веб-клиент kino.watch: для «продолжить» он берёт первый эпизод с `watching.status <= 0`,
+ * то есть серверная отметка «досмотрено» (`status == 1`, её ставит `watching/toggle?status=1`)
+ * побеждает позицию из `/history` — та остаётся на сервере и после завершения серии. Сверх
+ * эталона считаем досмотренной и серию, у которой осталось меньше
+ * [CONTINUATION_FINISH_THRESHOLD_SECONDS]: остановка на титрах — не повод предлагать «досмотреть».
+ * В обоих случаях у сериала continuation переезжает на следующую недосмотренную серию.
  */
 fun calculateContinuation(item: Item, history: WatchHistory? = null): Continuation? {
     val tracks = item.tracklist.sortedWith(
         compareBy<MediaTrack> { it.seasonNumber }.thenBy { it.number }.thenBy { it.id },
     )
-    if (tracks.isEmpty()) return null
-
-    val historyProgress = history?.progress
-    val fromHistory = historyProgress?.let { progress -> findHistoryTrack(item, tracks, progress) }
-    // У сериала нельзя переносить позицию/кадр history на другую серию, найденную лишь по
-    // watchStatus. История адресует конкретный эпизод, поэтому несовпадение означает устаревшие
-    // данные. У фильма findHistoryTrack безопасно выбирает первую/единственную дорожку даже когда
-    // /history не прислал media.number: плеер для фильма использует ту же первую дорожку.
-    if (history != null && fromHistory == null) return null
-    val inProgress = tracks.firstOrNull { it.watchStatus == WATCH_STATUS_IN_PROGRESS }
-    val lastFinished = tracks.lastOrNull { it.watchStatus == WATCH_STATUS_FINISHED }
-    val track = fromHistory ?: inProgress ?: lastFinished ?: return null
-
-    val savedPosition = if (track == fromHistory) {
-        historyProgress?.timeSeconds?.coerceAtLeast(0) ?: 0
+    val anchor = findAnchor(item, tracks, history) ?: return null
+    val isSeries = item.isSeriesForContinuation()
+    // Досмотренная серия — продолжаем со следующей, которую сервер ещё не отметил досмотренной.
+    // У фильма «следующей» нет: досмотренный фильм просто не предлагаем продолжить.
+    val next = if (anchor.finished && isSeries) {
+        tracks.drop(tracks.indexOf(anchor.track) + 1).firstOrNull { it.watchStatus != WATCH_STATUS_FINISHED }
     } else {
-        track.watchedSeconds.coerceAtLeast(0)
+        null
     }
-    val duration = if (track == fromHistory) {
-        historyProgress?.durationSeconds?.takeIf { it > 0 } ?: track.durationSeconds
-    } else {
-        track.durationSeconds
-    }
-    val isLastEpisode = item.isSeriesForContinuation() && track == tracks.last()
-    // История — источник позиции, поэтому её запись продолжает даже при watchStatus == 1.
-    // Без истории доверяем только явному status == 0: завершённую серию не предлагаем пересматривать.
-    val hasResumablePosition = savedPosition > 0 &&
-        (track == fromHistory || track.watchStatus == WATCH_STATUS_IN_PROGRESS)
-    val remaining = (duration - savedPosition).coerceAtLeast(0)
-    val isActualContinuation = hasResumablePosition &&
-        (!isLastEpisode || remaining > CONTINUATION_FINISH_THRESHOLD_SECONDS)
+    val track = next ?: anchor.track
+    val savedPosition = if (next != null) next.resumableSeconds() else anchor.positionSeconds
+    val duration = if (next != null) next.durationSeconds else anchor.durationSeconds
+    val isLastEpisode = isSeries && track == tracks.last()
+    // Переезд на следующую серию — всегда актуальное продолжение, даже с нулевой позиции: именно
+    // это и просят от кнопки «Продолжить» после досмотренной серии. Без переезда — только
+    // незавершённая позиция из истории или явного status == 0.
+    val isActualContinuation = next != null || (!anchor.finished && anchor.resumable)
 
     return Continuation(
         item = item,
@@ -92,9 +89,68 @@ fun calculateContinuation(item: Item, history: WatchHistory? = null): Continuati
             videoId = track.number,
             season = track.seasonNumber.takeIf { it > 0 },
         ),
-        history = history,
+        // Кадр истории снят на хвосте ДОСМОТРЕННОЙ серии — карточке следующей серии он не подходит,
+        // берём её собственный кадр (или постер тайтла, если кадра нет).
+        history = if (next != null) {
+            history?.copy(episodeThumbnail = next.thumbnail.takeIf { it.isNotBlank() })
+        } else {
+            history
+        },
     )
 }
+
+/**
+ * Серия, от которой считаем continuation: адресат истории, иначе первая «в процессе», иначе
+ * последняя досмотренная. [positionSeconds]/[durationSeconds] — из истории, если якорь взят
+ * из неё (сервер там точнее), иначе из самой дорожки.
+ */
+private data class Anchor(
+    val track: MediaTrack,
+    val positionSeconds: Int,
+    val durationSeconds: Int,
+    /** Позиция пришла из истории или явного status == 0 — завершённое не предлагаем пересматривать. */
+    val resumable: Boolean,
+) {
+    val finished: Boolean
+        get() = track.watchStatus == WATCH_STATUS_FINISHED || isFinishedByPosition(positionSeconds, durationSeconds)
+}
+
+private fun findAnchor(item: Item, tracks: List<MediaTrack>, history: WatchHistory?): Anchor? {
+    val progress = history?.progress
+    val fromHistory = progress?.let { findHistoryTrack(item, tracks, it) }
+    return when {
+        tracks.isEmpty() -> null
+        // У сериала нельзя переносить позицию/кадр history на другую серию, найденную лишь по
+        // watchStatus. История адресует конкретный эпизод, поэтому несовпадение означает
+        // устаревшие данные. У фильма findHistoryTrack безопасно выбирает первую/единственную
+        // дорожку даже когда /history не прислал media.number: плеер для фильма использует ту же
+        // первую дорожку.
+        history != null && fromHistory == null -> null
+        fromHistory != null -> {
+            val position = progress?.timeSeconds?.coerceAtLeast(0) ?: 0
+            Anchor(
+                track = fromHistory,
+                positionSeconds = position,
+                durationSeconds = progress?.durationSeconds?.takeIf { it > 0 } ?: fromHistory.durationSeconds,
+                resumable = position > 0,
+            )
+        }
+        else -> {
+            val track = tracks.firstOrNull { it.watchStatus == WATCH_STATUS_IN_PROGRESS }
+                ?: tracks.lastOrNull { it.watchStatus == WATCH_STATUS_FINISHED }
+            track?.let { Anchor(it, it.resumableSeconds(), it.durationSeconds, resumable = it.resumableSeconds() > 0) }
+        }
+    }
+}
+
+/** Позиция дорожки по `items/{id}` — только у явного status == 0; у прочих начинаем с нуля. */
+private fun MediaTrack.resumableSeconds(): Int =
+    if (watchStatus == WATCH_STATUS_IN_PROGRESS) watchedSeconds.coerceAtLeast(0) else 0
+
+/** Позиция уже в «хвосте» серии: осталось не больше [CONTINUATION_FINISH_THRESHOLD_SECONDS]. */
+fun isFinishedByPosition(positionSeconds: Int, durationSeconds: Int): Boolean =
+    positionSeconds > 0 && durationSeconds > 0 &&
+        durationSeconds - positionSeconds <= CONTINUATION_FINISH_THRESHOLD_SECONDS
 
 private fun findHistoryTrack(item: Item, tracks: List<MediaTrack>, progress: WatchProgress): MediaTrack? =
     tracks.firstOrNull { track ->

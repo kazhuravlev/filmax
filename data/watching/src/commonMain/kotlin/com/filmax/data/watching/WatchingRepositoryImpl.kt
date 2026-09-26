@@ -193,6 +193,11 @@ internal class WatchingRepositoryImpl(
         return safeRequest { api.toggleWatched(itemId).watched == 1 }
     }
 
+    override suspend fun markWatched(itemId: Int, season: Int, videoId: Int): RequestResult<Unit> {
+        invalidateHistory()
+        return safeRequest { api.markWatched(itemId, season, videoId) }
+    }
+
     override suspend fun toggleWatchlist(itemId: Int): RequestResult<Boolean> =
         safeRequest { api.toggleWatchlist(itemId)["watching"] == 1 }
 

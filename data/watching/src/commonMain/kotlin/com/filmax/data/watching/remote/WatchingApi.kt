@@ -12,6 +12,8 @@ import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.http.Parameters
 
+// Один метод на эндпоинт `watching/*`/`history`/`notifications` — см. WatchingRepository.
+@Suppress("TooManyFunctions")
 internal class WatchingApi(private val client: HttpClient) {
 
     /**
@@ -62,6 +64,21 @@ internal class WatchingApi(private val client: HttpClient) {
     /** Возвращает итоговое `watched` (0/1) — иначе кнопке «Я смотрю» нечем отразить новое состояние. */
     suspend fun toggleWatched(id: Int): ToggleWatchedResponseDto =
         client.get("api/v1/watching/toggle") { parameter("id", id) }.body()
+
+    /**
+     * Явная серверная отметка «видео досмотрено» (`watching.status = 1` в `items/{id}`). Не toggle:
+     * с `status=1` повторный вызов ничего не снимает. Именно так эталонный клиент kino.watch
+     * закрывает серию по завершении воспроизведения — сам по себе `marktime` статус не ставит.
+     * [season] — только у сериала (у фильма 0: сервер ждёт запрос без `season`).
+     */
+    suspend fun markWatched(id: Int, season: Int, video: Int) {
+        client.get("api/v1/watching/toggle") {
+            parameter("id", id)
+            if (season > 0) parameter("season", season)
+            parameter("video", video)
+            parameter("status", 1)
+        }
+    }
 
     suspend fun toggleWatchlist(id: Int): Map<String, Int> =
         client.get("api/v1/watching/togglewatchlist") { parameter("id", id) }.body()
