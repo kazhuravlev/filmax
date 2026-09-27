@@ -53,16 +53,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.tv.designsystem.TvMetrics
 import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
+import com.filmax.feature.player.common.PlaybackSpeeds
 import com.filmax.feature.player.common.formatPlayerTime
 
 /**
  * UI 2 ([com.filmax.core.domain.playback.PlayerUi.Ui2]) — привычная большинству раскладка
  * стриминговых плееров: внизу кадра название, полоса прокрутки с остатком времени справа и ряд
  * круглых кнопок под ней — транспорт слева (пауза, ±10 с), действия справа (следующая серия,
- * серии, аудио, субтитры, скорость, качество, пресет). Подпись действия появляется над кнопкой
- * под курсором, как tooltip. Выбор — в поповере над рядом справа, серии — панелью.
+ * серии, аудио, субтитры, скорость, качество, пресет). Под кнопками выбора — их текущее
+ * значение мелко («rus», «Выкл», «1×», «1080p»), всегда, не только под курсором: что выбрано,
+ * видно без открытия селектора. Выбор — в поповере над рядом справа, серии — панелью.
  *
  * Аудиодорожка — отдельная кнопка рядом с субтитрами: у kino.watch озвучек несколько, и «Аудио
  * и субтитры» одним пунктом было бы тесно.
@@ -444,46 +447,46 @@ private fun Ui2Track(
 }
 
 /**
- * Ряд кнопок: транспорт слева, действия прижаты вправо. Над кнопкой под курсором — её подпись
- * и текущее значение («Скорость · 1.25×»); строка под подпись зарезервирована всегда, чтобы ряд
- * не прыгал при движении курсора.
+ * Ряд кнопок: транспорт слева, действия прижаты вправо. Под каждой кнопкой выбора — её текущее
+ * значение мелким шрифтом (см. [caption]); у транспорта и серий подписи нет. Строка подписей
+ * зарезервирована всегда, чтобы ряд не прыгал. Никакого tooltip над кнопкой под курсором:
+ * «Смотреть»/«Пауза» над иконкой паузы ничего не сообщали, а строку занимали.
  */
 @Composable
 private fun Ui2ControlsRow(ui: Ui2PlayerUiState, menu: PlayerActions, modifier: Modifier = Modifier) {
     val controls = ui2Controls(menu)
     val focusedIndex = ui.controlCursor.coerceIn(0, controls.lastIndex.coerceAtLeast(0))
     Column(modifier.fillMaxWidth()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(TooltipHeight),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            controls.forEachIndexed { index, control ->
-                val tooltip = if (ui.zone == Ui2Zone.Controls && index == focusedIndex) {
-                    control.tooltip(menu, ui.isPlaying)
-                } else {
-                    ""
-                }
-                Text(
-                    tooltip,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Visible,
-                    modifier = Modifier.width(ButtonSize),
-                )
-                if (control == Ui2Control.Forward) Spacer(Modifier.weight(1f)) else Spacer(Modifier.width(ButtonGap))
-            }
-        }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             controls.forEachIndexed { index, control ->
                 Ui2Button(
                     icon = control.icon(ui.isPlaying),
-                    contentDescription = control.tooltip(menu, ui.isPlaying),
+                    contentDescription = control.label(menu, ui.isPlaying),
                     focused = ui.zone == Ui2Zone.Controls && index == focusedIndex,
+                )
+                if (control == Ui2Control.Forward) Spacer(Modifier.weight(1f)) else Spacer(Modifier.width(ButtonGap))
+            }
+        }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(CaptionHeight),
+            verticalAlignment = Alignment.Top,
+        ) {
+            controls.forEach { control ->
+                // Слот подписи шире кнопки на зазор, чтобы «1080p» не резалось; сдвиг на ползазора
+                // влево возвращает центр подписи под центр кнопки.
+                Text(
+                    control.caption(menu),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = CaptionColor,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .offset(x = -ButtonGap / 2)
+                        .width(ButtonSize + ButtonGap),
                 )
                 if (control == Ui2Control.Forward) Spacer(Modifier.weight(1f)) else Spacer(Modifier.width(ButtonGap))
             }
@@ -525,8 +528,8 @@ private fun Ui2Control.icon(isPlaying: Boolean): ImageVector = when (this) {
     }
 }
 
-/** Подпись над кнопкой: у действий с выбором — вместе с текущим значением. */
-private fun Ui2Control.tooltip(menu: PlayerActions, isPlaying: Boolean): String = when (this) {
+/** Описание кнопки для accessibility: у действий с выбором — вместе с текущим значением. */
+private fun Ui2Control.label(menu: PlayerActions, isPlaying: Boolean): String = when (this) {
     Ui2Control.PlayPause -> if (isPlaying) "Пауза" else "Смотреть"
     Ui2Control.Rewind -> "Назад 10 с"
     Ui2Control.Forward -> "Вперёд 10 с"
@@ -534,6 +537,52 @@ private fun Ui2Control.tooltip(menu: PlayerActions, isPlaying: Boolean): String 
         val value = menu.selected(action)
         if (value.isBlank()) action.label else "${action.label} · $value"
     }
+}
+
+/**
+ * Короткое значение под кнопкой: «rus» / «Выкл» / «1×» / «4K» / «Авто». Пустая строка — подписи
+ * нет (транспорт, серии). Полные подписи поповера («2. Русский · Многоголосый · BaibaKo»,
+ * «Обычная», «2160p») под кнопку в 44dp не влезают — сжимаем до того, что различает варианты.
+ */
+private fun Ui2Control.caption(menu: PlayerActions): String {
+    if (this !is Ui2Control.Action) return ""
+    val value = menu.selected(action)
+    return when (action) {
+        SettingsAction.Audio -> audioCaption(value)
+        SettingsAction.Subtitle -> if (value == PlaybackSettings.SubtitleOff) value else languageCode(value)
+        SettingsAction.Speed -> if (value == PlaybackSpeeds.NormalLabel) "1×" else value
+        SettingsAction.Quality -> qualityCaption(value)
+        SettingsAction.Preset -> value
+        SettingsAction.Episodes, SettingsAction.NextEpisode -> ""
+    }
+}
+
+/**
+ * Озвучка: студия, если есть («BaibaKo»), иначе тип («Дубляж»), иначе язык кодом — именно
+ * студия отличает одну русскую многоголоску от другой. Номер «2. » в начале — только для
+ * уникальности подписи в поповере, под кнопкой он не нужен.
+ */
+private fun audioCaption(label: String): String {
+    val parts = label.replaceFirst(AUDIO_NUMBER_PREFIX, "").split(" · ")
+    return if (parts.size > 1) parts.last() else languageCode(parts.first())
+}
+
+private val AUDIO_NUMBER_PREFIX = Regex("""^\d+\.\s*""")
+
+/** «Русский» → «rus»: код языка короче имени и читается под кнопкой с трёх метров. */
+private fun languageCode(name: String): String = when (name) {
+    "Русский" -> "rus"
+    "English" -> "eng"
+    "Українська" -> "ukr"
+    "Оригинал" -> "orig"
+    else -> name
+}
+
+/** «2160p» → «4K», «1440p» → «2K»; остальное как есть («1080p»). */
+private fun qualityCaption(label: String): String = when (label) {
+    "2160p" -> "4K"
+    "1440p" -> "2K"
+    else -> label
 }
 
 /** Шаг кнопок «±10 с». */
@@ -564,7 +613,10 @@ private val BubbleHeight = 30.dp
 private val ButtonSize = 44.dp
 private val IconSize = 26.dp
 private val ButtonGap = 10.dp
-private val TooltipHeight = 22.dp
+private val CaptionHeight = 18.dp
 
-/** Поповер стоит над рядом кнопок и строкой подписи, чуть выше их верхнего края. */
-private val PopoverBottom = BottomInset + ButtonSize + TooltipHeight + 12.dp
+/** Подпись значения под кнопкой — приглушённо-белая: значение, а не действие. */
+private val CaptionColor = Color(0xCCFFFFFF)
+
+/** Поповер стоит над рядом кнопок, чуть выше его верхнего края; подписи под кнопками — ниже. */
+private val PopoverBottom = BottomInset + CaptionHeight + ButtonSize + 12.dp

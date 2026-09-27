@@ -37,6 +37,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CreateNewFolder
@@ -171,8 +172,14 @@ private val HeroPosterHeight = 210.dp
 
 private const val EPISODES_TITLE = "Эпизоды"
 
+/** Общий префикс ключей фокуса кнопок hero: по нему экран узнаёт, что возвращается в шапку. */
+private const val HERO_KEY_PREFIX = "hero:"
+
 /** Ключ фокуса кнопки «Смотреть»: стартовая цель экрана. */
 private const val HERO_PLAY_KEY = "hero:play"
+
+/** Ключ фокуса кнопки «Сезоны и серии» — сюда возвращается фокус после закрытия браузера. */
+private const val HERO_SEASONS_KEY = "hero:seasons"
 
 /** Фильм играется целиком, без выбора дорожки: плеер ждёт videoId = -1. */
 private const val MOVIE_VIDEO_ID = -1
@@ -376,6 +383,9 @@ private fun DetailsContent(
     // просто не рендерилась, потому что список серий откатывался на другой сезон.
     var selectedSeason by rememberSaveable(item.id) { mutableIntStateOf(series?.resumeSeasonIndex ?: 0) }
     val episodes = series?.seasons?.getOrNull(selectedSeason)?.second.orEmpty()
+    // Открыт ли полноэкранный браузер «Сезоны и серии». rememberSaveable — по той же причине,
+    // что и selectedSeason: уход в плеер из браузера и возврат должны вернуть в браузер.
+    var seasonsOpen by rememberSaveable(item.id) { mutableStateOf(false) }
 
     // Первый заход открывает экран на «Смотреть», возврат из плеера — на серии, с которой ушли.
     // И то, и другое — одна цель фокуса, поэтому и механизм один: два конкурирующих реквеста в
@@ -406,7 +416,7 @@ private fun DetailsContent(
     // (в т.ч. подскролл) во всех рядах контента, включая «Похожее». Поэтому стартуем сразу в
     // нужном стейте, а не ждём живого перехода фокуса через шапку.
     val contentFocused = remember {
-        mutableStateOf(focus.initialReturnTarget != null && focus.initialReturnTarget != HERO_PLAY_KEY)
+        mutableStateOf(focus.initialReturnTarget?.startsWith(HERO_KEY_PREFIX) == false)
     }
     val onHeroFocusChanged = rememberHeroFocusScroller(listState, contentFocused)
 
@@ -480,6 +490,10 @@ private fun DetailsContent(
                             }
                         },
                         onOpenFolderPicker = { folderPicker.pickerOpen = true },
+                        // Браузер серий есть у любого сериала с дорожками; у фильма кнопки нет.
+                        onOpenSeasons = series?.takeIf { it.seasons.isNotEmpty() }?.let { { seasonsOpen = true } },
+                        seasonsModifier = focus.item(HERO_SEASONS_KEY),
+                        seasonsLabel = if ((series?.seasons?.size ?: 0) > 1) "Сезоны и серии" else "Серии",
                         onToggleWantToWatch = actions.onToggleWantToWatch,
                         isWantToWatch = isWantToWatch,
                         showWantToWatch = item.isSeries(),
@@ -515,6 +529,23 @@ private fun DetailsContent(
         onSelectFolder = { folder -> actions.onToggleFolder(folder) },
         onCreateFolder = { title -> actions.onCreateFolder(title) },
     )
+
+    if (seasonsOpen && series != null) {
+        TvSeasonsBrowserDialog(
+            content = SeasonsBrowserContent(
+                title = item.title,
+                seasons = series.seasons,
+                resumeId = series.resume?.id,
+                // Позиция — только у актуального continuation (правило PlayerRoute.resumePositionSeconds).
+                resumePositionSeconds = continuation
+                    ?.takeIf { it.isActualContinuation }
+                    ?.savedPositionSeconds
+                    ?: NO_RESUME_POSITION,
+            ),
+            onPlay = actions.onPlay,
+            onDismiss = { seasonsOpen = false },
+        )
+    }
 }
 
 /**
@@ -643,6 +674,12 @@ private data class HeroPlayback(
     val playLabel: String,
     /** Открыть диалог выбора подборки — единственная кнопка «Добавить в подборку» / «В подборках». */
     val onOpenFolderPicker: () -> Unit,
+    /** Открыть браузер «Сезоны и серии»; null — фильм или сериал без дорожек, кнопки нет. */
+    val onOpenSeasons: (() -> Unit)? = null,
+    /** Фокус-ключ кнопки браузера (см. [HERO_SEASONS_KEY]) — точка возврата после закрытия. */
+    val seasonsModifier: Modifier = Modifier,
+    /** «Сезоны и серии» у многосезонного, «Серии» — когда сезон один и выбирать нечего. */
+    val seasonsLabel: String = "Сезоны и серии",
     /** «Буду смотреть», см. [DetailsActions.onToggleWantToWatch]. */
     val onToggleWantToWatch: () -> Unit,
     /** Текущее состояние «Буду смотреть» — см. [DetailsState.isWantToWatch]. */
@@ -812,6 +849,17 @@ private fun HeroButtons(
                 modifier = playback.playModifier
                     .onFocusChanged { if (it.hasFocus) playback.onPrefetchPlayback() },
             )
+            // Браузер серий — рядом со «Смотреть»: это второй способ запустить воспроизведение,
+            // а не пометка тайтла, поэтому в первом ряду, а не во втором.
+            playback.onOpenSeasons?.let { onOpenSeasons ->
+                TvButton(
+                    text = playback.seasonsLabel,
+                    onClick = onOpenSeasons,
+                    primary = false,
+                    leadingIcon = Icons.AutoMirrored.Filled.ViewList,
+                    modifier = playback.seasonsModifier,
+                )
+            }
             playback.onTrailer?.let { onTrailer ->
                 TvButton(
                     text = "Трейлер",
@@ -1506,8 +1554,8 @@ private fun playLabel(
     else -> "Смотреть"
 }
 
-/** «40:05» / «1:12:03» — сохранённая позиция на кнопке «Продолжить». */
-private fun formatResumePosition(positionSeconds: Int): String {
+/** «40:05» / «1:12:03» — сохранённая позиция на кнопке «Продолжить» и в превью браузера серий. */
+internal fun formatResumePosition(positionSeconds: Int): String {
     val totalMinutes = positionSeconds / SECONDS_IN_MINUTE
     val seconds = positionSeconds % SECONDS_IN_MINUTE
     if (totalMinutes < MINUTES_IN_HOUR) return "$totalMinutes:${seconds.twoDigits()}"
