@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.domain.user.model.UserProfile
@@ -69,10 +71,21 @@ private val AvatarSize = 76.dp
 /** Высота строки настройки. Фиксированная: разная высота строк ломает ритм списка под пультом. */
 private val RowHeight = 60.dp
 
+/** Шаг между строками одной группы. Задаётся ТОЛЬКО в [SettingsGroup] — см. её doc. */
 private val RowGap = 10.dp
 
+/** Отступ от надзаголовка группы до первой строки. */
+private val GroupTitleGap = 12.dp
+
+/** Промежуток между группами и между шапкой профиля и первой группой. */
+private val GroupGap = 26.dp
+
+/** Промежуток между ярлыком и значением строки: длинный ярлык не наезжает на значение. */
+private val RowLabelValueGap = 16.dp
+
 /**
- * TV-Профиль. Одна колонка: шапка аккаунта, затем группы «Просмотр» и «Аккаунт».
+ * TV-Профиль. Одна колонка: шапка аккаунта, затем группы «Просмотр», «Приложение», «Фоновая
+ * загрузка» и в самом низу «Аккаунт» с единственной строкой выхода.
  * Данные и события — общие с мобильным профилем ([ProfileScreenModel]), меняется только
  * раскладка под 10-foot. Клик по строке настройки циклически меняет её значение.
  *
@@ -137,44 +150,30 @@ private fun ProfileContent(
                 bottom = TvMetrics.SafeVertical,
             ),
     ) {
-        Column(Modifier.widthIn(max = ContentMaxWidth)) {
-            ProfileHeader(profile = state.profile)
-            Spacer(Modifier.height(32.dp))
-            TvOverline("Просмотр", color = TvOnSurfaceDim)
-            Spacer(Modifier.height(12.dp))
-            PlaybackRows(state = state, actions = actions)
-            Spacer(Modifier.height(26.dp))
+        Column(
+            Modifier.widthIn(max = ContentMaxWidth),
+            verticalArrangement = Arrangement.spacedBy(GroupGap),
+        ) {
+            ProfileHeader(profile = state.profile, modifier = Modifier.padding(bottom = 6.dp))
+            SettingsGroup("Просмотр") { PlaybackRows(state = state, actions = actions) }
             // Блока «Устройство» временно нет: device/info и device/settings отвечают 500,
             // и строка вела на нерабочий экран. Вернуть, когда бэкенд починят.
-            TvOverline("Аккаунт", color = TvOnSurfaceDim)
-            Spacer(Modifier.height(12.dp))
-            AccountRows(state = state, actions = actions)
-            Spacer(Modifier.height(26.dp))
+            //
             // На телевизоре магазина нет вообще — приложение ставится APK, и ручная проверка
             // здесь нужнее, чем на телефоне.
-            TvOverline("Приложение", color = TvOnSurfaceDim)
-            Spacer(Modifier.height(12.dp))
-            SettingRow(
-                spec = SettingRowSpec(label = "Сервер API", value = apiHostLabel(state.apiHost)),
-                onClick = actions.onCycleApiHost,
-            )
-            SettingRow(
-                spec = SettingRowSpec(label = "Проверить обновления"),
-                onClick = actions.onCheckUpdates,
-            )
-            Spacer(Modifier.height(26.dp))
-            TvOverline("Фоновая загрузка", color = TvOnSurfaceDim)
-            Spacer(Modifier.height(12.dp))
-            BackgroundFetchRows(state = state, actions = actions)
-            Spacer(Modifier.height(26.dp))
+            SettingsGroup("Приложение") { AppRows(state = state, actions = actions) }
+            SettingsGroup("Фоновая загрузка") { BackgroundFetchRows(state = state, actions = actions) }
+            // Выход — последняя строка экрана: случайно до неё не доезжают, а подписка в шапке
+            // уже показана — отдельная справочная строка «Подписка» здесь ничего не добавляла.
+            SettingsGroup("Аккаунт") { AccountRows(actions = actions) }
             FilmaxVersionLabel(color = TvOnSurfaceDim)
         }
     }
 }
 
 @Composable
-private fun ProfileHeader(profile: UserProfile?) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun ProfileHeader(profile: UserProfile?, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
                 .size(AvatarSize)
@@ -208,6 +207,22 @@ private fun ProfileHeader(profile: UserProfile?) {
 }
 
 // ── Группы настроек ──────────────────────────────────────────────────────────
+
+/**
+ * Группа строк настроек: надзаголовок и строки с единым шагом [RowGap]. ЕДИНСТВЕННОЕ место,
+ * где задаются отступы между строками — раньше «Сервер API» и «Проверить обновления» лежали в
+ * колонке экрана голыми, без `spacedBy`, и слипались в одну плашку, пока остальные группы
+ * держали шаг каждая своей `Column`. Строки внутри — только [SettingRow], своих отступов у них
+ * нет и быть не должно.
+ */
+@Composable
+private fun SettingsGroup(title: String, rows: @Composable ColumnScope.() -> Unit) {
+    Column {
+        TvOverline(title, color = TvOnSurfaceDim)
+        Spacer(Modifier.height(GroupTitleGap))
+        Column(verticalArrangement = Arrangement.spacedBy(RowGap), content = rows)
+    }
+}
 
 private data class ProfileActions(
     val onCycleQuality: () -> Unit,
@@ -269,47 +284,49 @@ private fun profileActions(
 
 @Composable
 private fun PlaybackRows(state: ProfileState, actions: ProfileActions) {
-    Column(verticalArrangement = Arrangement.spacedBy(RowGap)) {
-        SettingRow(
-            spec = SettingRowSpec(label = "Качество видео", value = state.playback.quality),
-            onClick = actions.onCycleQuality,
-        )
-        // «Авто» — первый пресет из списка, чьи озвучка и субтитры есть у тайтла; в плеере
-        // пресет можно сменить или переопределить ручным выбором дорожек — на этот тайтл.
-        SettingRow(
-            spec = SettingRowSpec(label = "Озвучка и субтитры", value = state.playback.presetLabel),
-            onClick = actions.onCyclePreset,
-        )
-        // Интерфейс плеера — общий для тайтлов и трейлеров (см. PlayerUi). Пока вариант один,
-        // пункт всё равно на месте: следующий интерфейс появится как новое значение перечисления.
-        SettingRow(
-            spec = SettingRowSpec(label = "Интерфейс плеера", value = state.playback.playerUi.label),
-            onClick = actions.onCyclePlayerUi,
-        )
-        SettingRow(
-            spec = SettingRowSpec(
-                label = "Сбросить дорожки тайтлов",
-                labelColor = TvError,
-            ),
-            onClick = actions.onResetTitleTracks,
-        )
-    }
+    SettingRow(
+        spec = SettingRowSpec(label = "Качество видео", value = state.playback.quality),
+        onClick = actions.onCycleQuality,
+    )
+    // «Авто» — первый пресет из списка, чьи озвучка и субтитры есть у тайтла; в плеере
+    // пресет можно сменить или переопределить ручным выбором дорожек — на этот тайтл.
+    SettingRow(
+        spec = SettingRowSpec(label = "Озвучка и субтитры", value = state.playback.presetLabel),
+        onClick = actions.onCyclePreset,
+    )
+    // Интерфейс плеера — общий для тайтлов и трейлеров (см. PlayerUi). Пока вариант один,
+    // пункт всё равно на месте: следующий интерфейс появится как новое значение перечисления.
+    SettingRow(
+        spec = SettingRowSpec(label = "Интерфейс плеера", value = state.playback.playerUi.label),
+        onClick = actions.onCyclePlayerUi,
+    )
+    SettingRow(
+        spec = SettingRowSpec(
+            label = "Сбросить дорожки тайтлов",
+            labelColor = TvError,
+        ),
+        onClick = actions.onResetTitleTracks,
+    )
 }
 
 @Composable
-private fun AccountRows(state: ProfileState, actions: ProfileActions) {
-    val active = state.profile?.subscription?.active == true
-    Column(verticalArrangement = Arrangement.spacedBy(RowGap)) {
-        // Подписка — справочная строка: менять её из приложения нельзя, поэтому не фокусируется.
-        SettingRow(
-            spec = SettingRowSpec(label = "Подписка", value = if (active) "Premium" else "Неактивна"),
-            onClick = null,
-        )
-        SettingRow(
-            spec = SettingRowSpec(label = "Выйти из аккаунта", labelColor = TvError),
-            onClick = actions.onLogout,
-        )
-    }
+private fun AppRows(state: ProfileState, actions: ProfileActions) {
+    SettingRow(
+        spec = SettingRowSpec(label = "Сервер API", value = apiHostLabel(state.apiHost)),
+        onClick = actions.onCycleApiHost,
+    )
+    SettingRow(
+        spec = SettingRowSpec(label = "Проверить обновления"),
+        onClick = actions.onCheckUpdates,
+    )
+}
+
+@Composable
+private fun AccountRows(actions: ProfileActions) {
+    SettingRow(
+        spec = SettingRowSpec(label = "Выйти из аккаунта", labelColor = TvError),
+        onClick = actions.onLogout,
+    )
 }
 
 /**
@@ -332,37 +349,35 @@ private fun BackgroundFetchRows(state: ProfileState, actions: ProfileActions) {
         itemCount % 10 in 2..4 -> "тайтла"
         else -> "тайтлов"
     }
-    Column(verticalArrangement = Arrangement.spacedBy(RowGap)) {
-        SettingRow(
-            spec = SettingRowSpec(label = "Фоновая загрузка", value = onOff(state.backgroundFetchEnabled)),
-            onClick = actions.onToggleBackgroundFetch,
-        )
-        SettingRow(
-            spec = SettingRowSpec(label = "Прокси изображений", value = onOff(state.imageProxyEnabled)),
-            onClick = actions.onToggleImageProxy,
-        )
-        SettingRow(
-            spec = SettingRowSpec(
-                label = "Показывать технические данные",
-                value = onOff(state.techOverlayEnabled),
-            ),
-            onClick = actions.onToggleTechOverlay,
-        )
-        SettingRow(
-            spec = SettingRowSpec(
-                label = "Сбросить кеш изображений ($sizeLabel)",
-                labelColor = TvError,
-            ),
-            onClick = actions.onClearImageCache,
-        )
-        SettingRow(
-            spec = SettingRowSpec(
-                label = "Сбросить кеш тайтлов ($itemCount $titleWord)",
-                labelColor = TvError,
-            ),
-            onClick = actions.onClearItemCache,
-        )
-    }
+    SettingRow(
+        spec = SettingRowSpec(label = "Фоновая загрузка", value = onOff(state.backgroundFetchEnabled)),
+        onClick = actions.onToggleBackgroundFetch,
+    )
+    SettingRow(
+        spec = SettingRowSpec(label = "Прокси изображений", value = onOff(state.imageProxyEnabled)),
+        onClick = actions.onToggleImageProxy,
+    )
+    SettingRow(
+        spec = SettingRowSpec(
+            label = "Показывать технические данные",
+            value = onOff(state.techOverlayEnabled),
+        ),
+        onClick = actions.onToggleTechOverlay,
+    )
+    SettingRow(
+        spec = SettingRowSpec(
+            label = "Сбросить кеш изображений ($sizeLabel)",
+            labelColor = TvError,
+        ),
+        onClick = actions.onClearImageCache,
+    )
+    SettingRow(
+        spec = SettingRowSpec(
+            label = "Сбросить кеш тайтлов ($itemCount $titleWord)",
+            labelColor = TvError,
+        ),
+        onClick = actions.onClearItemCache,
+    )
 }
 
 // ── Строка настройки ─────────────────────────────────────────────────────────
@@ -414,13 +429,23 @@ private fun SettingRow(spec: SettingRowSpec, onClick: (() -> Unit)?) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(spec.label, style = MaterialTheme.typography.titleMedium, color = spec.labelColor)
+        // Ярлык уступает место значению: длинный ярлык («Сбросить кеш изображений (12.3 из
+        // 200 МБ)») режется многоточием, а не выдавливает значение за край строки.
+        Text(
+            spec.label,
+            style = MaterialTheme.typography.titleMedium,
+            color = spec.labelColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
         if (!spec.value.isNullOrEmpty()) {
             Text(
                 spec.value,
                 style = MaterialTheme.typography.bodyLarge,
                 color = TvOnSurfaceVariant,
                 maxLines = 1,
+                modifier = Modifier.padding(start = RowLabelValueGap),
             )
         }
     }
