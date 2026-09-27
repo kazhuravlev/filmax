@@ -8,6 +8,8 @@ import com.filmax.core.domain.error.AppError
  * Сессия не знает, откуда взялся поток: тайтл с `PlayerScreenModel` или трейлер по готовому URL —
  * интерфейс рисует одно и то же по одним и тем же данным.
  */
+// Контейнер данных без поведения: каждое поле — отдельный факт о сессии, группировать их не во что.
+@Suppress("LongParameterList")
 internal class TvPlayerSession(
     val player: Player,
     val title: String,

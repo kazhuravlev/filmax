@@ -50,11 +50,14 @@ sealed interface TitleTracks {
  */
 enum class PlayerUi(val label: String) {
     /** Оверлей с полосой прокрутки, Play и сеткой плиток настроек под пульт. */
-    Classic("UI 1"),
+    Ui1("UI 1"),
+
+    /** Полоса и ряд круглых кнопок внизу кадра, поповеры справа — раскладка стриминговых плееров. */
+    Ui2("UI 2"),
     ;
 
     companion object {
-        val Default = Classic
+        val Default = Ui1
 
         fun byLabel(label: String): PlayerUi? = entries.firstOrNull { it.label == label }
     }

@@ -1,6 +1,5 @@
 package com.filmax.feature.player.tv
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -36,29 +35,11 @@ import com.filmax.core.ui.components.KeepScreenOn
 import kotlinx.coroutines.delay
 
 /**
- * UI 1 ([com.filmax.core.domain.playback.PlayerUi.Classic]): видеоповерхность ExoPlayer и оверлей
- * под пульт поверх неё — полоса прокрутки, Play со стрелками серий и сетка плиток настроек
- * (см. `PlayerOverlay`). Раскладка пульта — [TvPlayerUiState].
- */
-internal object ClassicPlayerUi : TvPlayerUi {
-
-    @Composable
-    override fun Content(session: TvPlayerSession, modifier: Modifier) {
-        val ui = remember(session.player) { TvPlayerUiState(session.player) }
-        PlayerEffects(ui = ui, session = session)
-        // «Назад» сначала закрывает то, что открыто в оверлее (поповер, панель серий), и только
-        // потом отдаётся сессии.
-        BackHandler { if (!ui.back()) session.onBack() }
-        PlayerContent(ui = ui, session = session, modifier = modifier)
-    }
-}
-
-/**
  * Тики и таймеры плеера: UI-прогресс, автопереход, скраб, автоскрытие оверлея, а также события,
  * по которым источник получает [PlaybackSignal.Progress] (пауза/перемотка/конец/выход с экрана — не по таймеру).
  */
 @Composable
-private fun PlayerEffects(ui: TvPlayerUiState, session: TvPlayerSession) {
+internal fun PlayerEffects(ui: BasePlayerUiState, session: TvPlayerSession) {
     val player = session.player
 
     // Эффекты живут с ключом player и переживают рекомпозиции, а menu пересобирается, когда
@@ -169,11 +150,18 @@ private fun PlayerEffects(ui: TvPlayerUiState, session: TvPlayerSession) {
 }
 
 /**
- * Кадр и оверлей. Фокусируемый узел на экране ровно один — корневой Box: он и держит фокус,
- * и разбирает клавиши, поэтому пульт работает одинаково при видимом и скрытом оверлее.
+ * Общий каркас кадра для любого интерфейса: видеоповерхность, спиннер, ошибка, плашки подписки
+ * и автоперехода; [overlay] — то, что интерфейс рисует поверх кадра, пока [BasePlayerUiState.visible].
+ * Фокусируемый узел на экране ровно один — корневой Box: он и держит фокус, и разбирает клавиши,
+ * поэтому пульт работает одинаково при видимом и скрытом оверлее.
  */
 @Composable
-private fun PlayerContent(ui: TvPlayerUiState, session: TvPlayerSession, modifier: Modifier = Modifier) {
+internal fun PlayerFrame(
+    ui: BasePlayerUiState,
+    session: TvPlayerSession,
+    modifier: Modifier = Modifier,
+    overlay: @Composable () -> Unit,
+) {
     val menu = session.menu
     val error = session.error
     val keyFocus = remember { FocusRequester() }
@@ -215,12 +203,7 @@ private fun PlayerContent(ui: TvPlayerUiState, session: TvPlayerSession, modifie
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize(),
         ) {
-            PlayerOverlay(
-                ui = ui,
-                menu = menu,
-                title = session.title,
-                subtitle = session.subtitle,
-            )
+            overlay()
         }
 
         // Плашка подписки — ВНЕ оверлея: без подписки поток не идёт, и объяснение должно быть

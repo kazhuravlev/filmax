@@ -21,7 +21,8 @@ internal interface TvPlayerUi {
 
 /** Реализация каждого пункта [PlayerUi] из настроек. Новый интерфейс — новая ветка здесь. */
 internal fun PlayerUi.implementation(): TvPlayerUi = when (this) {
-    PlayerUi.Classic -> ClassicPlayerUi
+    PlayerUi.Ui1 -> Ui1PlayerUi
+    PlayerUi.Ui2 -> Ui2PlayerUi
 }
 
 /**

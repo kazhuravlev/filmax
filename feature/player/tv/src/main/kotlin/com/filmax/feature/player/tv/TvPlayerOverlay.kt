@@ -579,7 +579,7 @@ private fun String.languageCode(): String {
  * см. [keepCursorVisible].
  */
 @Composable
-private fun SettingsPopover(
+internal fun SettingsPopover(
     action: SettingsAction,
     menu: PlayerActions,
     cursor: Int,
