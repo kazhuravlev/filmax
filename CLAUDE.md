@@ -46,7 +46,7 @@ core/                         # Shared cross-cutting concerns
 ├─ designsystem/               # Material3 tokens (Color/Shape/Type) — pulled in transitively by core:ui
 ├─ tv-designsystem/            # TV theme, focus-aware components (TvPosterCard, TvFocusCard, …)
 └─ ui/                         # Shared Composables actually used by TV screens (PosterImage,
-                                 HeroBackdrop, KeepScreenOn, VoiceSearch, FilmaxCards helpers, …)
+                                 HeroBackdrop, KeepScreenOn, VoiceSearch, continueMeta/durationLabel, …)
 
 data/                         # Repository implementations + DTO + mappers
 └─ auth, catalog, search, user, watching, tmdb

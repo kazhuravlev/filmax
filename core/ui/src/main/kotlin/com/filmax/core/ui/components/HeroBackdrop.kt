@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.cache.ImageCacheKeys
+import com.filmax.core.domain.cache.PosterSize
 import com.filmax.core.domain.catalog.model.Item
 
 /**
@@ -22,7 +23,7 @@ import com.filmax.core.domain.catalog.model.Item
  * URL постера передаётся явно ([posterUrl]), т.к. экраны выбирают разный кадр: mobile — `big`,
  * tv — широкий `wide` с откатом на `big`.
  *
- * Палитра и фабрики градиентов затемнения вынесены в [BackdropGradients].
+ * Акцент постера-заглушки по умолчанию — [HeroBackdropAccent].
  */
 @Composable
 fun HeroBackdrop(
@@ -30,9 +31,9 @@ fun HeroBackdrop(
     scrims: List<Brush>,
     modifier: Modifier = Modifier,
     posterUrl: String = item.posters.big,
-    accentColor: Color = BackdropGradients.Accent,
+    accentColor: Color = HeroBackdropAccent,
 ) {
-    val subId = if (posterUrl == item.posters.wide) ImageCacheKeys.WALL else ImageCacheKeys.SIZE_BIG
+    val size = if (posterUrl == item.posters.wide) PosterSize.Wall else PosterSize.Big
     Box(modifier) {
         PosterImage(
             url = posterUrl,
@@ -40,10 +41,13 @@ fun HeroBackdrop(
             modifier = Modifier.matchParentSize(),
             shape = RoundedCornerShape(0.dp),
             accentColor = accentColor,
-            cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, subId),
+            cacheKey = ImageCacheKeys.poster(item.type, item.id, size),
         )
         scrims.forEach { brush ->
             Box(Modifier.matchParentSize().background(brush))
         }
     }
 }
+
+/** Акцент постера-заглушки бэкдропа по умолчанию; TV-экраны обычно передают нейтральную поверхность. */
+val HeroBackdropAccent: Color = Color(0xFFB4305A)
