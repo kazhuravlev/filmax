@@ -60,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.filmax.core.domain.cache.ImageCacheKeys
+import com.filmax.core.domain.cache.PosterSize
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.model.WatchHistory
@@ -517,7 +518,7 @@ private fun LazyGridScope.folderPosters(
                     item.title,
                     posterModifier,
                     removeMode = ui.removeMode,
-                    cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, ImageCacheKeys.SIZE_MEDIUM),
+                    cacheKey = ImageCacheKeys.poster(item.type, item.id, PosterSize.Medium),
                 )
             },
         )
@@ -628,7 +629,7 @@ private fun LibraryTitleCard(
         quality = details?.quality?.let(::qualityLabel),
         badgeContent = badgeContent,
         posterContent = { url, posterModifier ->
-            val cacheKey = details?.let { ImageCacheKeys.poster(it.type.apiValue, it.id, ImageCacheKeys.SIZE_MEDIUM) }
+            val cacheKey = details?.let { ImageCacheKeys.poster(it.type, it.id, PosterSize.Medium) }
             TvPoster(url, title, posterModifier, TvMetrics.PosterShape, cacheKey)
         },
     )

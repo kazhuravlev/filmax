@@ -52,6 +52,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.catalog.model.MediaTrack
+import com.filmax.core.domain.catalog.model.WatchStatus
 import com.filmax.core.tv.designsystem.TvAccent
 import com.filmax.core.tv.designsystem.TvFocusCard
 import com.filmax.core.tv.designsystem.TvMetrics
@@ -66,7 +67,6 @@ import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.tv.designsystem.tvFocusGroup
 import com.filmax.core.ui.components.PosterImage
-import com.filmax.feature.details.common.WATCH_STATUS_FINISHED
 
 /**
  * Промежуток между колонками: сезоны · серии · превью. Небольшой: у каждой колонки ещё по
@@ -476,7 +476,7 @@ private fun episodeTag(episode: MediaTrack): String = if (episode.seasonNumber >
 }
 
 private fun episodeProgress(episode: MediaTrack): Float = when {
-    episode.watchStatus == WATCH_STATUS_FINISHED -> 1f
+    episode.watchStatus == WatchStatus.Finished -> 1f
     episode.durationSeconds > 0 -> (episode.watchedSeconds.toFloat() / episode.durationSeconds).coerceIn(0f, 1f)
     else -> 0f
 }
@@ -485,7 +485,7 @@ private fun episodeProgress(episode: MediaTrack): Float = when {
 private fun previewMeta(episode: MediaTrack): String? = buildList {
     episode.durationSeconds.takeIf { it > 0 }?.let { add("${it / SECONDS_IN_MINUTE} мин") }
     when {
-        episode.watchStatus == WATCH_STATUS_FINISHED -> add("Досмотрена")
+        episode.watchStatus == WatchStatus.Finished -> add("Досмотрена")
         episode.watchedSeconds > 0 -> add("Остановились на ${formatResumePosition(episode.watchedSeconds)}")
     }
 }.joinToString(" · ").ifBlank { null }

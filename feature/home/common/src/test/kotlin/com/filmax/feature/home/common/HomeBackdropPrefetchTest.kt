@@ -1,11 +1,13 @@
 package com.filmax.feature.home.common
 
 import com.filmax.core.domain.cache.ImageCacheKeys
+import com.filmax.core.domain.cache.PosterSize
 import com.filmax.core.domain.catalog.model.Duration
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemRating
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.catalog.model.Posters
+import com.filmax.core.domain.catalog.model.WatchStatus
 import com.filmax.core.domain.watching.model.Continuation
 import com.filmax.core.domain.watching.model.WatchProgress
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -26,7 +28,7 @@ class HomeBackdropPrefetchTest {
 
         val result = item.heroBackdropPrefetch()
 
-        assertEquals(ImageCacheKeys.poster("movie", item.id, ImageCacheKeys.WALL), result?.key)
+        assertEquals(ImageCacheKeys.poster(ItemType.MOVIE, item.id, PosterSize.Wall), result?.key)
         assertEquals("https://example.com/wide.jpg", result?.url)
     }
 
@@ -36,7 +38,7 @@ class HomeBackdropPrefetchTest {
 
         val result = item.heroBackdropPrefetch()
 
-        assertEquals(ImageCacheKeys.poster("movie", item.id, ImageCacheKeys.SIZE_BIG), result?.key)
+        assertEquals(ImageCacheKeys.poster(ItemType.MOVIE, item.id, PosterSize.Big), result?.key)
         assertEquals("https://example.com/big.jpg", result?.url)
     }
 
@@ -53,7 +55,7 @@ class HomeBackdropPrefetchTest {
 
         val result = continuation.backdropPrefetch()
 
-        assertEquals(ImageCacheKeys.poster("movie", continuation.itemId, ImageCacheKeys.WALL), result?.key)
+        assertEquals(ImageCacheKeys.poster(ItemType.MOVIE, continuation.itemId, PosterSize.Wall), result?.key)
         assertEquals(continuation.wideOrPoster, result?.url)
     }
 
@@ -90,6 +92,12 @@ class HomeBackdropPrefetchTest {
         savedPositionSeconds = 0,
         isLastEpisode = false,
         isActualContinuation = true,
-        progress = WatchProgress(status = 0, timeSeconds = 0, durationSeconds = null, videoId = 1, season = null),
+        progress = WatchProgress(
+            status = WatchStatus.InProgress,
+            timeSeconds = 0,
+            durationSeconds = null,
+            videoId = 1,
+            season = null,
+        ),
     )
 }

@@ -4,6 +4,7 @@ import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.watching.model.Notification
 import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchingItem
+import com.filmax.core.domain.watching.model.WatchingListType
 
 // Прогресс, история, списки «Я смотрю» и уведомления — один серверный контур kino.watch
 // (`watching/*`, `history`, `notifications`); дробить его на несколько репозиториев незачем.
@@ -16,15 +17,18 @@ interface WatchingRepository {
      * «просмотрено», очистка) — обычному читателю [forceRefresh] не нужен. `true` — явное
      * обновление по действию пользователя (повторный выбор вкладки «Я смотрю»): кэш минуем.
      */
-    suspend fun getHistory(type: String = "all", forceRefresh: Boolean = false): RequestResult<List<WatchHistory>>
+    suspend fun getHistory(forceRefresh: Boolean = false): RequestResult<List<WatchHistory>>
 
     /**
      * Тайтлы «в процессе» одним запросом на тип (`watching/{type}`) — без обхода `/history` по
-     * сериям и без резолва каждого тайтла отдельным `getItemDetails`. [type] — `"movies"` или
-     * `"serials"`. Для точной позиции конкретного тайтла (когда его открывают) — отдельный запрос,
-     * `CatalogRepository.getItemDetails`.
+     * сериям и без резолва каждого тайтла отдельным `getItemDetails`. [subscribed] — только
+     * отмеченные «Буду смотреть» (для фильмов сервер параметр игнорирует). Для точной позиции
+     * конкретного тайтла (когда его открывают) — отдельный запрос, `CatalogRepository.getItemDetails`.
      */
-    suspend fun getWatchingTitles(type: String, subscribed: Int = 1): RequestResult<List<WatchingItem>>
+    suspend fun getWatchingTitles(
+        type: WatchingListType,
+        subscribed: Boolean = true,
+    ): RequestResult<List<WatchingItem>>
 
     suspend fun saveProgress(itemId: Int, videoId: Int, timeSeconds: Int): RequestResult<Unit>
 

@@ -11,6 +11,7 @@ import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.cache.ImageDiscovery
 import com.filmax.core.domain.cache.ItemDetailsCacheAccess
 import com.filmax.core.domain.cache.ItemDiscovery
+import com.filmax.core.domain.cache.PosterSize
 import com.filmax.core.domain.cache.PrefetchImage
 import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.CollectionPage
@@ -145,7 +146,7 @@ internal fun ItemDto.toDomainOnly(): Item = Item(
  */
 internal fun Item.posterPrefetchImages(): List<PrefetchImage> = buildList {
     posters.medium.takeIf { it.isNotBlank() }?.let { url ->
-        add(PrefetchImage(ImageCacheKeys.poster(type.apiValue, id, ImageCacheKeys.SIZE_MEDIUM), url))
+        add(PrefetchImage(ImageCacheKeys.poster(type, id, PosterSize.Medium), url))
     }
 }
 

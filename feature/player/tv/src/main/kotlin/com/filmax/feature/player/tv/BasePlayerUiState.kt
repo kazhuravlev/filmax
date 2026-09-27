@@ -183,7 +183,7 @@ internal abstract class BasePlayerUiState(val player: Player) {
             Key.DirectionUp -> submenuCursor = (submenuCursor - 1).coerceAtLeast(0)
             Key.DirectionDown -> submenuCursor = (submenuCursor + 1).coerceAtMost(options.lastIndex)
             Key.DirectionCenter, Key.Enter -> {
-                options.getOrNull(submenuCursor)?.let { option -> menu.onSelect(category, option) }
+                if (submenuCursor in options.indices) menu.onSelect(category, submenuCursor)
                 submenu = null
             }
             // Горизонталь при открытом поповере глушим: иначе стрелка улетела бы в перемотку.

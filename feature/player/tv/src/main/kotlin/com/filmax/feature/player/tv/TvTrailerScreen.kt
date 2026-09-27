@@ -85,8 +85,8 @@ fun TvTrailerScreen(
 /** Сетка настроек трейлера: одна плитка «Скорость». */
 private fun trailerMenu(speed: Float, onSpeed: (Float) -> Unit) = PlayerActions(
     items = listOf(SettingsAction.Speed),
-    options = { PlaybackSpeeds.labels },
-    selected = { PlaybackSpeeds.labelFor(speed) },
-    onSelect = { _, label -> PlaybackSpeeds.valueFor(label)?.let(onSpeed) },
+    options = { _ -> PlaybackSpeeds.options.map { it.toChoice() } },
+    selected = { PlaybackSpeeds.optionFor(speed).toChoice() },
+    onSelect = { _, index -> PlaybackSpeeds.options.getOrNull(index)?.let { onSpeed(it.value) } },
     onNextEpisode = {},
 )

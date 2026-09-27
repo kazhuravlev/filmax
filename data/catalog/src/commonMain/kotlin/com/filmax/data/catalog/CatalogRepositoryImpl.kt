@@ -22,6 +22,7 @@ import com.filmax.data.catalog.mapper.toDomain
 import com.filmax.data.catalog.mapper.toDomainOnly
 import com.filmax.data.catalog.remote.CatalogApi
 import com.filmax.data.catalog.remote.ItemsQuery
+import com.filmax.data.catalog.remote.ItemsShortcut
 import com.filmax.data.catalog.remote.dto.ItemDto
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -103,10 +104,10 @@ internal class CatalogRepositoryImpl(
         safeRequest { api.getFilteredItems(filters.toQuery(type, genreId, sort, page)).toDomain() }
 
     override suspend fun getHotItems(type: ItemType, page: Int): RequestResult<ItemPage> =
-        safeRequest { api.getItemsByShortcut("hot", type.apiValue, page).toDomain() }
+        safeRequest { api.getItemsByShortcut(ItemsShortcut.Hot, type.apiValue, page).toDomain() }
 
     override suspend fun getNewItems(type: ItemType, page: Int): RequestResult<ItemPage> =
-        safeRequest { api.getItemsByShortcut("new", type.apiValue, page).toDomain() }
+        safeRequest { api.getItemsByShortcut(ItemsShortcut.New, type.apiValue, page).toDomain() }
 
     // Статическая информация о тайтле (название/описание/актёры/режиссёр/трейлер/жанры/рейтинги
     // и т.п.) почти не меняется — при попадании в кэш ItemDto.toDomain() уже сохранил его туда

@@ -39,8 +39,23 @@ class TokenStorage(
         refreshState.value = null
     }
 
-    private companion object {
-        const val KEY_ACCESS = "access_token"
-        const val KEY_REFRESH = "refresh_token"
+    /**
+     * Засеивает пару токенов, только если хранилище пустое (demo-сборка стартует авторизованной).
+     * Единственный вход для такого засева: ключи и файл хранилища знает только этот класс.
+     */
+    fun seedIfEmpty(accessToken: String, refreshToken: String) {
+        if (accessState.value != null) return
+        settings.putString(KEY_ACCESS, accessToken)
+        settings.putString(KEY_REFRESH, refreshToken)
+        accessState.value = accessToken
+        refreshState.value = refreshToken
+    }
+
+    companion object {
+        /** Имя платформенного хранилища (файл SharedPreferences / сервис Keychain) под токены. */
+        const val PREFERENCES_NAME = "filmax_tokens"
+
+        private const val KEY_ACCESS = "access_token"
+        private const val KEY_REFRESH = "refresh_token"
     }
 }

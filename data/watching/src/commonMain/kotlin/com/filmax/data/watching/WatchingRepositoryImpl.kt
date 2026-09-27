@@ -1,6 +1,7 @@
 package com.filmax.data.watching
 
 import com.filmax.core.domain.cache.ItemDiscovery
+import com.filmax.core.domain.catalog.model.WatchStatus
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.common.safeRequest
 import com.filmax.core.domain.watching.WatchingRepository
@@ -8,6 +9,7 @@ import com.filmax.core.domain.watching.model.Notification
 import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchProgress
 import com.filmax.core.domain.watching.model.WatchingItem
+import com.filmax.core.domain.watching.model.WatchingListType
 import com.filmax.data.watching.remote.WatchingApi
 import com.filmax.data.watching.remote.dto.HistoryEntryDto
 import com.filmax.data.watching.remote.dto.PaginationDto
@@ -23,9 +25,6 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
-/** `watching/{type}`: единственный трек «досмотрено» — статус 1, как и в `items/{id}`. */
-private const val WATCH_STATUS_IN_PROGRESS = 0
-
 private fun HistoryEntryDto.toDomain(): WatchHistory {
     // Длительность берём у самой серии; у фильма media.duration тоже заполнен, а item.duration —
     // это средняя длительность по тайтлу, годная только как запасной вариант.
@@ -40,7 +39,8 @@ private fun HistoryEntryDto.toDomain(): WatchHistory {
         posterWide = item.posters?.wide,
         episodeThumbnail = media?.thumbnail,
         progress = WatchProgress(
-            status = WATCH_STATUS_IN_PROGRESS,
+            // Запись в `/history` — по определению «в процессе»: досмотренное сервер оттуда убирает.
+            status = WatchStatus.InProgress,
             timeSeconds = time,
             durationSeconds = duration,
             // `number`, а не id: тем же числом kino.watch принимает прогресс в marktime и
@@ -112,7 +112,7 @@ internal class WatchingRepositoryImpl(
      * поэтому первая запись тайтла и есть последняя серия. Без неё ряд получал дублирующиеся
      * ключи и Compose падал с «Key … was already used».
      */
-    override suspend fun getHistory(type: String, forceRefresh: Boolean): RequestResult<List<WatchHistory>> {
+    override suspend fun getHistory(forceRefresh: Boolean): RequestResult<List<WatchHistory>> {
         val job = historyMutex.withLock {
             if (!forceRefresh) {
                 cachedHistory
@@ -167,11 +167,11 @@ internal class WatchingRepositoryImpl(
      * каждого тайтла через `getItemDetails`. Точной позиции тут нет (см. [WatchingItem]) — она
      * не нужна для списка, только при открытии конкретного тайтла.
      */
-    override suspend fun getWatchingTitles(type: String, subscribed: Int): RequestResult<List<WatchingItem>> =
-        safeRequest {
-            val isSeries = type == "serials"
-            api.getWatchingList(type, subscribed).items.map { it.toDomain(isSeries) }
-        }
+    override suspend fun getWatchingTitles(
+        type: WatchingListType,
+        subscribed: Boolean,
+    ): RequestResult<List<WatchingItem>> =
+        safeRequest { api.getWatchingList(type, subscribed).items.map { it.toDomain(type.isSeries) } }
 
     override suspend fun saveProgress(itemId: Int, videoId: Int, timeSeconds: Int): RequestResult<Unit> {
         invalidateHistory()
@@ -199,7 +199,7 @@ internal class WatchingRepositoryImpl(
     }
 
     override suspend fun toggleWatchlist(itemId: Int): RequestResult<Boolean> =
-        safeRequest { api.toggleWatchlist(itemId)["watching"] == 1 }
+        safeRequest { api.toggleWatchlist(itemId).inWatchlist }
 
     override suspend fun clearHistory(itemId: Int): RequestResult<Unit> {
         invalidateHistory()

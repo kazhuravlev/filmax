@@ -85,7 +85,7 @@ private fun playerMenu(
     },
     options = { action -> action.options(state) },
     selected = { action -> action.selected(state) },
-    onSelect = { action, label -> action.toEvent(label)?.let(dispatch) },
+    onSelect = { action, index -> action.toEvent(state, index)?.let(dispatch) },
     onNextEpisode = {
         state.nextTrack?.let { next -> onPlayEpisode?.invoke(next.seasonNumber, next.number) }
     },
@@ -100,7 +100,7 @@ private fun playerMenu(
             SettingsAction.Audio -> state.audioTracks.size > 1
             SettingsAction.Subtitle -> state.subtitles.size > 1
             SettingsAction.Quality -> state.qualities.size > 1
-            else -> true
+            SettingsAction.Preset, SettingsAction.Speed, SettingsAction.Episodes, SettingsAction.NextEpisode -> true
         }
     },
 )
@@ -144,36 +144,42 @@ private fun playerSubtitle(state: PlayerState): String {
             listOfNotNull("Сезон ${track.seasonNumber} · Серия ${track.number}", episodeTitle).joinToString(" · ")
         state.item?.tracklist.orEmpty().size > 1 ->
             listOfNotNull("Серия ${track.number}", episodeTitle).joinToString(" · ")
-        else -> listOfNotNull(state.item?.year?.takeIf { it > 0 }?.toString(), state.currentQuality)
+        else -> listOfNotNull(state.item?.year?.takeIf { it > 0 }?.toString(), state.currentQuality?.label)
             .joinToString(" · ")
     }
 }
 
-private fun SettingsAction.options(state: PlayerState): List<String> = when (this) {
-    SettingsAction.Quality -> state.qualities.map { it.label }
-    SettingsAction.Preset -> PlaybackSettings.presetOptions
-    SettingsAction.Audio -> state.audioTracks.map { it.label }
-    SettingsAction.Subtitle -> state.subtitles.map { it.label }
-    SettingsAction.Speed -> PlaybackSpeeds.labels
+/** Варианты поповера категории — в том же порядке, что и источники в [toEvent]. */
+private fun SettingsAction.options(state: PlayerState): List<PlayerChoice> = when (this) {
+    SettingsAction.Quality -> state.qualities.map { it.toChoice() }
+    SettingsAction.Preset -> PlaybackSettings.presetOptions.map { it.toChoice() }
+    SettingsAction.Audio -> state.audioTracks.map { it.toChoice() }
+    SettingsAction.Subtitle -> state.subtitles.map { it.toChoice() }
+    SettingsAction.Speed -> PlaybackSpeeds.options.map { it.toChoice() }
     SettingsAction.Episodes, SettingsAction.NextEpisode -> emptyList()
 }
 
-private fun SettingsAction.selected(state: PlayerState): String = when (this) {
-    SettingsAction.Quality -> state.currentQuality.orEmpty()
-    // Короткая подпись плитки в списке поповера отсутствует («Свой» и shortLabel) — курсор встанет
-    // на «Авто», это ожидаемо: пресет сейчас не выбран.
-    SettingsAction.Preset -> state.currentPreset
-    SettingsAction.Audio -> state.currentAudio
-    SettingsAction.Subtitle -> state.currentSubtitle
-    SettingsAction.Speed -> PlaybackSpeeds.labelFor(state.currentSpeed)
-    SettingsAction.Episodes, SettingsAction.NextEpisode -> ""
+private fun SettingsAction.selected(state: PlayerState): PlayerChoice? = when (this) {
+    SettingsAction.Quality -> state.currentQuality?.toChoice()
+    // «Свой» в списке поповера отсутствует — курсор встанет на «Авто», это ожидаемо: пресет
+    // сейчас не выбран.
+    SettingsAction.Preset -> state.currentPreset.toChoice()
+    SettingsAction.Audio -> state.currentAudio?.toChoice()
+    SettingsAction.Subtitle -> state.currentSubtitle.toChoice()
+    SettingsAction.Speed -> PlaybackSpeeds.optionFor(state.currentSpeed).toChoice()
+    SettingsAction.Episodes, SettingsAction.NextEpisode -> null
 }
 
-private fun SettingsAction.toEvent(label: String): PlayerEvent? = when (this) {
-    SettingsAction.Quality -> PlayerEvent.SelectQuality(label)
-    SettingsAction.Preset -> PlayerEvent.SelectPreset(label)
-    SettingsAction.Audio -> PlayerEvent.SelectAudio(label)
-    SettingsAction.Subtitle -> PlayerEvent.SelectSubtitle(label)
-    SettingsAction.Speed -> PlaybackSpeeds.valueFor(label)?.let { PlayerEvent.SetSpeed(it) }
+/** getOrNull не годится: нулевой элемент («Авто») — сам null, и его нельзя отличить от «нет такого». */
+private fun presetEvent(index: Int): PlayerEvent? =
+    PlaybackSettings.presetOptions.takeIf { index in it.indices }?.let { PlayerEvent.SelectPreset(it[index]) }
+
+/** Событие по индексу варианта из [options]; индекс вне списка — null (поповер устарел). */
+private fun SettingsAction.toEvent(state: PlayerState, index: Int): PlayerEvent? = when (this) {
+    SettingsAction.Quality -> state.qualities.getOrNull(index)?.let(PlayerEvent::SelectQuality)
+    SettingsAction.Preset -> presetEvent(index)
+    SettingsAction.Audio -> state.audioTracks.getOrNull(index)?.let(PlayerEvent::SelectAudio)
+    SettingsAction.Subtitle -> state.subtitles.getOrNull(index)?.let(PlayerEvent::SelectSubtitle)
+    SettingsAction.Speed -> PlaybackSpeeds.options.getOrNull(index)?.let { PlayerEvent.SetSpeed(it.value) }
     SettingsAction.Episodes, SettingsAction.NextEpisode -> null
 }

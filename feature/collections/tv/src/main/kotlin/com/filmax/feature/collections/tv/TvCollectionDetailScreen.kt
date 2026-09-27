@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filmax.core.domain.cache.ImageCacheKeys
+import com.filmax.core.domain.cache.PosterSize
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
@@ -168,7 +169,7 @@ private fun CollectionPoster(item: Item, modifier: Modifier, onClick: () -> Unit
             shape = TvMetrics.PosterShape,
             // Плейсхолдер-градиент по умолчанию цветной; в монохроме под постером — поверхность.
             accentColor = TvSurfaceContainer,
-            cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, ImageCacheKeys.SIZE_MEDIUM),
+            cacheKey = ImageCacheKeys.poster(item.type, item.id, PosterSize.Medium),
         )
     }
 }

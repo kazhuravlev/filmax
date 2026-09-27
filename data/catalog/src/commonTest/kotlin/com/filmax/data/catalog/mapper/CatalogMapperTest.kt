@@ -5,6 +5,7 @@ import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.cache.ImageDiscovery
 import com.filmax.core.domain.cache.ImagePrefetcher
 import com.filmax.core.domain.cache.ItemDiscovery
+import com.filmax.core.domain.cache.PosterSize
 import com.filmax.core.domain.cache.PrefetchImage
 import com.filmax.core.domain.cache.PrefetchProgress
 import com.filmax.core.domain.cache.TitleBackgroundFetcher
@@ -65,12 +66,14 @@ class CatalogMapperTest {
 
         assertEquals(1, fakePrefetcher.enqueued.size, "backdrop must not be prefetched from the generic mapper")
         val expected = PrefetchImage(
-            key = ImageCacheKeys.poster(item.type.apiValue, item.id, ImageCacheKeys.SIZE_MEDIUM),
+            key = ImageCacheKeys.poster(item.type, item.id, PosterSize.Medium),
             url = "https://cdn.test/poster.jpg",
         )
         assertEquals(expected, fakePrefetcher.enqueued.single())
-        assertTrue(fakePrefetcher.enqueued.none { it.key.endsWith(":${ImageCacheKeys.WALL}") })
-        assertTrue(fakePrefetcher.enqueued.none { it.key.endsWith(":${ImageCacheKeys.SIZE_BIG}") })
+        val wall = ImageCacheKeys.poster(item.type, item.id, PosterSize.Wall)
+        val big = ImageCacheKeys.poster(item.type, item.id, PosterSize.Big)
+        assertTrue(fakePrefetcher.enqueued.none { it.key == wall })
+        assertTrue(fakePrefetcher.enqueued.none { it.key == big })
     }
 
     @Test

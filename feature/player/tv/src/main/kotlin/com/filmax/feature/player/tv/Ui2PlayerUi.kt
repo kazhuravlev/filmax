@@ -3,6 +3,7 @@ package com.filmax.feature.player.tv
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -53,10 +55,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
-import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.tv.designsystem.TvMetrics
 import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
-import com.filmax.core.tv.designsystem.qualityLabel
+import com.filmax.feature.player.common.NO_VALUE_CAPTION
 import com.filmax.feature.player.common.formatPlayerTime
 
 /**
@@ -223,7 +224,9 @@ internal class Ui2PlayerUiState(player: Player) : BasePlayerUiState(player) {
             is Ui2Control.Action -> when (control.action) {
                 SettingsAction.NextEpisode -> menu.onNextEpisode()
                 SettingsAction.Episodes -> openEpisodes(menu)
-                else -> openSubmenu(control.action, menu)
+                SettingsAction.Preset, SettingsAction.Quality, SettingsAction.Audio, SettingsAction.Subtitle,
+                SettingsAction.Speed,
+                -> openSubmenu(control.action, menu)
             }
         }
         touch()
@@ -455,7 +458,11 @@ private fun Ui2Track(
 private fun Ui2ControlsRow(ui: Ui2PlayerUiState, menu: PlayerActions, modifier: Modifier = Modifier) {
     val controls = ui2Controls(menu)
     val focusedIndex = ui.controlCursor.coerceIn(0, controls.lastIndex.coerceAtLeast(0))
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+    Row(
+        modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(ButtonGap),
+    ) {
         controls.forEachIndexed { index, control ->
             Ui2ControlSlot(
                 icon = control.icon(ui.isPlaying),
@@ -463,30 +470,38 @@ private fun Ui2ControlsRow(ui: Ui2PlayerUiState, menu: PlayerActions, modifier: 
                 caption = control.caption(menu),
                 focused = ui.zone == Ui2Zone.Controls && index == focusedIndex,
             )
-            if (control == Ui2Control.Forward) Spacer(Modifier.weight(1f)) else Spacer(Modifier.width(ButtonGap))
+            // Транспорт слева, действия прижаты к правому краю — ровно под правый край полосы.
+            if (control == Ui2Control.Forward) Spacer(Modifier.weight(1f))
         }
     }
 }
 
 /**
  * Кнопка и подпись под ней в одном контейнере. Подпись — мелким шрифтом по центру кнопки
- * (см. [caption]); у транспорта, серий и пресета она пустая, но строка под неё всё равно есть.
+ * (см. [caption]); null — подписи у кнопки нет (транспорт, серии, пресет), но место под неё
+ * всё равно зарезервировано, чтобы ряд не прыгал. Длинная подпись обрезается многоточием, а
+ * при увеличенном системном шрифте строка подрастает, а не режет текст.
  */
 @Composable
-private fun Ui2ControlSlot(icon: ImageVector, contentDescription: String, caption: String, focused: Boolean) {
+private fun Ui2ControlSlot(icon: ImageVector, contentDescription: String, caption: String?, focused: Boolean) {
     Column(Modifier.width(ButtonSize), horizontalAlignment = Alignment.CenterHorizontally) {
         Ui2Button(icon = icon, contentDescription = contentDescription, focused = focused)
-        Text(
-            caption,
-            style = MaterialTheme.typography.labelSmall,
-            color = CaptionColor,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier
-                .padding(top = CaptionGap)
-                .height(CaptionHeight),
-        )
+        if (caption == null) {
+            Spacer(Modifier.padding(top = CaptionGap).height(CaptionHeight))
+        } else {
+            Text(
+                caption,
+                style = MaterialTheme.typography.labelSmall,
+                color = CaptionColor,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .padding(top = CaptionGap)
+                    .heightIn(min = CaptionHeight),
+            )
+        }
     }
 }
 
@@ -530,52 +545,25 @@ private fun Ui2Control.label(menu: PlayerActions, isPlaying: Boolean): String = 
     Ui2Control.Rewind -> "Назад 10 с"
     Ui2Control.Forward -> "Вперёд 10 с"
     is Ui2Control.Action -> {
-        val value = menu.selected(action)
-        if (value.isBlank()) action.label else "${action.label} · $value"
+        val value = menu.selected(action)?.label
+        if (value.isNullOrBlank()) action.label else "${action.label} · $value"
     }
 }
 
 /**
  * Короткое значение под кнопкой: код языка озвучки и субтитров («rus», «eng», «—» без субтитров)
- * и класс качества («FHD», «4K» — тот же маппинг, что у бейджа на карточках, см. [qualityLabel]).
- * Пустая строка — подписи нет (транспорт, серии, пресет). Полные подписи поповера
- * («2. Русский · Многоголосый · BaibaKo», «2160p») под кнопку в 44dp не влезают.
+ * и класс качества («FHD», «4K») — уже посчитанное [PlayerChoice.shortValue], здесь ничего не
+ * разбирается из подписи. null — подписи нет (транспорт, серии, пресет, скорость). Полные подписи
+ * поповера («2. Русский · Многоголосый · BaibaKo», «2160p») под кнопку в 44dp не влезают.
  */
-private fun Ui2Control.caption(menu: PlayerActions): String {
-    if (this !is Ui2Control.Action) return ""
-    val value = menu.selected(action)
-    return when (action) {
-        SettingsAction.Audio -> languageCode(value)
-        SettingsAction.Subtitle -> if (value == PlaybackSettings.SubtitleOff) NO_CAPTION else languageCode(value)
-        SettingsAction.Quality -> qualityCaption(value)
-        SettingsAction.Speed, SettingsAction.Preset, SettingsAction.Episodes, SettingsAction.NextEpisode -> ""
+private fun Ui2Control.caption(menu: PlayerActions): String? = when (this) {
+    Ui2Control.PlayPause, Ui2Control.Rewind, Ui2Control.Forward -> null
+    is Ui2Control.Action -> when (action) {
+        SettingsAction.Audio, SettingsAction.Subtitle, SettingsAction.Quality ->
+            menu.selected(action)?.shortValue ?: NO_VALUE_CAPTION
+        SettingsAction.Speed, SettingsAction.Preset, SettingsAction.Episodes, SettingsAction.NextEpisode -> null
     }
 }
-
-/**
- * Код языка по подписи дорожки: «2. Русский · Дубляж» → «rus», «ENG #03» → «eng», «Оригинал» →
- * «orig». Ищем по подстроке: подписи kino.watch называют язык то по-русски, то кодом, то в
- * верхнем регистре. Неизвестный язык — первое слово подписи без номера, как есть.
- */
-private fun languageCode(label: String): String {
-    val haystack = label.lowercase()
-    return when {
-        haystack.contains("рус") || haystack.contains("rus") -> "rus"
-        haystack.contains("англ") || haystack.contains("eng") -> "eng"
-        haystack.contains("укр") || haystack.contains("ukr") -> "ukr"
-        haystack.contains("ориг") || haystack.contains("orig") -> "orig"
-        else -> label.replaceFirst(AUDIO_NUMBER_PREFIX, "").substringBefore(" ").lowercase().ifBlank { NO_CAPTION }
-    }
-}
-
-private val AUDIO_NUMBER_PREFIX = Regex("""^\d+\.\s*""")
-
-/** «1080p» → «FHD», «2160p» → «4K»: высота кадра из подписи качества через общий [qualityLabel]. */
-private fun qualityCaption(label: String): String =
-    label.takeWhile { it.isDigit() }.toIntOrNull()?.let(::qualityLabel) ?: label
-
-/** Прочерк под субтитрами, когда они выключены или их нет. */
-private const val NO_CAPTION = "—"
 
 /** Шаг кнопок «±10 с». */
 private const val SKIP_STEP_MS = 10_000L

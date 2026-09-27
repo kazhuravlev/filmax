@@ -1,8 +1,8 @@
 package com.filmax.feature.player.common
 
-import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.domain.playback.TitleTracks
 import com.filmax.core.domain.playback.TrackPreset
+import com.filmax.core.domain.playback.VoiceKey
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -15,11 +15,11 @@ class TrackResolutionTest {
     private val russianDub = AudioMatchCandidate(lang = "rus", label = "2. Русский · Дубляж")
     private val russianVoiceover = AudioMatchCandidate(lang = "rus", label = "3. Русский · Многоголосый · BaibaKo")
     private val allAudio = listOf(original, russianDub, russianVoiceover)
-    private val allVoiceKeys = listOf("||", "rus|Дубляж|", "rus|Многоголосый|BaibaKo")
+    private val allVoiceKeys = listOf("||", "rus|Дубляж|", "rus|Многоголосый|BaibaKo").map(::VoiceKey)
 
-    private val off = SubtitleOption(PlaybackSettings.SubtitleOff, null)
-    private val russianSubs = SubtitleOption(label = "RUS #01", lang = "rus", groupIndex = 0, trackIndex = 0)
-    private val englishSubs = SubtitleOption(label = "ENG #02", lang = "eng", groupIndex = 0, trackIndex = 1)
+    private val off = SubtitleOption.Off
+    private val russianSubs = SubtitleOption.Track(label = "RUS #01", lang = "rus", groupIndex = 0, trackIndex = 0)
+    private val englishSubs = SubtitleOption.Track(label = "ENG #02", lang = "eng", groupIndex = 0, trackIndex = 1)
 
     @Test
     fun `auto picks the first preset whose audio and subtitles both exist`() {
@@ -27,7 +27,7 @@ class TrackResolutionTest {
         assertEquals(TrackPreset.OriginalEnglishSubs, resolved.preset)
         assertEquals(0, resolved.audioIndex)
         assertEquals(englishSubs, resolved.subtitle)
-        assertEquals(TrackPreset.OriginalEnglishSubs.shortLabel, resolved.presetLabel)
+        assertEquals(PresetSelection.Preset(TrackPreset.OriginalEnglishSubs), resolved.presetSelection)
     }
 
     @Test
@@ -48,11 +48,11 @@ class TrackResolutionTest {
 
     @Test
     fun `auto with nothing matching leaves the player default and subtitles off`() {
-        val resolved = resolveTracks(listOf(original), listOf("||"), listOf(off), null, null)
+        val resolved = resolveTracks(listOf(original), listOf(VoiceKey("||")), listOf(off), null, null)
         assertNull(resolved.preset)
         assertNull(resolved.audioIndex)
         assertEquals(off, resolved.subtitle)
-        assertEquals(PlaybackSettings.PresetAuto, resolved.presetLabel)
+        assertEquals(PresetSelection.Auto, resolved.presetSelection)
     }
 
     @Test
@@ -101,7 +101,7 @@ class TrackResolutionTest {
             voiceKeys = allVoiceKeys,
             options = listOf(off, russianSubs, englishSubs),
             selection = TitleTracks.Custom(
-                voiceKey = "rus|Многоголосый|BaibaKo",
+                voiceKey = VoiceKey("rus|Многоголосый|BaibaKo"),
                 subtitleKey = russianSubs.preferenceKey(),
             ),
             globalPreset = null,
@@ -110,7 +110,7 @@ class TrackResolutionTest {
         assertNull(resolved.preset)
         assertEquals(2, resolved.audioIndex)
         assertEquals(russianSubs, resolved.subtitle)
-        assertEquals(CUSTOM_PRESET_LABEL, resolved.presetLabel)
+        assertEquals(PresetSelection.Custom, resolved.presetSelection)
     }
 
     @Test
@@ -120,8 +120,8 @@ class TrackResolutionTest {
             voiceKeys = allVoiceKeys,
             options = listOf(off, englishSubs),
             selection = TitleTracks.Custom(
-                voiceKey = "rus|Дубляж|LostFilm",
-                subtitleKey = PlaybackSettings.SubtitleOff,
+                voiceKey = VoiceKey("rus|Дубляж|LostFilm"),
+                subtitleKey = off.preferenceKey(),
             ),
             globalPreset = null,
         )
@@ -138,7 +138,7 @@ class TrackResolutionTest {
             candidates = allAudio,
             voiceKeys = allVoiceKeys,
             options = listOf(off, russianSubs, englishSubs),
-            selection = TitleTracks.Custom(voiceKey = "rus|Дубляж|", subtitleKey = null),
+            selection = TitleTracks.Custom(voiceKey = VoiceKey("rus|Дубляж|"), subtitleKey = null),
             globalPreset = null,
         )
         assertEquals(1, resolved.audioIndex)

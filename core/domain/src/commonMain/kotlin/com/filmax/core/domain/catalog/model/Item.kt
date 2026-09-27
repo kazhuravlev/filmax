@@ -90,9 +90,26 @@ data class MediaTrack(
     val subtitles: List<SubtitleTrack>,
     /** Прогресс просмотра в секундах (kino.watch `watching.time`); 0 — не начат. */
     val watchedSeconds: Int = 0,
-    /** Статус просмотра: -1 не начат, 0 в процессе, 1 досмотрен (kino.watch `watching.status`). */
-    val watchStatus: Int = -1,
+    /** Серверный статус просмотра дорожки (kino.watch `watching.status`). */
+    val watchStatus: WatchStatus = WatchStatus.NotStarted,
 )
+
+/**
+ * Статус просмотра видео на сервере (`watching.status` в `items/{id}` и `/history`). [apiValue] —
+ * как kino.watch кодирует его числом; всё сравнение в домене идёт по enum, число живёт только на
+ * границе с API ([fromApi]).
+ */
+enum class WatchStatus(val apiValue: Int) {
+    NotStarted(-1),
+    InProgress(0),
+    Finished(1),
+    ;
+
+    companion object {
+        /** null и неизвестные числа — «не начат»: сервер ничего не сказал, начинаем с нуля. */
+        fun fromApi(value: Int?): WatchStatus = entries.firstOrNull { it.apiValue == value } ?: NotStarted
+    }
+}
 
 data class VideoFile(
     val quality: String,

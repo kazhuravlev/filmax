@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.playback.PlaybackSettings
+import com.filmax.core.domain.playback.QualityPreference
 import com.filmax.core.domain.user.model.UserProfile
 import com.filmax.core.tv.designsystem.ScrollToTopOnNavFocus
 import com.filmax.core.tv.designsystem.TvError
@@ -248,18 +249,18 @@ private fun profileActions(
     onCheckUpdates = onCheckUpdates,
     onCycleQuality = {
         screenModel.dispatch(
-            ProfileEvent.SetQuality(next(PlaybackSettings.qualityOptions, state.playback.quality))
+            ProfileEvent.SetQuality(next(QualityPreference.options, state.playback.quality))
         )
     },
     onCyclePreset = {
         screenModel.dispatch(
-            ProfileEvent.SetPreset(next(PlaybackSettings.presetOptions, state.playback.presetLabel))
+            ProfileEvent.SetPreset(next(PlaybackSettings.presetOptions, state.playback.preset))
         )
     },
     onResetTitleTracks = { screenModel.dispatch(ProfileEvent.ResetTitleTracks) },
     onCyclePlayerUi = {
         screenModel.dispatch(
-            ProfileEvent.SetPlayerUi(next(PlaybackSettings.playerUiOptions, state.playback.playerUi.label))
+            ProfileEvent.SetPlayerUi(next(PlaybackSettings.playerUiOptions, state.playback.playerUi))
         )
     },
     onLogout = { screenModel.dispatch(ProfileEvent.Logout) },
@@ -285,7 +286,7 @@ private fun profileActions(
 @Composable
 private fun PlaybackRows(state: ProfileState, actions: ProfileActions) {
     SettingRow(
-        spec = SettingRowSpec(label = "Качество видео", value = state.playback.quality),
+        spec = SettingRowSpec(label = "Качество видео", value = state.playback.quality.label),
         onClick = actions.onCycleQuality,
     )
     // «Авто» — первый пресет из списка, чьи озвучка и субтитры есть у тайтла; в плеере

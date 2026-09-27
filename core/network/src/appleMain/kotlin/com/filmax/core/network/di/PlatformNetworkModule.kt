@@ -2,6 +2,7 @@ package com.filmax.core.network.di
 
 import com.filmax.core.domain.cache.ItemDetailsCache
 import com.filmax.core.network.ItemDetailsCacheImpl
+import com.filmax.core.network.TokenStorage
 import com.russhwolf.settings.ExperimentalSettingsImplementation
 import com.russhwolf.settings.KeychainSettings
 import com.russhwolf.settings.Settings
@@ -13,7 +14,7 @@ import org.koin.dsl.module
 
 @OptIn(ExperimentalSettingsImplementation::class)
 actual val platformNetworkModule: Module = module {
-    single<Settings> { KeychainSettings(service = "filmax_tokens") }
+    single<Settings> { KeychainSettings(service = TokenStorage.PREFERENCES_NAME) }
     single<Settings>(named(ITEM_CACHE_SETTINGS)) { KeychainSettings(service = "filmax_item_cache") }
     single<Settings>(named(BG_FETCH_SETTINGS)) { KeychainSettings(service = "filmax_bg_fetch") }
     single<Settings>(named(TECH_OVERLAY_SETTINGS)) { KeychainSettings(service = "filmax_tech_overlay") }

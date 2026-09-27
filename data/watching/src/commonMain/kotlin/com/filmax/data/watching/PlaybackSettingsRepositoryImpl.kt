@@ -3,8 +3,11 @@ package com.filmax.data.watching
 import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.domain.playback.PlaybackSettingsRepository
 import com.filmax.core.domain.playback.PlayerUi
+import com.filmax.core.domain.playback.QualityPreference
+import com.filmax.core.domain.playback.SubtitleKey
 import com.filmax.core.domain.playback.TitleTracks
 import com.filmax.core.domain.playback.TrackPreset
+import com.filmax.core.domain.playback.VoiceKey
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,7 +22,7 @@ internal class PlaybackSettingsRepositoryImpl(
 
     override val settings: Flow<PlaybackSettings> = state.asStateFlow()
 
-    override suspend fun setQuality(quality: String) = update { it.copy(quality = quality) }
+    override suspend fun setQuality(quality: QualityPreference) = update { it.copy(quality = quality) }
 
     override suspend fun setPreset(preset: TrackPreset?) = update { it.copy(preset = preset) }
 
@@ -37,7 +40,8 @@ internal class PlaybackSettingsRepositoryImpl(
         val subtitle = storage.getStringOrNull(KEY_SUBTITLE_PREFIX + itemId)
         return when {
             preset != null -> TitleTracks.Preset(preset.toPreset())
-            voice != null || subtitle != null -> TitleTracks.Custom(voiceKey = voice, subtitleKey = subtitle)
+            voice != null || subtitle != null ->
+                TitleTracks.Custom(voiceKey = voice?.let(::VoiceKey), subtitleKey = subtitle?.let(::SubtitleKey))
             else -> null
         }
     }
@@ -52,8 +56,8 @@ internal class PlaybackSettingsRepositoryImpl(
 
             is TitleTracks.Custom -> {
                 storage.remove(KEY_TITLE_PRESET_PREFIX + itemId)
-                putOrRemove(KEY_VOICE_PREFIX + itemId, tracks.voiceKey)
-                putOrRemove(KEY_SUBTITLE_PREFIX + itemId, tracks.subtitleKey)
+                putOrRemove(KEY_VOICE_PREFIX + itemId, tracks.voiceKey?.value)
+                putOrRemove(KEY_SUBTITLE_PREFIX + itemId, tracks.subtitleKey?.value)
             }
         }
     }
@@ -70,7 +74,7 @@ internal class PlaybackSettingsRepositoryImpl(
 
     private fun update(transform: (PlaybackSettings) -> PlaybackSettings) {
         val updated = transform(state.value)
-        storage.putString(KEY_QUALITY, updated.quality)
+        storage.putString(KEY_QUALITY, updated.quality.toRaw())
         storage.putString(KEY_PRESET, updated.preset.toRaw())
         storage.putString(KEY_PLAYER_UI, updated.playerUi.name)
         state.value = updated
@@ -81,7 +85,7 @@ internal class PlaybackSettingsRepositoryImpl(
         storage.remove(KEY_LEGACY_AUDIO)
         storage.remove(KEY_LEGACY_SUBTITLES)
         return PlaybackSettings(
-            quality = storage.getStringOrNull(KEY_QUALITY) ?: PlaybackSettings.QualityAuto,
+            quality = storage.getStringOrNull(KEY_QUALITY)?.toQuality() ?: QualityPreference.Auto,
             preset = storage.getStringOrNull(KEY_PRESET)?.toPreset(),
             // Неизвестное имя (интерфейс убрали) — дефолтный, а не падение при загрузке.
             playerUi = storage.getStringOrNull(KEY_PLAYER_UI)
@@ -105,7 +109,18 @@ internal class PlaybackSettingsRepositoryImpl(
 
 private const val PRESET_AUTO = "auto"
 
+/** Так «Авто» писалось до типизации качества — старые записи читаем как [QualityPreference.Auto]. */
+private const val LEGACY_QUALITY_AUTO = "Авто"
+
 private fun TrackPreset?.toRaw(): String = this?.name ?: PRESET_AUTO
+
+private fun QualityPreference.toRaw(): String = when (this) {
+    QualityPreference.Auto -> LEGACY_QUALITY_AUTO
+    is QualityPreference.Fixed -> label
+}
+
+private fun String.toQuality(): QualityPreference =
+    if (this == LEGACY_QUALITY_AUTO) QualityPreference.Auto else QualityPreference.Fixed(this)
 
 /** Неизвестное имя (пресет переименовали/удалили) читается как «Авто», а не роняет загрузку. */
 private fun String.toPreset(): TrackPreset? = TrackPreset.entries.firstOrNull { it.name == this }

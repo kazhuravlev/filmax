@@ -44,7 +44,7 @@ internal class AuthRepositoryImpl(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (error: Throwable) {
-            RequestResult.Error(error.message, error)
+            RequestResult.Error.of(error)
         }
 
     override suspend fun refreshToken(refreshToken: String): RequestResult<Token> = safeRequest {

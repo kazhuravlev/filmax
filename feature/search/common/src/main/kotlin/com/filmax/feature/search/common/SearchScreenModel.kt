@@ -15,7 +15,9 @@ import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.common.LastValueCache
 import com.filmax.core.domain.common.RequestResult
+import com.filmax.core.domain.common.errorOrNull
 import com.filmax.core.domain.common.getOrNull
+import com.filmax.core.domain.error.AppError
 import com.filmax.core.domain.search.SearchRepository
 import com.filmax.core.presentation.BaseScreenModel
 import kotlinx.coroutines.FlowPreview
@@ -73,7 +75,7 @@ private data class CatalogRequest(
         get() = when (filter) {
             null -> BrowseTypes
             ItemType.ANIME -> AnimeTypes
-            else -> listOf(filter)
+            ItemType.MOVIE, ItemType.SERIES, ItemType.DOCUMENTARY, ItemType.TV -> listOf(filter)
         }
 
     /** API принимает только один genre: для аниме это технический жанр аниме. */
@@ -429,10 +431,9 @@ class SearchScreenModel(
             result.getOrNull()?.let { itemPage -> type to itemPage }
         }
         return if (succeeded.isEmpty()) {
-            val message = results.firstNotNullOfOrNull { (_, result) ->
-                (result as? RequestResult.Error)?.message
-            }
-            RequestResult.Error(message)
+            // Ни один тип не ответил — пробрасываем первый сбой как есть (типы не пусты, значит он есть).
+            results.firstNotNullOfOrNull { (_, result) -> result.errorOrNull() }
+                ?: RequestResult.Error(AppError.Empty)
         } else {
             val nextExhausted = exhausted + succeeded
                 .filter { (_, itemPage) -> itemPage.items.isEmpty() || !itemPage.pagination.hasNextPage }
@@ -508,7 +509,9 @@ private fun sortLocally(items: List<Item>, sort: SortOption): List<Item> {
     val comparator = when (sort.field) {
         CatalogSort.RATING -> compareBy<Item> { it.rating.external }
         CatalogSort.YEAR -> compareBy<Item> { it.year }
-        else -> return items
+        CatalogSort.UPDATED, CatalogSort.CREATED, CatalogSort.VIEWS, CatalogSort.KINOPOISK_RATING,
+        CatalogSort.IMDB_RATING,
+        -> return items
     }
     return if (sort.ascending) items.sortedWith(comparator) else items.sortedWith(comparator.reversed())
 }

@@ -7,6 +7,9 @@ import com.filmax.app.di.appModule
 import com.filmax.app.image.FilmaxImageLoaderFactory
 import com.filmax.app.warmup.AppWarmup
 import com.filmax.core.domain.common.ErrorReporting
+import com.filmax.core.domain.error.ErrorClassification
+import com.filmax.core.network.KtorErrorClassifier
+import com.filmax.core.network.TokenStorage
 import com.filmax.core.network.di.networkModule
 import com.filmax.core.network.di.platformNetworkModule
 import com.filmax.core.ui.di.coreUiModule
@@ -44,7 +47,9 @@ class FilmaxApplication :
     override fun onCreate() {
         super.onCreate()
         initErrorReporting()
-        seedDemoTokenIfNeeded()
+        // Сетевой слой знает классы исключений Ktor и HTTP-статус — им и классифицируем сбои,
+        // а не текстом сообщения (см. AppError.resolve).
+        ErrorClassification.classifier = KtorErrorClassifier
         runOneTimeHousekeeping()
         val koinApp = startKoin {
             androidLogger(Level.ERROR)
@@ -76,6 +81,7 @@ class FilmaxApplication :
                 appModule,
             )
         }
+        seedDemoTokenIfNeeded(koinApp.koin.get())
         // Фоновый прогрев вкладок «Моё»/«Каталог» (главная прогревает себя сама — см. doc
         // AppWarmup). Сам себя ограничивает по авторизации и одноразовости — здесь только запуск
         // на фоновом скоупе, чтобы не задерживать onCreate.
@@ -109,20 +115,15 @@ class FilmaxApplication :
 
     /**
      * Demo-сборка стартует авторизованной: если в BuildConfig зашит токен (только build type `demo`)
-     * и хранилище ещё пустое — засеваем те же SharedPreferences `filmax_tokens`, что читает
-     * TokenStorage при создании. Так demo-билд открывается без входа на любом устройстве. В
-     * release/debug оба токена пустые — метод сразу выходит и ничего не трогает.
+     * и хранилище ещё пустое — засеваем его через сам [TokenStorage]: файл и ключи хранилища знает
+     * только он. Так demo-билд открывается без входа на любом устройстве. В release/debug оба
+     * токена пустые — метод сразу выходит и ничего не трогает.
      */
-    private fun seedDemoTokenIfNeeded() {
+    private fun seedDemoTokenIfNeeded(tokenStorage: TokenStorage) {
         val access = BuildConfig.DEMO_ACCESS_TOKEN
         val refresh = BuildConfig.DEMO_REFRESH_TOKEN
         if (access.isBlank() || refresh.isBlank()) return
-        val prefs = getSharedPreferences("filmax_tokens", MODE_PRIVATE)
-        if (prefs.getString("access_token", null) != null) return
-        prefs.edit()
-            .putString("access_token", access)
-            .putString("refresh_token", refresh)
-            .apply()
+        tokenStorage.seedIfEmpty(access, refresh)
     }
 
     /**

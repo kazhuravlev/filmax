@@ -4,6 +4,7 @@ import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.catalog.model.MediaTrack
+import com.filmax.core.domain.catalog.model.WatchStatus
 import com.filmax.core.domain.common.getOrNull
 import com.filmax.core.domain.tuning.PerformanceTuning
 import kotlinx.coroutines.async
@@ -62,7 +63,7 @@ fun calculateContinuation(item: Item, history: WatchHistory? = null): Continuati
     // Досмотренная серия — продолжаем со следующей, которую сервер ещё не отметил досмотренной.
     // У фильма «следующей» нет: досмотренный фильм просто не предлагаем продолжить.
     val next = if (anchor.finished && isSeries) {
-        tracks.drop(tracks.indexOf(anchor.track) + 1).firstOrNull { it.watchStatus != WATCH_STATUS_FINISHED }
+        tracks.drop(tracks.indexOf(anchor.track) + 1).firstOrNull { it.watchStatus != WatchStatus.Finished }
     } else {
         null
     }
@@ -83,7 +84,7 @@ fun calculateContinuation(item: Item, history: WatchHistory? = null): Continuati
         isLastEpisode = isLastEpisode,
         isActualContinuation = isActualContinuation,
         progress = WatchProgress(
-            status = if (isActualContinuation) WATCH_STATUS_IN_PROGRESS else WATCH_STATUS_FINISHED,
+            status = if (isActualContinuation) WatchStatus.InProgress else WatchStatus.Finished,
             timeSeconds = savedPosition,
             durationSeconds = duration.takeIf { it > 0 },
             videoId = track.number,
@@ -112,7 +113,7 @@ private data class Anchor(
     val resumable: Boolean,
 ) {
     val finished: Boolean
-        get() = track.watchStatus == WATCH_STATUS_FINISHED || isFinishedByPosition(positionSeconds, durationSeconds)
+        get() = track.watchStatus == WatchStatus.Finished || isFinishedByPosition(positionSeconds, durationSeconds)
 }
 
 private fun findAnchor(item: Item, tracks: List<MediaTrack>, history: WatchHistory?): Anchor? {
@@ -136,8 +137,8 @@ private fun findAnchor(item: Item, tracks: List<MediaTrack>, history: WatchHisto
             )
         }
         else -> {
-            val track = tracks.firstOrNull { it.watchStatus == WATCH_STATUS_IN_PROGRESS }
-                ?: tracks.lastOrNull { it.watchStatus == WATCH_STATUS_FINISHED }
+            val track = tracks.firstOrNull { it.watchStatus == WatchStatus.InProgress }
+                ?: tracks.lastOrNull { it.watchStatus == WatchStatus.Finished }
             track?.let { Anchor(it, it.resumableSeconds(), it.durationSeconds, resumable = it.resumableSeconds() > 0) }
         }
     }
@@ -145,7 +146,7 @@ private fun findAnchor(item: Item, tracks: List<MediaTrack>, history: WatchHisto
 
 /** Позиция дорожки по `items/{id}` — только у явного status == 0; у прочих начинаем с нуля. */
 private fun MediaTrack.resumableSeconds(): Int =
-    if (watchStatus == WATCH_STATUS_IN_PROGRESS) watchedSeconds.coerceAtLeast(0) else 0
+    if (watchStatus == WatchStatus.InProgress) watchedSeconds.coerceAtLeast(0) else 0
 
 /** Позиция уже в «хвосте» серии: осталось не больше [CONTINUATION_FINISH_THRESHOLD_SECONDS]. */
 fun isFinishedByPosition(positionSeconds: Int, durationSeconds: Int): Boolean =
@@ -183,6 +184,3 @@ class ContinuationResolver(private val catalog: CatalogRepository) {
 
 private fun Item.isSeriesForContinuation(): Boolean =
     type == ItemType.SERIES || type == ItemType.ANIME || type == ItemType.DOCUMENTARY
-
-private const val WATCH_STATUS_IN_PROGRESS = 0
-private const val WATCH_STATUS_FINISHED = 1

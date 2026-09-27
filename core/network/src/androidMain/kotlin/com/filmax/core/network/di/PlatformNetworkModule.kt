@@ -4,6 +4,7 @@ import android.content.Context
 import com.chuckerteam.chucker.api.ChuckerInterceptor
 import com.filmax.core.domain.cache.ItemDetailsCache
 import com.filmax.core.network.ItemDetailsCacheDb
+import com.filmax.core.network.TokenStorage
 import com.russhwolf.settings.Settings
 import com.russhwolf.settings.SharedPreferencesSettings
 import io.ktor.client.engine.HttpClientEngine
@@ -16,7 +17,7 @@ import org.koin.dsl.module
 actual val platformNetworkModule: Module = module {
     single<Settings> {
         SharedPreferencesSettings(
-            androidContext().getSharedPreferences("filmax_tokens", Context.MODE_PRIVATE),
+            androidContext().getSharedPreferences(TokenStorage.PREFERENCES_NAME, Context.MODE_PRIVATE),
         )
     }
     // createdAtStart — ItemDto.toDomain() (data:catalog) кладёт тайтлы в кэш напрямую через

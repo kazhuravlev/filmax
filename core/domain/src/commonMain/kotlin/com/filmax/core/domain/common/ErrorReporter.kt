@@ -49,8 +49,7 @@ object ErrorReporting {
  * рантайма и не деобфусцирует — с обёрткой заголовок issue читается («Server», «Empty»),
  * а стек первопричины остаётся в cause.
  */
-fun ErrorReporter.reportRequestFailure(error: Throwable) {
-    val kind = AppError.resolve(error.message, error)
+fun ErrorReporter.reportRequestFailure(kind: AppError, error: Throwable) {
     if (kind in REPORTED_ERRORS) {
         report(RequestFailure.of(kind, error))
     } else {

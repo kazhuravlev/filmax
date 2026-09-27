@@ -12,7 +12,21 @@ import kotlinx.coroutines.withContext
  */
 sealed interface RequestResult<out T> {
     data class Success<out T>(val data: T) : RequestResult<T>
-    data class Error(val message: String?, val cause: Throwable? = null) : RequestResult<Nothing>
+
+    /**
+     * [kind] — семантический тип сбоя, разрешённый один раз на границе ошибок; [message] — только
+     * для логов и подписей, по нему ничего не ветвится (см. [AppError.resolve]).
+     */
+    data class Error(
+        val kind: AppError,
+        val message: String? = null,
+        val cause: Throwable? = null,
+    ) : RequestResult<Nothing> {
+        companion object {
+            /** Сбой из исключения: тип резолвится классификатором, текст — из самого исключения. */
+            fun of(cause: Throwable): Error = Error(AppError.resolve(cause), cause.message, cause)
+        }
+    }
 }
 
 /** Выполняет [block], оборачивая исключения в [RequestResult.Error]. CancellationException пробрасывается. */
@@ -38,13 +52,14 @@ suspend inline fun <T> safeRequest(crossinline block: suspend () -> T): RequestR
         // Единственная точка, где видны ВСЕ сбои data-слоя: HTTP-статусы (expectSuccess=true даёт
         // исключение с URL и кодом, включая 500-е) и падения парсинга. Что из этого поедет в
         // телеметрию событием, а что крошкой, решает reportRequestFailure.
-        ErrorReporting.reporter.reportRequestFailure(error)
+        val failure = RequestResult.Error.of(error)
+        ErrorReporting.reporter.reportRequestFailure(failure.kind, error)
         // Offline/Timeout — похоже, что не сервер лежит, а недоступен конкретный хост (блокировка
         // провайдером и т.п.). Даём сети шанс переключиться на другой хост при следующем запросе.
-        if (AppError.resolve(error.message, error).let { it == AppError.Offline || it == AppError.Timeout }) {
+        if (failure.kind == AppError.Offline || failure.kind == AppError.Timeout) {
             ConnectionFailures.handler.onConnectionFailure()
         }
-        RequestResult.Error(error.message, error)
+        failure
     }
 
 inline fun <T, R> RequestResult<T>.map(transform: (T) -> R): RequestResult<R> = when (this) {
@@ -57,13 +72,18 @@ inline fun <T> RequestResult<T>.onSuccess(block: (T) -> Unit): RequestResult<T> 
     return this
 }
 
-inline fun <T> RequestResult<T>.onError(block: (String?) -> Unit): RequestResult<T> {
-    if (this is RequestResult.Error) block(message)
+inline fun <T> RequestResult<T>.onError(block: (RequestResult.Error) -> Unit): RequestResult<T> {
+    if (this is RequestResult.Error) block(this)
     return this
 }
 
 fun <T> RequestResult<T>.getOrNull(): T? = (this as? RequestResult.Success)?.data
 
-/** Первое сообщение об ошибке среди результатов, либо null если все успешны. */
-fun firstErrorMessage(vararg results: RequestResult<*>): String? =
-    results.firstNotNullOfOrNull { (it as? RequestResult.Error)?.message }
+fun <T> RequestResult<T>.errorOrNull(): RequestResult.Error? = this as? RequestResult.Error
+
+/** Первый сбой среди результатов, либо null если все успешны. */
+fun firstError(vararg results: RequestResult<*>): RequestResult.Error? =
+    results.firstNotNullOfOrNull { it.errorOrNull() }
+
+/** Первое сообщение об ошибке среди результатов, либо null если все успешны. Только для подписей. */
+fun firstErrorMessage(vararg results: RequestResult<*>): String? = firstError(*results)?.message

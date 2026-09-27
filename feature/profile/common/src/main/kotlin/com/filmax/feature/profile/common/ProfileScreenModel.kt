@@ -11,6 +11,7 @@ import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.network.ApiHostRepository
 import com.filmax.core.domain.playback.PlaybackSettingsRepository
 import com.filmax.core.domain.playback.PlayerUi
+import com.filmax.core.domain.playback.QualityPreference
 import com.filmax.core.domain.playback.TrackPreset
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.watching.WatchingRepository
@@ -113,9 +114,9 @@ class ProfileScreenModel(
         when (event) {
             ProfileEvent.Logout -> logout()
             is ProfileEvent.SetQuality -> setQuality(event.quality)
-            is ProfileEvent.SetPreset -> setPreset(event.label)
+            is ProfileEvent.SetPreset -> setPreset(event.preset)
             ProfileEvent.ResetTitleTracks -> resetTitleTracks()
-            is ProfileEvent.SetPlayerUi -> setPlayerUi(event.label)
+            is ProfileEvent.SetPlayerUi -> setPlayerUi(event.ui)
             is ProfileEvent.SetApiHost -> setApiHost(event.host)
             ProfileEvent.ClearImageCache -> clearImageCache()
             is ProfileEvent.SetImageProxyEnabled -> setImageProxyEnabled(event.enabled)
@@ -145,21 +146,21 @@ class ProfileScreenModel(
         techOverlay.setEnabled(enabled)
     }
 
-    private fun setQuality(quality: String) = screenModelScope {
+    private fun setQuality(quality: QualityPreference) = screenModelScope {
         playbackSettings.setQuality(quality)
     }
 
-    /** «Авто» и неизвестная подпись — null, то есть авто-подбор по порядку пресетов. */
-    private fun setPreset(label: String) = screenModelScope {
-        playbackSettings.setPreset(TrackPreset.byLabel(label))
+    /** null — «Авто», то есть авто-подбор по порядку пресетов. */
+    private fun setPreset(preset: TrackPreset?) = screenModelScope {
+        playbackSettings.setPreset(preset)
     }
 
     private fun resetTitleTracks() = screenModelScope {
         playbackSettings.clearTitleTracks()
     }
 
-    private fun setPlayerUi(label: String) = screenModelScope {
-        PlayerUi.byLabel(label)?.let { playbackSettings.setPlayerUi(it) }
+    private fun setPlayerUi(ui: PlayerUi) = screenModelScope {
+        playbackSettings.setPlayerUi(ui)
     }
 
     private fun clearImageCache() = screenModelScope {

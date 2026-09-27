@@ -8,10 +8,6 @@ import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.catalog.model.MediaTrack
 import com.filmax.core.domain.watching.model.Continuation
 
-/** Статусы нужны подписям и прогрессу карточек эпизодов. */
-const val WATCH_STATUS_IN_PROGRESS = 0
-const val WATCH_STATUS_FINISHED = 1
-
 // Модули русских правил склонения по числу (последние две / одна цифра).
 private const val PLURAL_MOD_HUNDRED = 100
 private const val PLURAL_MOD_TEN = 10

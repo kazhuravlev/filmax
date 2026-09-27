@@ -18,10 +18,14 @@ import com.filmax.core.domain.common.ErrorReporting
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.error.AppError
 import com.filmax.core.domain.error.RequestFailure
-import com.filmax.core.domain.playback.PlaybackSettings
+import com.filmax.core.domain.playback.AudioPreference
 import com.filmax.core.domain.playback.PlaybackSettingsRepository
+import com.filmax.core.domain.playback.QualityPreference
+import com.filmax.core.domain.playback.SubtitleKey
 import com.filmax.core.domain.playback.TitleTracks
+import com.filmax.core.domain.playback.TrackLanguage
 import com.filmax.core.domain.playback.TrackPreset
+import com.filmax.core.domain.playback.VoiceKey
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.domain.watching.model.isFinishedByPosition
@@ -72,8 +76,8 @@ class PlayerScreenModel(
      * вторая половина фиксируется в [TitleTracks.Custom] как есть — чтобы следующая серия не
      * пересобрала её заново по пресету, которого пользователь уже не хотел.
      */
-    private var currentVoiceKey: String? = null
-    private var currentSubtitleKey: String = PlaybackSettings.SubtitleOff
+    private var currentVoiceKey: VoiceKey? = null
+    private var currentSubtitleKey: SubtitleKey = SubtitleOption.Off.preferenceKey()
 
     /** Выбранный трек/эпизод — нужен для сохранения прогресса (сериалы пишутся по сезону). */
     private var selectedTrack: MediaTrack? = null
@@ -129,10 +133,10 @@ class PlayerScreenModel(
         when (event) {
             is PlayerEvent.SaveProgress -> saveProgress(event.positionMs, event.durationMs)
             PlayerEvent.MarkWatched -> markWatched()
-            is PlayerEvent.SelectQuality -> selectQuality(event.label)
-            is PlayerEvent.SelectAudio -> selectAudio(event.label)
-            is PlayerEvent.SelectSubtitle -> selectSubtitle(event.label)
-            is PlayerEvent.SelectPreset -> selectPreset(event.label)
+            is PlayerEvent.SelectQuality -> selectQuality(event.quality)
+            is PlayerEvent.SelectAudio -> selectAudio(event.option)
+            is PlayerEvent.SelectSubtitle -> selectSubtitle(event.option)
+            is PlayerEvent.SelectPreset -> selectPreset(event.preset)
             // Скорость сессионная и простая: меняем на плеере и в state прямо тут. Отдельный
             // метод перевёл бы класс за порог TooManyFunctions detekt — незачем.
             is PlayerEvent.SetSpeed -> {
@@ -192,8 +196,11 @@ class PlayerScreenModel(
 
                     val qualities = streamQualities(track)
                     // Предпочитаемое качество из настроек; «Авто»/нет совпадения — лучшее доступное.
-                    val initial = qualities.firstOrNull { it.label == settings.quality }
-                        ?: qualities.firstOrNull()
+                    val preferred = when (val quality = settings.quality) {
+                        QualityPreference.Auto -> null
+                        is QualityPreference.Fixed -> qualities.firstOrNull { it.label == quality.label }
+                    }
+                    val initial = preferred ?: qualities.firstOrNull()
 
                     updateState {
                         it.copy(
@@ -204,7 +211,7 @@ class PlayerScreenModel(
                             nextTrack = item.tracklist.getOrNull(trackIndex + 1),
                             streamUrl = initial?.url,
                             qualities = qualities,
-                            currentQuality = initial?.label,
+                            currentQuality = initial,
                         )
                     }
 
@@ -242,19 +249,18 @@ class PlayerScreenModel(
                 ?.let { StreamQuality(file.quality, it) }
         }
 
-    private fun selectQuality(label: String) {
-        val quality = state.qualities.firstOrNull { it.label == label } ?: return
-        if (label == state.currentQuality) return
+    private fun selectQuality(quality: StreamQuality) {
+        if (quality == state.currentQuality) return
         val position = player.currentPosition
         val wasPlaying = player.playWhenReady
         streamVariantIndex = 0
-        ErrorReporting.reporter.log("player: quality $label host=${urlHost(quality.url)}")
+        ErrorReporting.reporter.log("player: quality ${quality.label} host=${urlHost(quality.url)}")
         // trackSelectionParameters (аудио/субтитры) живут на плеере и переживают смену MediaItem.
         player.setMediaItem(buildMediaItem(quality.url))
         player.prepare()
         player.seekTo(position)
         player.playWhenReady = wasPlaying
-        screenModelScope { _ -> updateState { it.copy(currentQuality = label, streamUrl = quality.url) } }
+        screenModelScope { _ -> updateState { it.copy(currentQuality = quality, streamUrl = quality.url) } }
     }
 
     /**
@@ -270,8 +276,7 @@ class PlayerScreenModel(
     }
 
     private fun playNextStreamVariant(): Boolean {
-        val quality = state.qualities.firstOrNull { it.label == state.currentQuality }
-        val nextUrl = quality?.urls?.getOrNull(streamVariantIndex + 1) ?: return false
+        val nextUrl = state.currentQuality?.urls?.getOrNull(streamVariantIndex + 1) ?: return false
         streamVariantIndex++
         ErrorReporting.reporter.log("player: variant fallback #$streamVariantIndex host=${urlHost(nextUrl)}")
         val position = player.currentPosition
@@ -286,17 +291,15 @@ class PlayerScreenModel(
         return true
     }
 
-    private fun selectSubtitle(label: String) {
-        val option = state.subtitles.firstOrNull { it.label == label } ?: return
+    private fun selectSubtitle(option: SubtitleOption) {
         currentSubtitleKey = option.preferenceKey()
         applySubtitleSelection(option)
         // Ручной выбор снимает пресет: тайтл переходит в «Свой» с текущей озвучкой как есть.
         rememberCustomTracks()
-        screenModelScope { _ -> updateState { it.copy(currentSubtitle = label) } }
+        screenModelScope { _ -> updateState { it.copy(currentSubtitle = option) } }
     }
 
-    private fun selectAudio(label: String) {
-        val option = state.audioTracks.firstOrNull { it.label == label } ?: return
+    private fun selectAudio(option: AudioOption) {
         val group = audioGroups.getOrNull(option.groupIndex) ?: return
         // Точечный override на конкретную группу: предпочитаемый ЯЗЫК не различил бы несколько
         // русских озвучек разных студий.
@@ -305,7 +308,7 @@ class PlayerScreenModel(
             .build()
         currentVoiceKey = voiceKey(option.groupIndex, group, selectedTrack?.audios.orEmpty())
         rememberCustomTracks()
-        screenModelScope { _ -> updateState { it.copy(currentAudio = label) } }
+        screenModelScope { _ -> updateState { it.copy(currentAudio = option) } }
     }
 
     /**
@@ -318,7 +321,7 @@ class PlayerScreenModel(
         titleTracks = custom
         screenModelScope { _ ->
             playbackSettings.setTitleTracks(route.itemId, custom)
-            updateState { it.copy(currentPreset = CUSTOM_PRESET_LABEL) }
+            updateState { it.copy(currentPreset = PresetSelection.Custom) }
         }
     }
 
@@ -326,9 +329,7 @@ class PlayerScreenModel(
      * Пресет из плитки плеера: запоминается на тайтл (даже «Авто» — он сильнее глобального
      * фиксированного пресета) и применяется к уже разобранному манифесту сразу.
      */
-    private fun selectPreset(label: String) {
-        val preset = TrackPreset.byLabel(label)
-        if (preset == null && label != PlaybackSettings.PresetAuto) return
+    private fun selectPreset(preset: TrackPreset?) {
         val selection = TitleTracks.Preset(preset)
         titleTracks = selection
         screenModelScope { _ -> playbackSettings.setTitleTracks(route.itemId, selection) }
@@ -349,18 +350,17 @@ class PlayerScreenModel(
         textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
         val apiAudios = selectedTrack?.audios.orEmpty()
         val audioOptions = audioGroups.mapIndexed { index, group ->
-            AudioOption(label = audioLabel(index, group, apiAudios), groupIndex = index)
+            AudioOption(
+                label = audioLabel(index, group, apiAudios),
+                groupIndex = index,
+                lang = audioLanguage(index, group, apiAudios),
+            )
         }
         val voiceKeys = audioGroups.indices.map { voiceKey(it, audioGroups[it], apiAudios) }
         val subtitleOptions = subtitleOptions()
 
         val resolution = resolveTracks(
-            candidates = audioGroups.indices.map { index ->
-                AudioMatchCandidate(
-                    lang = audioLanguage(index, audioGroups[index], apiAudios),
-                    label = audioOptions[index].label,
-                )
-            },
+            candidates = audioOptions.map { option -> AudioMatchCandidate(lang = option.lang, label = option.label) },
             voiceKeys = voiceKeys,
             options = subtitleOptions,
             selection = titleTracks,
@@ -382,26 +382,25 @@ class PlayerScreenModel(
             updateState {
                 it.copy(
                     audioTracks = if (audioOptions.size > 1) audioOptions else emptyList(),
-                    currentAudio = audioOptions.getOrNull(selectedIndex)?.label
-                        ?: audioOptions.firstOrNull()?.label.orEmpty(),
+                    currentAudio = audioOptions.getOrNull(selectedIndex) ?: audioOptions.firstOrNull(),
                     subtitles = subtitleOptions.takeIf { it.size > 1 }.orEmpty(),
-                    currentSubtitle = resolution.subtitle.label,
-                    currentPreset = resolution.presetLabel,
+                    currentSubtitle = resolution.subtitle,
+                    currentPreset = resolution.presetSelection,
                 )
             }
         }
     }
 
-    /** Варианты субтитров из [textGroups]; «Выкл» всегда первый (на это полагается [resolveSubtitleOption]). */
+    /** Варианты субтитров из [textGroups]; «Выкл» всегда первый в поповере. */
     private fun subtitleOptions(): List<SubtitleOption> = buildList {
-        add(SubtitleOption(PlaybackSettings.SubtitleOff, null))
+        add(SubtitleOption.Off)
         textGroups.forEachIndexed { index, group ->
             repeat(group.length) { trackIndex ->
                 val format = group.getTrackFormat(trackIndex)
                 val label = format.label?.takeIf { it.isNotBlank() }
                     ?: langDisplay(format.language)
                 add(
-                    SubtitleOption(
+                    SubtitleOption.Track(
                         label = label,
                         lang = format.language,
                         groupIndex = index,
@@ -433,7 +432,11 @@ class PlayerScreenModel(
         val builder = player.trackSelectionParameters.buildUpon()
         // Подсказка есть только у фиксированного пресета; «Авто» и ручной выбор решаются по манифесту.
         val fixed = (titleTracks as? TitleTracks.Preset)?.preset ?: globalPreset.takeIf { titleTracks == null }
-        fixed?.let { langCode(it.audio) }?.let { builder.setPreferredAudioLanguage(it) }
+        val hint = when (val audio = fixed?.audio) {
+            null, AudioPreference.Original -> null // «Оригинал» / «Авто» — пусть плеер выбирает сам
+            is AudioPreference.Language -> audio.language.code
+        }
+        hint?.let { builder.setPreferredAudioLanguage(it) }
         builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
         player.trackSelectionParameters = builder.build()
     }
@@ -441,10 +444,9 @@ class PlayerScreenModel(
     /** Включает/выключает конкретную HLS-группу субтитров. */
     private fun applySubtitleSelection(option: SubtitleOption) {
         val builder = player.trackSelectionParameters.buildUpon()
-        if (option.groupIndex < 0) {
-            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-        } else {
-            textGroups.getOrNull(option.groupIndex)?.let { group ->
+        when (option) {
+            SubtitleOption.Off -> builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            is SubtitleOption.Track -> textGroups.getOrNull(option.groupIndex)?.let { group ->
                 builder
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                     .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, option.trackIndex))
@@ -547,27 +549,13 @@ class PlayerScreenModel(
         /** Сколько реально проигранных секунд нужно набрать до первой записи прогресса на сервер. */
         const val MIN_SECONDS_BEFORE_FIRST_SAVE = 15
 
-        fun langCode(display: String): String? = when (display.lowercase()) {
-            "русский" -> "rus"
-            "english" -> "eng"
-            else -> null // «Оригинал» / неизвестно — пусть плеер выбирает сам
-        }
+        /** Подпись субтитров по коду: известный язык — по имени, незнакомый — сырым кодом. */
+        fun langDisplay(code: String?): String =
+            TrackLanguage.fromCode(code)?.display ?: code?.takeIf { it.isNotBlank() } ?: "Субтитры"
 
-        fun langDisplay(code: String?): String = when (code?.lowercase()) {
-            "rus", "ru" -> "Русский"
-            "eng", "en" -> "English"
-            "ukr", "uk" -> "Українська"
-            null, "" -> "Субтитры"
-            else -> code
-        }
-
-        fun audioDisplay(code: String?): String = when (code?.lowercase()) {
-            "rus", "ru" -> "Русский"
-            "eng", "en" -> "English"
-            "ukr", "uk" -> "Українська"
-            null, "" -> "Оригинал"
-            else -> code
-        }
+        /** Подпись озвучки по коду: пустой код — «Оригинал» (так API размечает оригинальную дорожку). */
+        fun audioDisplay(code: String?): String =
+            TrackLanguage.fromCode(code)?.display ?: code?.takeIf { it.isNotBlank() } ?: AudioPreference.Original.label
 
         /**
          * Язык дорожки для подписи/ключа/эвристики авто-выбора: из метаданных API (сопоставление
@@ -600,11 +588,13 @@ class PlayerScreenModel(
          * индекс не годится — у разных серий порядок дорожек может отличаться, а связка
          * язык+тип+студия идентифицирует именно озвучку.
          */
-        fun voiceKey(groupIndex: Int, group: Tracks.Group, apiAudios: List<AudioTrack>): String {
+        fun voiceKey(groupIndex: Int, group: Tracks.Group, apiAudios: List<AudioTrack>): VoiceKey {
             val meta = apiAudios.firstOrNull { it.index == groupIndex + 1 }
             val language = audioLanguage(groupIndex, group, apiAudios)
-            return listOf(language.orEmpty(), meta?.voiceType.orEmpty(), meta?.voiceAuthor.orEmpty())
-                .joinToString("|")
+            return VoiceKey(
+                listOf(language.orEmpty(), meta?.voiceType.orEmpty(), meta?.voiceAuthor.orEmpty())
+                    .joinToString("|"),
+            )
         }
     }
 }

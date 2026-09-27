@@ -59,6 +59,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.cache.ImageCacheKeys
+import com.filmax.core.domain.cache.PosterSize
 import com.filmax.core.domain.catalog.CatalogFilters
 import com.filmax.core.domain.catalog.CatalogSort
 import com.filmax.core.domain.catalog.SortOption
@@ -626,7 +627,7 @@ private fun CatalogPoster(item: Item, modifier: Modifier, onClick: () -> Unit) {
             shape = TvMetrics.PosterShape,
             // Плейсхолдер-градиент по умолчанию розовый; в монохроме под постером — поверхность.
             accentColor = TvSurfaceContainer,
-            cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, ImageCacheKeys.SIZE_MEDIUM),
+            cacheKey = ImageCacheKeys.poster(item.type, item.id, PosterSize.Medium),
         )
     }
 }

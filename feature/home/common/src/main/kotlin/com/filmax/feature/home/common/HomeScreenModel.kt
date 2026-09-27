@@ -2,6 +2,7 @@ package com.filmax.feature.home.common
 
 import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.cache.ImageDiscovery
+import com.filmax.core.domain.cache.PosterSize
 import com.filmax.core.domain.cache.PrefetchImage
 import com.filmax.core.domain.catalog.CatalogRepository
 import com.filmax.core.domain.catalog.CatalogSort
@@ -10,12 +11,14 @@ import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.common.LastValueCache
 import com.filmax.core.domain.common.RequestResult
+import com.filmax.core.domain.common.errorOrNull
 import com.filmax.core.domain.common.getOrNull
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.user.model.initials
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.domain.watching.model.Continuation
 import com.filmax.core.domain.watching.model.ContinuationResolver
+import com.filmax.core.domain.watching.model.WatchingListType
 import com.filmax.core.presentation.BaseScreenModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -77,31 +80,9 @@ class HomeScreenModel(
             }
             val continueResult = async {
                 val historyDeferred = async { watching.getHistory(forceRefresh = isRefresh) }
-                // Эталонный алгоритм kino.watch (веб-клиент, getAwaitItems): «Продолжить просмотр»
-                // строится ПЕРЕСЕЧЕНИЕМ `/history` (точная позиция) с `/watching/{type}` (родной
-                // список сервера «в процессе»). Наша локальная эвристика `isActualContinuation`
-                // (watchStatus/остаток по треклисту) не всегда совпадает с тем, что сервер уже
-                // отметил завершённым — просмотренные до конца тайтлы всё ещё остаются в истории с
-                // позицией. `/watching/{type}` — источник истины: досмотренный тайтл сервер сам
-                // убирает оттуда, поэтому пересечение отфильтровывает такие карточки надёжнее.
-                // Сериалы нужно опрашивать оба раза: `subscribed` у них не игнорируется сервером
-                // (как у movies) и делит список на подписанные/неподписанные на новые серии, а не
-                // на «досмотрено/нет» — без объединения обоих ответов часть сериалов «в процессе»
-                // потерялась бы.
-                val moviesDeferred = async { watching.getWatchingTitles(TYPE_MOVIES) }
-                val serialsSubscribedDeferred = async { watching.getWatchingTitles(TYPE_SERIALS, subscribed = 1) }
-                val serialsUnsubscribedDeferred = async { watching.getWatchingTitles(TYPE_SERIALS, subscribed = 0) }
-
+                val inProgressDeferred = async { inProgressTitleIds() }
                 val result = historyDeferred.await()
-                val watchingResults =
-                    listOf(moviesDeferred.await(), serialsSubscribedDeferred.await(), serialsUnsubscribedDeferred.await())
-                // Если ни один из запросов не ответил — доверять пустому пересечению нельзя, иначе
-                // временный сбой сети стёр бы весь ряд. Тогда откатываемся к одной локальной эвристике.
-                val inProgressIds = watchingResults.mapNotNull { it.getOrNull() }
-                    .takeIf { it.isNotEmpty() }
-                    ?.flatten()
-                    ?.mapTo(mutableSetOf()) { it.itemId }
-
+                val inProgressIds = inProgressDeferred.await()
                 val entries = result.getOrNull()
                     ?.let { continuations.resolve(it) }
                     ?.filter { it.isActualContinuation }
@@ -129,7 +110,7 @@ class HomeScreenModel(
 
             val allResults = listOf(heroResult.await(), continueResult.await(), collectionsResult.await()) +
                 rowResults.map { it.await() }
-            val error = allResults.firstNotNullOfOrNull { (it as? RequestResult.Error)?.message }
+            val error = allResults.firstNotNullOfOrNull { it.errorOrNull() }
             val allSucceeded = allResults.all { it is RequestResult.Success<*> }
             if (allSucceeded) snapshotCache.put(state.asSnapshot())
             if (error != null) showServerRetryNotice()
@@ -146,6 +127,33 @@ class HomeScreenModel(
         }
     }
 
+    /**
+     * Тайтлы, которые сервер сам считает «в процессе». Эталонный алгоритм kino.watch (веб-клиент,
+     * getAwaitItems): «Продолжить просмотр» строится ПЕРЕСЕЧЕНИЕМ `/history` (точная позиция) с
+     * `/watching/{type}` (родной список сервера). Наша локальная эвристика `isActualContinuation`
+     * (watchStatus/остаток по треклисту) не всегда совпадает с тем, что сервер уже отметил
+     * завершённым — просмотренные до конца тайтлы всё ещё остаются в истории с позицией.
+     * `/watching/{type}` — источник истины: досмотренный тайтл сервер сам убирает оттуда, поэтому
+     * пересечение отфильтровывает такие карточки надёжнее. Сериалы опрашиваются оба раза:
+     * `subscribed` у них не игнорируется сервером (как у movies) и делит список на
+     * подписанные/неподписанные на новые серии, а не на «досмотрено/нет» — без объединения обоих
+     * ответов часть сериалов «в процессе» потерялась бы.
+     *
+     * null — ни один из запросов не ответил: доверять пустому пересечению нельзя, иначе временный
+     * сбой сети стёр бы весь ряд, и вызывающий откатывается к одной локальной эвристике.
+     */
+    private suspend fun inProgressTitleIds(): Set<Int>? = coroutineScope {
+        val results = listOf(
+            async { watching.getWatchingTitles(WatchingListType.Movies) },
+            async { watching.getWatchingTitles(WatchingListType.Serials, subscribed = true) },
+            async { watching.getWatchingTitles(WatchingListType.Serials, subscribed = false) },
+        ).awaitAll()
+        results.mapNotNull { it.getOrNull() }
+            .takeIf { it.isNotEmpty() }
+            ?.flatten()
+            ?.mapTo(mutableSetOf()) { it.itemId }
+    }
+
     /** Один ряд каталога: 1 тип почти всегда, 2 (movie+serial) только у «Аниме» — жанр общий
      * на оба (см. [HOME_CATALOG_ROWS]). Частичный успех (один тип ответил, другой упал) всё
      * равно считается успехом ряда — лучше неполный ряд, чем пустой из-за одного сбоя. */
@@ -160,8 +168,8 @@ class HomeScreenModel(
             }
         }.awaitAll()
         val items = perType.mapNotNull { it.getOrNull() }.flatMap { it.items }.distinctBy { it.id }.take(ROW_LIMIT)
-        val error = perType.firstNotNullOfOrNull { (it as? RequestResult.Error)?.message }
-        if (items.isEmpty() && error != null) RequestResult.Error(error) else RequestResult.Success(items)
+        val error = perType.firstNotNullOfOrNull { it.errorOrNull() }
+        if (items.isEmpty() && error != null) error else RequestResult.Success(items)
     }
 
     /** Инициалы для аватара в шапке — best-effort, ошибки не мешают ленте. */
@@ -201,7 +209,7 @@ class HomeScreenModel(
                     }
                 }.awaitAll()
             }
-            val error = results.firstNotNullOfOrNull { (it as? RequestResult.Error)?.message }
+            val error = results.firstNotNullOfOrNull { it.errorOrNull() }
             if (error != null) {
                 updateTitlesRow(row.id) { it.copy(paging = it.paging.copy(loadingMore = false)) }
                 showServerRetryNotice()
@@ -331,10 +339,6 @@ private const val HOME_ROW_MAX = 100
 /** Сколько последних тайтлов показать в блоке «Продолжить просмотр». */
 private const val CONTINUE_WATCHING_LIMIT = 5
 
-/** Типы `watching/{type}` — как и в [com.filmax.feature.library.common.LibraryScreenModel]. */
-private const val TYPE_MOVIES = "movies"
-private const val TYPE_SERIALS = "serials"
-
 /** Сколько подборок показать в горизонтальном ряду. */
 private const val COLLECTIONS_LIMIT = 5
 
@@ -356,13 +360,13 @@ private val RowPaging<*>.canLoadMore: Boolean
 // ключ/url напрямую, как чистые функции — логика и видимость снаружи модуля не меняются.
 internal fun Item.heroBackdropPrefetch(): PrefetchImage? {
     val url = posters.wide ?: posters.big.takeIf { it.isNotBlank() } ?: return null
-    val subId = if (posters.wide != null) ImageCacheKeys.WALL else ImageCacheKeys.SIZE_BIG
-    return PrefetchImage(ImageCacheKeys.poster(type.apiValue, id, subId), url)
+    val size = if (posters.wide != null) PosterSize.Wall else PosterSize.Big
+    return PrefetchImage(ImageCacheKeys.poster(type, id, size), url)
 }
 
 internal fun Continuation.backdropPrefetch(): PrefetchImage? {
     val url = wideOrPoster.takeIf { it.isNotBlank() } ?: return null
-    return PrefetchImage(ImageCacheKeys.poster(item.type.apiValue, itemId, ImageCacheKeys.WALL), url)
+    return PrefetchImage(ImageCacheKeys.poster(item.type, itemId, PosterSize.Wall), url)
 }
 
 /**

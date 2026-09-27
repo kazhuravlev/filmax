@@ -2,7 +2,11 @@ package com.filmax.feature.player.common
 
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.MediaTrack
+import com.filmax.core.domain.playback.AudioPreference
 import com.filmax.core.domain.playback.PlaybackSettings
+import com.filmax.core.domain.playback.SubtitleKey
+import com.filmax.core.domain.playback.SubtitlePreference
+import com.filmax.core.domain.playback.TrackLanguage
 import com.filmax.core.domain.playback.TrackPreset
 
 /**
@@ -18,111 +22,185 @@ data class StreamQuality(val label: String, val urls: List<String>) {
     val url: String get() = urls.first()
 }
 
-/** Вариант субтитров; [lang] == null означает «Выкл». */
-data class SubtitleOption(
-    val label: String,
-    val lang: String?,
-    val groupIndex: Int = -1,
-    val trackIndex: Int = 0,
-    val isForced: Boolean = false,
-)
+/**
+ * Вариант субтитров: «Выкл» ([Off]) либо конкретная HLS-дорожка ([Track]). Два случая — два типа,
+ * а не «дорожка с пустым языком»: у настоящей дорожки язык в манифесте тоже бывает не указан.
+ */
+sealed interface SubtitleOption {
+    val label: String
+
+    /** Короткая подпись под кнопкой плеера: код языка, сырой код для незнакомого, «—» для «Выкл». */
+    val shortCode: String
+
+    data object Off : SubtitleOption {
+        override val label: String get() = SubtitlePreference.Off.label
+        override val shortCode: String get() = NO_VALUE_CAPTION
+    }
+
+    /**
+     * [lang] — сырой код языка из HLS-манифеста (null — манифест его не указал); [language] — тот
+     * же код, приведённый к известному языку, если он нам знаком. [groupIndex]/[trackIndex] —
+     * адрес дорожки в Media3 `Tracks`.
+     */
+    data class Track(
+        override val label: String,
+        val lang: String?,
+        val groupIndex: Int,
+        val trackIndex: Int,
+        val isForced: Boolean = false,
+    ) : SubtitleOption {
+        val language: TrackLanguage? get() = TrackLanguage.fromCode(lang)
+
+        override val shortCode: String
+            get() = language?.code ?: lang?.lowercase()?.takeIf { it.isNotBlank() } ?: UNKNOWN_LANGUAGE_SHORT_CODE
+
+        companion object {
+            /** Дорожка без кода языка в манифесте — под кнопкой хотя бы «есть субтитры». */
+            const val UNKNOWN_LANGUAGE_SHORT_CODE = "sub"
+        }
+    }
+}
 
 /**
- * Код сохранённого выбора конкретной дорожки. Раньше сохранялся только язык, из-за чего при
+ * Ключ памяти тайтла для этого варианта. Раньше сохранялся только язык, из-за чего при
  * нескольких `rus` после повторного разбора манифеста всегда выбиралась первая дорожка — часто
- * это forced-субтитры. Старые значения языка остаются поддержанными в [resolveSubtitleOption].
+ * это forced-субтитры. Старые значения языка остаются поддержанными в [SubtitleSelection.parse].
  */
-internal fun SubtitleOption.preferenceKey(): String =
-    lang?.let { "$SUBTITLE_TRACK_PREFERENCE_PREFIX${it.lowercase()}$SUBTITLE_PREFERENCE_SEPARATOR$label" }
-        ?: PlaybackSettings.SubtitleOff
+internal fun SubtitleOption.preferenceKey(): SubtitleKey = when (this) {
+    SubtitleOption.Off -> SubtitleKey(SUBTITLE_OFF_KEY)
+    is SubtitleOption.Track -> SubtitleKey(
+        "$SUBTITLE_TRACK_PREFERENCE_PREFIX${lang.orEmpty().lowercase()}$SUBTITLE_PREFERENCE_SEPARATOR$label",
+    )
+}
+
+/**
+ * Что просят включить у только что разобранного манифеста — разобранная форма ключа памяти
+ * тайтла ([parse]) либо предпочтения пресета ([of]). Все ветки перечислены здесь, а не размазаны
+ * по строковым префиксам: [resolveSubtitleOption] обязан обработать каждую.
+ */
+internal sealed interface SubtitleSelection {
+    data object Off : SubtitleSelection
+
+    /** Язык из пресета или старого сохранения кодом/подписью языка. */
+    data class ByLanguage(val language: TrackLanguage) : SubtitleSelection
+
+    /** Точная сохранённая дорожка (`track:язык|лейбл`, см. [preferenceKey]); язык пуст, если манифест его не дал. */
+    data class SavedTrack(val language: String, val label: String) : SubtitleSelection
+
+    /** Очень старое сохранение per-title без обвязки `track:` — целиком подпись дорожки. */
+    data class LegacyLabel(val label: String) : SubtitleSelection
+
+    companion object {
+        fun of(preference: SubtitlePreference): SubtitleSelection = when (preference) {
+            SubtitlePreference.Off -> Off
+            is SubtitlePreference.Language -> ByLanguage(preference.language)
+        }
+
+        /**
+         * Разбирает ключ памяти тайтла. Принимает и старые сырые ISO-коды («rus»/«eng»), и
+         * display-значения («Русский»), которыми per-title выбор сохранялся до появления схемы
+         * `track:` — для эвристики это один и тот же смысл: «дай русскую/английскую дорожку».
+         */
+        fun parse(key: SubtitleKey): SubtitleSelection {
+            val raw = key.value
+            return when {
+                raw == SUBTITLE_OFF_KEY -> Off
+                else -> raw.toSavedSubtitleTrack() ?: raw.toLanguage()?.let(::ByLanguage) ?: LegacyLabel(raw)
+            }
+        }
+
+        /** Код или подпись известного языка; null — ни то, ни другое. */
+        private fun String.toLanguage(): TrackLanguage? =
+            TrackLanguage.fromCode(this)
+                ?: TrackLanguage.entries.firstOrNull { it.display.equals(this, ignoreCase = true) }
+    }
+}
 
 /**
  * Выбирает субтитры для только что разобранного манифеста.
  *
  * Приоритет (сильнее → слабее):
- * 1. Точная сохранённая дорожка тайтла (`track:язык|лейбл`, см. [preferenceKey]) — если её когда-то
- *    выбрали руками, форсированная она или нет, значение не пересматриваем.
- *    Тот же язык нашёлся на дорожке с другим лейблом (другая серия/качество сменили набор) —
- *    старое поведение: не-forced приоритетнее forced, лишь бы не «Выкл».
- * 2. Очень старое сохранение per-title без обвязки `track:` — целиком совпавший лейбл дорожки.
- * 3. Язык из пресета («Русский»/«English», см. [TrackPreset.subtitle]) — lowercase-substring
- *    эвристика по языку/подписи дорожки, см. [matchSubtitleByLanguage].
- *    Ничего не подошло (включая «Выкл» и нераспознанные значения) — «Выкл»: показать субтитры не
- *    на том языке хуже, чем не показать вовсе.
+ * 1. [SubtitleSelection.SavedTrack] — если дорожку когда-то выбрали руками, форсированная она или
+ *    нет, значение не пересматриваем. Тот же язык нашёлся на дорожке с другим лейблом (другая
+ *    серия/качество сменили набор) — не-forced приоритетнее forced, лишь бы не «Выкл».
+ * 2. [SubtitleSelection.LegacyLabel] — целиком совпавший лейбл дорожки.
+ * 3. [SubtitleSelection.ByLanguage] — lowercase-substring эвристика по языку/подписи дорожки, см.
+ *    [matchSubtitleByLanguage]. Ничего не подошло — «Выкл»: показать субтитры не на том языке
+ *    хуже, чем не показать вовсе.
  */
 internal fun resolveSubtitleOption(
     options: List<SubtitleOption>,
-    preference: String,
+    selection: SubtitleSelection,
 ): SubtitleOption {
-    val savedTrack = preference.toSavedSubtitleTrack()
-    val resolved = when {
-        preference == PlaybackSettings.SubtitleOff -> null
-        savedTrack != null -> resolveSavedSubtitleTrack(options, savedTrack)
-        else ->
-            options.firstOrNull { option -> option.lang != null && option.label == preference }
-                ?: subtitleLanguageTarget(preference)?.let { matchSubtitleByLanguage(options, it) }
+    val tracks = options.filterIsInstance<SubtitleOption.Track>()
+    val resolved = when (selection) {
+        SubtitleSelection.Off -> null
+        is SubtitleSelection.SavedTrack -> resolveSavedSubtitleTrack(tracks, selection)
+        is SubtitleSelection.LegacyLabel -> tracks.firstOrNull { it.label == selection.label }
+        is SubtitleSelection.ByLanguage -> matchSubtitleByLanguage(tracks, selection.language)
     }
-    // options.first() — всегда «Выкл» (см. updateSubtitleTracks: она добавляется первой).
-    return resolved ?: options.first()
+    return resolved ?: SubtitleOption.Off
 }
 
-/** Ветка точного сохранённого выбора дорожки (`track:язык|лейбл`) — см. приоритет 1 в
- * [resolveSubtitleOption]. */
+/** Ветка точного сохранённого выбора дорожки — см. приоритет 1 в [resolveSubtitleOption]. */
 private fun resolveSavedSubtitleTrack(
-    options: List<SubtitleOption>,
-    saved: SavedSubtitleTrack,
-): SubtitleOption? =
-    options.firstOrNull { option -> option.lang.equals(saved.language, true) && option.label == saved.label }
-        ?: options.firstOrNull { option -> option.lang.equals(saved.language, true) && !option.isForced }
-        ?: options.firstOrNull { option -> option.lang.equals(saved.language, true) }
-
-/** Язык, под который подбираем субтитры глобальной эвристикой. */
-private enum class SubtitleLanguageTarget { RUSSIAN, ENGLISH }
-
-/**
- * Приводит предпочтение к языковому бакету — принимает и display-значения пресетов
- * («Русский»/«English», см. [TrackPreset.subtitle]), и старые сырые ISO-коды («rus»/«eng»),
- * которыми per-title выбор субтитров сохранялся до появления схемы `track:` (см. [preferenceKey]):
- * для эвристики это один и тот же смысл — «дай русскую/английскую дорожку».
- */
-private fun subtitleLanguageTarget(preference: String): SubtitleLanguageTarget? = when (preference.lowercase()) {
-    "русский", "rus", "ru" -> SubtitleLanguageTarget.RUSSIAN
-    "english", "eng", "en" -> SubtitleLanguageTarget.ENGLISH
-    else -> null
+    tracks: List<SubtitleOption.Track>,
+    saved: SubtitleSelection.SavedTrack,
+): SubtitleOption.Track? {
+    fun SubtitleOption.Track.sameLanguage() = lang.orEmpty().equals(saved.language, ignoreCase = true)
+    return tracks.firstOrNull { it.sameLanguage() && it.label == saved.label }
+        ?: tracks.firstOrNull { it.sameLanguage() && !it.isForced }
+        ?: tracks.firstOrNull { it.sameLanguage() }
 }
 
 /**
- * Эвристика авто-выбора субтитров по языку: lowercase-substring поиск по языку/подписи дорожки —
- * почти все HLS-манифесты kino.watch называют язык прямо в NAME («RUS», «ENG»), даже когда поле
- * language у Format пустое. Форсированные дорожки (титры к иноязычным вставкам и т.п.) языковой
- * default никогда не выбирает — это не полноценные субтитры, доставать их должен только явный
- * ручной выбор (см. точное совпадение по сохранённой дорожке в [resolveSubtitleOption]). Несколько
- * совпадений (два русских трека) — берёт первую дорожку по порядку в манифесте.
+ * Начала слов, по которым язык узнаётся в подписи дорожки («RUS», «Русский», «англ.»): почти все
+ * HLS-манифесты kino.watch называют язык прямо в NAME, даже когда поле language у Format пустое.
+ * Точный код — [TrackLanguage.isoCodes]. Новый язык в enum — компилятор потребует ветку и здесь.
+ */
+private fun TrackLanguage.needles(): List<String> = when (this) {
+    TrackLanguage.Russian -> listOf("rus", "рус")
+    TrackLanguage.English -> listOf("eng", "англ")
+    TrackLanguage.Ukrainian -> listOf("ukr", "укр")
+}
+
+/**
+ * Есть ли в тексте слово, начинающееся с одной из подстрок. Именно начало слова, а не вхождение:
+ * «Беларуская» содержит «рус», «Bengali» — «eng», и поиском по вхождению обе дорожки выдавались
+ * бы за русскую/английскую.
+ */
+private fun String.hasWordStartingWith(needles: List<String>): Boolean =
+    split(WORD_SEPARATORS).any { word -> needles.any { needle -> word.startsWith(needle) } }
+
+private val WORD_SEPARATORS = Regex("""[^\p{L}\p{N}]+""")
+
+/**
+ * Эвристика авто-выбора субтитров по языку: lowercase-substring поиск по языку/подписи дорожки.
+ * Форсированные дорожки (титры к иноязычным вставкам и т.п.) языковой default никогда не
+ * выбирает — это не полноценные субтитры, доставать их должен только явный ручной выбор (см.
+ * [SubtitleSelection.SavedTrack]). Несколько совпадений (два русских трека) — первая по порядку
+ * в манифесте.
  */
 private fun matchSubtitleByLanguage(
-    options: List<SubtitleOption>,
-    target: SubtitleLanguageTarget,
-): SubtitleOption? {
-    val (needles, exactCode) = when (target) {
-        SubtitleLanguageTarget.RUSSIAN -> listOf("rus", "рус") to "ru"
-        SubtitleLanguageTarget.ENGLISH -> listOf("eng", "англ") to "en"
-    }
-    return options.firstOrNull { option ->
-        val lang = option.lang?.lowercase()
-        !option.isForced && lang != null &&
-            (lang == exactCode || needles.any { "$lang ${option.label.lowercase()}".contains(it) })
+    tracks: List<SubtitleOption.Track>,
+    target: TrackLanguage,
+): SubtitleOption.Track? {
+    val needles = target.needles()
+    return tracks.firstOrNull { track ->
+        val lang = track.lang.orEmpty().lowercase()
+        !track.isForced &&
+            (lang in target.isoCodes || "$lang ${track.label.lowercase()}".hasWordStartingWith(needles))
     }
 }
 
-private data class SavedSubtitleTrack(val language: String, val label: String)
-
-private fun String.toSavedSubtitleTrack(): SavedSubtitleTrack? {
+private fun String.toSavedSubtitleTrack(): SubtitleSelection.SavedTrack? {
     if (!startsWith(SUBTITLE_TRACK_PREFERENCE_PREFIX)) return null
     val saved = removePrefix(SUBTITLE_TRACK_PREFERENCE_PREFIX)
     val separatorIndex = saved.indexOf(SUBTITLE_PREFERENCE_SEPARATOR)
-    val hasValidSeparator = separatorIndex > 0 && separatorIndex != saved.lastIndex
+    // Язык может быть пустым (`track:|лейбл`) — дорожка без LANGUAGE в манифесте; лейбл — нет.
+    val hasValidSeparator = separatorIndex >= 0 && separatorIndex != saved.lastIndex
     return if (hasValidSeparator) {
-        SavedSubtitleTrack(
+        SubtitleSelection.SavedTrack(
             language = saved.substring(0, separatorIndex),
             label = saved.substring(separatorIndex + 1),
         )
@@ -135,11 +213,36 @@ private const val SUBTITLE_TRACK_PREFERENCE_PREFIX = "track:"
 private const val SUBTITLE_PREFERENCE_SEPARATOR = "|"
 
 /**
+ * Как «Выкл» записано в памяти тайтла. Совпадает с подписью [SubtitlePreference.Off] исторически
+ * (так сохранялось до типизации ключей) — это формат хранения, менять нельзя без миграции.
+ */
+private const val SUBTITLE_OFF_KEY = "Выкл"
+
+/** Подпись под кнопкой, когда значения нет: субтитры выключены, дорожка без языка. */
+const val NO_VALUE_CAPTION = "—"
+
+/**
  * Аудиодорожка потока. [groupIndex] — индекс аудиогруппы в Media3 `Tracks`: выбор идёт точечным
  * override, а не «предпочитаемым языком» — у тайтла бывает несколько русских озвучек разных
- * студий, и по языку они неотличимы.
+ * студий, и по языку они неотличимы. [lang] — код языка из метаданных API/манифеста (null или
+ * пусто — оригинал, так API размечает оригинальную озвучку), [language] — известный нам язык.
  */
-data class AudioOption(val label: String, val groupIndex: Int)
+data class AudioOption(val label: String, val groupIndex: Int, val lang: String?) {
+    val language: TrackLanguage? get() = TrackLanguage.fromCode(lang)
+
+    val isOriginal: Boolean get() = lang.isNullOrBlank()
+
+    /** Короткая подпись под кнопкой плеера: «rus», «orig», сырой код для незнакомого языка. */
+    val shortCode: String
+        get() = when {
+            isOriginal -> ORIGINAL_SHORT_CODE
+            else -> language?.code ?: lang.orEmpty().lowercase()
+        }
+
+    companion object {
+        const val ORIGINAL_SHORT_CODE = "orig"
+    }
+}
 
 /**
  * Данные аудиогруппы для эвристики авто-выбора: [lang] — язык из метаданных API (`AudioTrack.lang`)
@@ -151,40 +254,37 @@ data class AudioOption(val label: String, val groupIndex: Int)
 internal data class AudioMatchCandidate(val lang: String?, val label: String)
 
 /**
- * Эвристика авто-выбора озвучки по языку из пресета ([TrackPreset.audio]) — lowercase-substring
+ * Эвристика авто-выбора озвучки по предпочтению пресета ([TrackPreset.audio]) — lowercase-substring
  * поиск по языку/подписи дорожки, по той же логике, что и субтитры (см. `matchSubtitleByLanguage`):
- * - «Оригинал» — первая дорожка с пустым/бланковым языком ИЛИ подписью/языком, содержащими
- *   «оригинал»/«original» (так API размечает оригинальную озвучку).
- * - «Русский» / «English» — первая дорожка, чей язык/подпись содержит «rus»/«рус» либо
- *   «eng»/«англ» (или сам язык — точный код `ru`/`en`) соответственно.
+ * - [AudioPreference.Original] — первая дорожка с пустым/бланковым языком ИЛИ подписью/языком,
+ *   содержащими «оригинал»/«original» (так API размечает оригинальную озвучку).
+ * - [AudioPreference.Language] — первая дорожка, чей язык — точный код языка, либо язык/подпись
+ *   содержат одну из его подстрок ([needles]).
  *
  * Несколько совпадений (несколько русских озвучек разных студий) — берёт первую по порядку
- * дорожек в HLS-манифесте. Нет совпадения или преференция не распознана — null: override не
- * ставится, выбор остаётся за плеером.
+ * дорожек в HLS-манифесте. Нет совпадения — null: override не ставится, выбор остаётся за плеером.
  */
 internal fun resolveAudioGroupIndex(
-    preference: String,
+    preference: AudioPreference,
     candidates: List<AudioMatchCandidate>,
 ): Int? {
     val index = when (preference) {
-        PlaybackSettings.AudioOriginal -> candidates.indexOfFirst { candidate ->
-            candidate.lang.isNullOrBlank() || candidate.matchesAudio("оригинал", "original")
+        AudioPreference.Original -> candidates.indexOfFirst { candidate ->
+            candidate.lang.isNullOrBlank() || candidate.matchesAudio(ORIGINAL_NEEDLES)
         }
-        "Русский" -> candidates.indexOfFirst { candidate ->
-            candidate.lang?.lowercase() == "ru" || candidate.matchesAudio("rus", "рус")
+        is AudioPreference.Language -> candidates.indexOfFirst { candidate ->
+            candidate.lang?.lowercase() in preference.language.isoCodes ||
+                candidate.matchesAudio(preference.language.needles())
         }
-        "English" -> candidates.indexOfFirst { candidate ->
-            candidate.lang?.lowercase() == "en" || candidate.matchesAudio("eng", "англ")
-        }
-        else -> -1
     }
     return index.takeIf { it >= 0 }
 }
 
-private fun AudioMatchCandidate.matchesAudio(vararg needles: String): Boolean {
-    val haystack = "${lang.orEmpty()} $label".lowercase()
-    return needles.any { haystack.contains(it) }
-}
+private fun AudioMatchCandidate.matchesAudio(needles: List<String>): Boolean =
+    "${lang.orEmpty()} $label".lowercase().hasWordStartingWith(needles)
+
+/** Так API размечает оригинальную озвучку, когда код языка у неё всё же заполнен. */
+private val ORIGINAL_NEEDLES = listOf("оригинал", "original")
 
 /** Вариант скорости воспроизведения: [value] уходит в ExoPlayer, [label] — на экран. */
 data class SpeedOption(val label: String, val value: Float)
@@ -208,14 +308,35 @@ object PlaybackSpeeds {
         SpeedOption("2×", 2.0f),
     )
 
-    /** Подписи для меню/поповера в порядке возрастания скорости. */
-    val labels: List<String> = options.map { it.label }
+    /** Вариант текущей скорости; неизвестное значение показываем как «Обычная». */
+    fun optionFor(value: Float): SpeedOption =
+        options.firstOrNull { it.value == value } ?: options.first { it.value == NormalSpeed }
 
     /** Подпись текущей скорости; неизвестное значение показываем как «Обычная». */
-    fun labelFor(value: Float): String = options.firstOrNull { it.value == value }?.label ?: NormalLabel
+    fun labelFor(value: Float): String = optionFor(value).label
+}
 
-    /** Значение скорости по подписи из меню; null — подписи нет в наборе. */
-    fun valueFor(label: String): Float? = options.firstOrNull { it.label == label }?.value
+/** Что сейчас показывает плитка «Пресет»: авто-подбор, конкретный пресет или ручной выбор. */
+sealed interface PresetSelection {
+    /** Полная подпись (поповер) и короткая (плитка). */
+    val label: String
+    val shortLabel: String
+
+    data object Auto : PresetSelection {
+        override val label: String get() = PlaybackSettings.PresetAuto
+        override val shortLabel: String get() = PlaybackSettings.PresetAuto
+    }
+
+    data class Preset(val preset: TrackPreset) : PresetSelection {
+        override val label: String get() = preset.label
+        override val shortLabel: String get() = preset.shortLabel
+    }
+
+    /** Пользователь выбрал озвучку и/или субтитры руками — пресет снят. */
+    data object Custom : PresetSelection {
+        override val label: String get() = "Свой"
+        override val shortLabel: String get() = label
+    }
 }
 
 data class PlayerState(
@@ -229,14 +350,14 @@ data class PlayerState(
     val nextTrack: MediaTrack? = null,
     val streamUrl: String? = null,
     val qualities: List<StreamQuality> = emptyList(),
-    val currentQuality: String? = null,
+    val currentQuality: StreamQuality? = null,
     /** Аудиодорожки потока; пусто, если выбирать не из чего (одна дорожка). */
     val audioTracks: List<AudioOption> = emptyList(),
-    val currentAudio: String = "",
+    /** null — манифест ещё не разобран или у потока нет ни одной аудиогруппы. */
+    val currentAudio: AudioOption? = null,
     val subtitles: List<SubtitleOption> = emptyList(),
-    val currentSubtitle: String = "Выкл",
-    /** Подпись плитки «Пресет»: «Авто», короткое имя пресета или «Свой» (см. [TrackResolution]). */
-    val currentPreset: String = PlaybackSettings.PresetAuto,
+    val currentSubtitle: SubtitleOption = SubtitleOption.Off,
+    val currentPreset: PresetSelection = PresetSelection.Auto,
     /** Скорость воспроизведения; сессионная, дефолт — обычная (1.0). */
     val currentSpeed: Float = PlaybackSpeeds.NormalSpeed,
     /** У аккаунта нет активной подписки — поток не отдаётся, плеер объясняет это плашкой. */
@@ -254,12 +375,14 @@ sealed interface PlayerEvent {
 
     /** Поток дошёл до конца — серия досмотрена независимо от расхождений позиции и длительности. */
     data object MarkWatched : PlayerEvent
-    data class SelectQuality(val label: String) : PlayerEvent
-    data class SelectAudio(val label: String) : PlayerEvent
-    data class SelectSubtitle(val label: String) : PlayerEvent
 
-    /** Подпись из [PlaybackSettings.presetOptions]: «Авто» или имя пресета. */
-    data class SelectPreset(val label: String) : PlayerEvent
+    /** Значения — из [PlayerState.qualities]/[PlayerState.audioTracks]/[PlayerState.subtitles]. */
+    data class SelectQuality(val quality: StreamQuality) : PlayerEvent
+    data class SelectAudio(val option: AudioOption) : PlayerEvent
+    data class SelectSubtitle(val option: SubtitleOption) : PlayerEvent
+
+    /** Пресет для тайтла; null — «Авто» (см. [PlaybackSettings.presetOptions]). */
+    data class SelectPreset(val preset: TrackPreset?) : PlayerEvent
     data class SetSpeed(val speed: Float) : PlayerEvent
 
     /**

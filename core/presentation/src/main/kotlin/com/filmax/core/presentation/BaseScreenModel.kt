@@ -10,7 +10,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.error.AppError
-import com.filmax.core.domain.error.toAppError
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -114,20 +113,16 @@ abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
     }
 
     /**
-     * Резолвит ошибку запроса в [AppError] и показывает модалку.
-     * Вызывается из ScreenModel в ветке [RequestResult.Error]:
-     * `showError(result)` или `showError(message, cause)`.
+     * Показывает модалку ошибки. Вызывается из ScreenModel в ветке [RequestResult.Error]:
+     * `showError(result)` — тип сбоя уже разрешён на границе ошибок ([RequestResult.Error.kind]),
+     * по тексту здесь ничего не угадывается.
      */
     protected suspend fun showError(error: AppError) {
         withContext(mainThreadDispatcher) { _error.emit(error) }
     }
 
-    protected suspend fun showError(message: String?, cause: Throwable? = null) {
-        showError(AppError.resolve(message, cause))
-    }
-
     protected suspend fun showError(error: RequestResult.Error) {
-        showError(error.toAppError())
+        showError(error.kind)
     }
 
     /** Показать баннер «нет сети» (контент отдан из кэша). */

@@ -6,6 +6,7 @@ import com.filmax.core.domain.catalog.model.ItemRating
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.catalog.model.MediaTrack
 import com.filmax.core.domain.catalog.model.Posters
+import com.filmax.core.domain.catalog.model.WatchStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -17,7 +18,7 @@ class ContinuationTest {
     fun `last episode with 60 seconds remaining is not continuation`() {
         val item = series(
             episode(season = 2, number = 1),
-            episode(season = 2, number = 2, watchStatus = 1),
+            episode(season = 2, number = 2, watchStatus = WatchStatus.Finished),
         )
 
         val result = calculateContinuation(item, history(season = 2, video = 2, time = 1_140, duration = 1_200))
@@ -68,8 +69,8 @@ class ContinuationTest {
     @Test
     fun `server finished status advances past history position to next unwatched episode`() {
         val item = series(
-            episode(season = 1, number = 1, watchStatus = 1),
-            episode(season = 1, number = 2, watchStatus = 1),
+            episode(season = 1, number = 1, watchStatus = WatchStatus.Finished),
+            episode(season = 1, number = 2, watchStatus = WatchStatus.Finished),
             episode(season = 2, number = 1),
         )
 
@@ -85,8 +86,8 @@ class ContinuationTest {
     @Test
     fun `next episode already in progress keeps its own position`() {
         val item = series(
-            episode(season = 1, number = 1, watchStatus = 1),
-            episode(season = 1, number = 2, watchedSeconds = 300, watchStatus = 0),
+            episode(season = 1, number = 1, watchStatus = WatchStatus.Finished),
+            episode(season = 1, number = 2, watchedSeconds = 300, watchStatus = WatchStatus.InProgress),
         )
 
         val result = calculateContinuation(item, history(season = 1, video = 1, time = 1_190, duration = 1_200))
@@ -112,7 +113,7 @@ class ContinuationTest {
     @Test
     fun `without history finished tracks advance to first unwatched episode`() {
         val item = series(
-            episode(season = 1, number = 1, watchedSeconds = 1_200, watchStatus = 1),
+            episode(season = 1, number = 1, watchedSeconds = 1_200, watchStatus = WatchStatus.Finished),
             episode(season = 1, number = 2),
         )
 
@@ -136,7 +137,7 @@ class ContinuationTest {
 
     @Test
     fun `completed series without next episode has no continuation`() {
-        val item = series(episode(season = 1, number = 1, watchedSeconds = 1_200, watchStatus = 1))
+        val item = series(episode(season = 1, number = 1, watchedSeconds = 1_200, watchStatus = WatchStatus.Finished))
 
         val result = calculateContinuation(item)
 
@@ -147,7 +148,7 @@ class ContinuationTest {
 
     @Test
     fun `finished last episode is not continuation even with history position`() {
-        val item = series(episode(season = 1, number = 1, watchStatus = 1))
+        val item = series(episode(season = 1, number = 1, watchStatus = WatchStatus.Finished))
 
         val result = calculateContinuation(item, history(season = 1, video = 1, time = 600, duration = 1_200))
 
@@ -158,7 +159,7 @@ class ContinuationTest {
 
     @Test
     fun `mismatched history does not resume a different episode`() {
-        val item = series(episode(season = 1, number = 1, watchedSeconds = 600, watchStatus = 0))
+        val item = series(episode(season = 1, number = 1, watchedSeconds = 600, watchStatus = WatchStatus.InProgress))
 
         val result = calculateContinuation(item, history(season = 1, video = 99, time = 600, duration = 1_200))
 
@@ -167,7 +168,7 @@ class ContinuationTest {
 
     @Test
     fun `progress uses track duration when history omits it`() {
-        val item = series(episode(season = 1, number = 1, watchStatus = 1))
+        val item = series(episode(season = 1, number = 1, watchStatus = WatchStatus.Finished))
 
         val result = calculateContinuation(item, history(season = 1, video = 1, time = 600, duration = 0))
 
@@ -212,7 +213,7 @@ class ContinuationTest {
         season: Int,
         number: Int,
         watchedSeconds: Int = 0,
-        watchStatus: Int = -1,
+        watchStatus: WatchStatus = WatchStatus.NotStarted,
     ) = MediaTrack(
         id = season * 100 + number,
         number = number,
@@ -232,7 +233,7 @@ class ContinuationTest {
         title = "Test series",
         posterSmall = null,
         progress = WatchProgress(
-            status = 0,
+            status = WatchStatus.InProgress,
             timeSeconds = time,
             durationSeconds = duration,
             videoId = video,

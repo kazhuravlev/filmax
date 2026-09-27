@@ -25,10 +25,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.catalog.model.MediaTrack
+import com.filmax.core.domain.catalog.model.WatchStatus
 import com.filmax.core.tv.designsystem.TvAccent
 import com.filmax.core.tv.designsystem.TvOnAccent
 import com.filmax.core.tv.designsystem.TvOnSurface
-import com.filmax.core.tv.designsystem.TvOnSurfaceDim
 import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
@@ -181,7 +181,7 @@ private fun EpisodeWatchBar(episode: MediaTrack, highlighted: Boolean) {
 
 /** Доля просмотра серии: досмотренная — всегда полная полоса, даже если время чуть меньше конца. */
 private fun episodeWatchFraction(episode: MediaTrack): Float = when {
-    episode.watchStatus == WATCH_STATUS_FINISHED -> 1f
+    episode.watchStatus == WatchStatus.Finished -> 1f
     episode.durationSeconds > 0 -> (episode.watchedSeconds.toFloat() / episode.durationSeconds).coerceIn(0f, 1f)
     else -> 0f
 }
@@ -190,7 +190,6 @@ private fun episodeDurationLabel(episode: MediaTrack): String =
     episode.durationSeconds.takeIf { it > 0 }?.let { "${it / SECONDS_IN_MINUTE} мин" }.orEmpty()
 
 /** `watching.status` из API: 1 — серия досмотрена до конца. */
-private const val WATCH_STATUS_FINISHED = 1
 
 private const val SECONDS_IN_MINUTE = 60
 

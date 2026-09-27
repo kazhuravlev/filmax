@@ -14,6 +14,7 @@ import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchingItem
+import com.filmax.core.domain.watching.model.WatchingListType
 import com.filmax.core.presentation.BaseScreenModel
 import com.filmax.core.presentation.DataDomain
 import com.filmax.core.presentation.DataInvalidation
@@ -262,8 +263,8 @@ class LibraryScreenModel(
 
     /** Тайтлы «в процессе» — родной прогресс `watching/{movies|serials}?subscribed=1`, оба типа параллельно. */
     private suspend fun loadWatchingTitles(): WatchingResult = coroutineScope {
-        val moviesDeferred = async { watching.getWatchingTitles(TYPE_MOVIES) }
-        val serialsDeferred = async { watching.getWatchingTitles(TYPE_SERIALS) }
+        val moviesDeferred = async { watching.getWatchingTitles(WatchingListType.Movies) }
+        val serialsDeferred = async { watching.getWatchingTitles(WatchingListType.Serials) }
         val movies = moviesDeferred.await()
         val serials = serialsDeferred.await()
         WatchingResult(
@@ -672,8 +673,6 @@ private fun <T> List<T>.preserveEmpty(previous: List<T>, error: String?): List<T
 
 /** Единственные два значения `type`, которые понимает `watching/{type}` — общие для
  * [LibraryScreenModel] и [fetchLibrarySnapshot] (прогрев), поэтому вынесены на файл. */
-private const val TYPE_MOVIES = "movies"
-private const val TYPE_SERIALS = "serials"
 
 /**
  * Тайтлы «в процессе» обоих типов параллельно — общая точка входа для [LibraryScreenModel] и
@@ -682,8 +681,8 @@ private const val TYPE_SERIALS = "serials"
  * наружу (в `AppWarmup` другого модуля) торчит только сам [fetchLibrarySnapshot].
  */
 private suspend fun fetchWatchingTitles(watching: WatchingRepository): List<WatchingItem> = coroutineScope {
-    val moviesDeferred = async { watching.getWatchingTitles(TYPE_MOVIES) }
-    val serialsDeferred = async { watching.getWatchingTitles(TYPE_SERIALS) }
+    val moviesDeferred = async { watching.getWatchingTitles(WatchingListType.Movies) }
+    val serialsDeferred = async { watching.getWatchingTitles(WatchingListType.Serials) }
     moviesDeferred.await().getOrNull().orEmpty() + serialsDeferred.await().getOrNull().orEmpty()
 }
 

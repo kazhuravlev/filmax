@@ -12,6 +12,12 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 
+/** Готовые подборки `api/v1/items/{shortcut}` — единственные два, что есть у kino.watch. */
+internal enum class ItemsShortcut(val path: String) {
+    Hot("hot"),
+    New("new"),
+}
+
 /**
  * Параметры запроса витрины `api/v1/items`. Собраны в data-класс, потому что список аргументов
  * (тип, жанр, сортировка, страница, страна, качество, флаг завершённости, диапазоны) упёрся бы
@@ -66,8 +72,8 @@ internal class CatalogApi(private val client: HttpClient) {
             query.conditions.forEach { condition -> parameter("conditions[]", condition) }
         }.body()
 
-    suspend fun getItemsByShortcut(shortcut: String, type: String, page: Int): ItemsResponseDto =
-        client.get("api/v1/items/$shortcut") {
+    suspend fun getItemsByShortcut(shortcut: ItemsShortcut, type: String, page: Int): ItemsResponseDto =
+        client.get("api/v1/items/${shortcut.path}") {
             parameter("type", type)
             parameter("page", page)
         }.body()

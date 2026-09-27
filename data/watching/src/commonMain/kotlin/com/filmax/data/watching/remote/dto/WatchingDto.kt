@@ -14,6 +14,14 @@ data class ToggleWatchedResponseDto(
     val watched: Int = 0,
 )
 
+/** Ответ `watching/togglewatchlist`: `watching` = 1 — тайтл теперь в списке «Буду смотреть». */
+@Serializable
+data class ToggleWatchlistResponseDto(
+    val watching: Int = 0,
+) {
+    val inWatchlist: Boolean get() = watching == 1
+}
+
 /**
  * Ответ `api/v1/history` — точный таймкод (`time` по каждому видео), но по СЕРИЯМ, а не тайтлам:
  * один сериал — десятки записей. Источник для `Continuation` (точная позиция одного тайтла),

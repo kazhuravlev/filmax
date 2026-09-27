@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.cache.ImageCacheKeys
+import com.filmax.core.domain.cache.PosterSize
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.tv.designsystem.TvMetrics
 import com.filmax.core.tv.designsystem.TvOnSurface
@@ -161,7 +162,7 @@ private fun FilmographyPoster(
             shape = TvMetrics.PosterShape,
             // Плейсхолдер-градиент по умолчанию цветной; в монохроме под постером — поверхность.
             accentColor = TvSurfaceContainer,
-            cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, ImageCacheKeys.SIZE_MEDIUM),
+            cacheKey = ImageCacheKeys.poster(item.type, item.id, PosterSize.Medium),
         )
     }
 }

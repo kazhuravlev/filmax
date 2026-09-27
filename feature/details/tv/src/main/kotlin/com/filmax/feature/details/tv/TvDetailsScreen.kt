@@ -86,6 +86,7 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.cache.ImageProxyRepository
+import com.filmax.core.domain.cache.PosterSize
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemRating
 import com.filmax.core.domain.catalog.model.MediaTrack
@@ -815,7 +816,7 @@ private fun HeroPoster(item: Item) {
         modifier = Modifier.width(HeroPosterWidth).height(HeroPosterHeight),
         shape = TvMetrics.PosterShape,
         accentColor = TvSurfaceContainerHigh,
-        cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, ImageCacheKeys.SIZE_MEDIUM),
+        cacheKey = ImageCacheKeys.poster(item.type, item.id, PosterSize.Medium),
     )
 }
 
@@ -1502,9 +1503,9 @@ private fun LazyListScope.posterRail(
                         shape = TvMetrics.PosterShape,
                         accentColor = TvSurfaceContainerHigh,
                         cacheKey = ImageCacheKeys.poster(
-                            railItem.type.apiValue,
+                            railItem.type,
                             railItem.id,
-                            ImageCacheKeys.SIZE_MEDIUM,
+                            PosterSize.Medium,
                         ),
                     )
                 }

@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.cache.ImageCacheKeys
+import com.filmax.core.domain.cache.PosterSize
 import com.filmax.core.domain.catalog.model.Collection
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.ItemType
@@ -451,9 +452,9 @@ private fun TvHero(
             shape = RectangleShape,
             accentColor = TvSurfaceContainerHigh,
             cacheKey = ImageCacheKeys.poster(
-                item.type.apiValue,
+                item.type,
                 item.id,
-                if (item.posters.wide != null) ImageCacheKeys.WALL else ImageCacheKeys.SIZE_BIG,
+                if (item.posters.wide != null) PosterSize.Wall else PosterSize.Big,
             ),
         )
         Box(Modifier.fillMaxSize().background(HeroScrimHorizontal))
@@ -552,7 +553,7 @@ private fun TvHomePosterCard(item: Item, onClick: () -> Unit, modifier: Modifier
                 modifier = posterModifier,
                 shape = TvMetrics.PosterShape,
                 accentColor = TvSurfaceContainerHigh,
-                cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, ImageCacheKeys.SIZE_MEDIUM),
+                cacheKey = ImageCacheKeys.poster(item.type, item.id, PosterSize.Medium),
             )
         },
     )
@@ -573,7 +574,7 @@ private fun TvCollectionCard(collection: Collection, onClick: () -> Unit, modifi
                 modifier = posterModifier,
                 shape = TvMetrics.PosterShape,
                 accentColor = TvSurfaceContainerHigh,
-                cacheKey = ImageCacheKeys.collectionPoster(collection.id, ImageCacheKeys.SIZE_MEDIUM),
+                cacheKey = ImageCacheKeys.collectionPoster(collection.id, PosterSize.Medium),
             )
         },
     )
@@ -596,7 +597,7 @@ private fun TvContinueCard(history: Continuation, onClick: () -> Unit, modifier:
                 modifier = posterModifier,
                 shape = TvMetrics.CardShape,
                 accentColor = TvSurfaceContainerHigh,
-                cacheKey = ImageCacheKeys.poster(history.item.type.apiValue, history.itemId, ImageCacheKeys.WALL),
+                cacheKey = ImageCacheKeys.poster(history.item.type, history.itemId, PosterSize.Wall),
             )
         },
     )

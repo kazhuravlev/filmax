@@ -1,8 +1,10 @@
 package com.filmax.data.watching.remote
 
+import com.filmax.core.domain.watching.model.WatchingListType
 import com.filmax.data.watching.remote.dto.HistoryListResponseDto
 import com.filmax.data.watching.remote.dto.NotificationsDto
 import com.filmax.data.watching.remote.dto.ToggleWatchedResponseDto
+import com.filmax.data.watching.remote.dto.ToggleWatchlistResponseDto
 import com.filmax.data.watching.remote.dto.WatchingListResponseDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -18,16 +20,16 @@ internal class WatchingApi(private val client: HttpClient) {
 
     /**
      * Список тайтлов «в процессе» одним запросом на тип — без обхода `/history` по сериям.
-     * [type] — только `movies` или `serials`: других значений у kino.watch нет, и на «all»
-     * эндпоинт молча отдавал пустоту. `subscribed=1` — только отмеченные «Буду смотреть»
-     * (для `movies` параметр сервер игнорирует, но передаём всегда — так проще сигнатура).
+     * [type] — только `movies` или `serials` ([WatchingListType]): других значений у kino.watch
+     * нет, и на «all» эндпоинт молча отдавал пустоту. `subscribed=1` — только отмеченные «Буду
+     * смотреть» (для `movies` параметр сервер игнорирует, но передаём всегда — так проще сигнатура).
      *
      * Точного таймкода тут НЕТ — только id/title/posters (+ total/watched/new у сериалов).
      * За позицией конкретного тайтла — отдельным запросом, `CatalogApi.getItemDetails`.
      */
-    suspend fun getWatchingList(type: String, subscribed: Int = 1): WatchingListResponseDto =
-        client.get("api/v1/watching/$type") {
-            parameter("subscribed", subscribed)
+    suspend fun getWatchingList(type: WatchingListType, subscribed: Boolean): WatchingListResponseDto =
+        client.get("api/v1/watching/${type.apiValue}") {
+            parameter("subscribed", if (subscribed) 1 else 0)
         }.body()
 
     /**
@@ -80,7 +82,7 @@ internal class WatchingApi(private val client: HttpClient) {
         }
     }
 
-    suspend fun toggleWatchlist(id: Int): Map<String, Int> =
+    suspend fun toggleWatchlist(id: Int): ToggleWatchlistResponseDto =
         client.get("api/v1/watching/togglewatchlist") { parameter("id", id) }.body()
 
     suspend fun clearItemHistory(id: Int) {

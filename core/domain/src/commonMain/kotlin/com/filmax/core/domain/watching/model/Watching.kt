@@ -1,5 +1,7 @@
 package com.filmax.core.domain.watching.model
 
+import com.filmax.core.domain.catalog.model.WatchStatus
+
 data class WatchHistory(
     val itemId: Int,
     val title: String,
@@ -22,7 +24,7 @@ data class WatchHistory(
 }
 
 data class WatchProgress(
-    val status: Int,
+    val status: WatchStatus,
     val timeSeconds: Int?,
     val durationSeconds: Int?,
     val videoId: Int?,
@@ -60,3 +62,12 @@ data class Notification(
     val read: Boolean,
     val itemId: Int?,
 )
+
+/**
+ * Тип списка `watching/{type}` kino.watch («в процессе»). Только эти два: `movies` включает и
+ * аниме-фильмы, `serials` — все многосерийные типы, сервер сам раскладывает их по спискам.
+ */
+enum class WatchingListType(val apiValue: String, val isSeries: Boolean) {
+    Movies("movies", isSeries = false),
+    Serials("serials", isSeries = true),
+}

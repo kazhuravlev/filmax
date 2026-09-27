@@ -2,6 +2,9 @@ package com.filmax.feature.profile.common
 
 import com.filmax.core.domain.cache.ImageCacheStats
 import com.filmax.core.domain.playback.PlaybackSettings
+import com.filmax.core.domain.playback.PlayerUi
+import com.filmax.core.domain.playback.QualityPreference
+import com.filmax.core.domain.playback.TrackPreset
 import com.filmax.core.domain.user.model.UserProfile
 
 data class ProfileState(
@@ -39,16 +42,15 @@ data class ProfileState(
 
 sealed interface ProfileEvent {
     data object Logout : ProfileEvent
-    data class SetQuality(val quality: String) : ProfileEvent
+    data class SetQuality(val quality: QualityPreference) : ProfileEvent
 
-    /** Подпись из [PlaybackSettings.presetOptions]: «Авто» или имя пресета. */
-    data class SetPreset(val label: String) : ProfileEvent
+    /** Один из [PlaybackSettings.presetOptions]: null — «Авто». */
+    data class SetPreset(val preset: TrackPreset?) : ProfileEvent
 
     /** Забыть выбор дорожек (пресет/ручной) у всех тайтлов. */
     data object ResetTitleTracks : ProfileEvent
 
-    /** Подпись из [PlaybackSettings.playerUiOptions]. */
-    data class SetPlayerUi(val label: String) : ProfileEvent
+    data class SetPlayerUi(val ui: PlayerUi) : ProfileEvent
     data class SetApiHost(val host: String) : ProfileEvent
     data object ClearImageCache : ProfileEvent
     data class SetImageProxyEnabled(val enabled: Boolean) : ProfileEvent

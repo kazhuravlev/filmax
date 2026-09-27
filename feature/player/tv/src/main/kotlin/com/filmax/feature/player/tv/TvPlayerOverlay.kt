@@ -66,6 +66,7 @@ import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvOverline
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
+import com.filmax.feature.player.common.NO_VALUE_CAPTION
 import com.filmax.feature.player.common.formatPlayerTime
 import kotlin.math.roundToInt
 
@@ -551,23 +552,17 @@ private fun SettingsButton(
     }
 }
 
+/**
+ * Значение на плитке: у дорожек — короткий код языка капителью (оставляет место в узкой плитке),
+ * у остальных — полная подпись. Ничего не разбирается из текста: код уже посчитан моделью.
+ */
 private fun SettingsAction.buttonValue(menu: PlayerActions): String = when (this) {
-    SettingsAction.Audio, SettingsAction.Subtitle -> menu.selected(this).languageCode()
-    SettingsAction.Preset, SettingsAction.Quality, SettingsAction.Speed -> menu.selected(this).ifBlank { "—" }
+    SettingsAction.Audio, SettingsAction.Subtitle ->
+        menu.selected(this)?.shortValue?.uppercase() ?: NO_VALUE_CAPTION
+    SettingsAction.Preset, SettingsAction.Quality, SettingsAction.Speed ->
+        menu.selected(this)?.label ?: NO_VALUE_CAPTION
     SettingsAction.Episodes -> "Выбрать"
     SettingsAction.NextEpisode -> "Далее"
-}
-
-/** Короткий код языка оставляет в плитке место для значения, а неизвестные длинные подписи ellipsize'ятся. */
-private fun String.languageCode(): String {
-    val language = substringAfter(". ", this).substringBefore(" · ").trim()
-    return when (language.lowercase()) {
-        "русский", "russian", "ru", "rus" -> "RUS"
-        "english", "en", "eng" -> "ENG"
-        "українська", "ukrainian", "uk", "ukr" -> "UKR"
-        "оригинал", "original" -> "ORIG"
-        else -> language.ifBlank { "—" }
-    }
 }
 
 /**
@@ -601,7 +596,7 @@ internal fun SettingsPopover(
         LazyColumn(state = listState, modifier = Modifier.weight(1f, fill = false)) {
             items(options.size) { index ->
                 val option = options[index]
-                SettingsRow(label = option, highlighted = index == cursor, current = option == current)
+                SettingsRow(label = option.label, highlighted = index == cursor, current = option == current)
             }
         }
     }

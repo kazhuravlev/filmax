@@ -5,6 +5,7 @@ import com.filmax.core.domain.catalog.model.MediaTrack
 import com.filmax.core.domain.catalog.model.SubtitleTrack
 import com.filmax.core.domain.catalog.model.Trailer
 import com.filmax.core.domain.catalog.model.VideoFile
+import com.filmax.core.domain.catalog.model.WatchStatus
 import com.filmax.data.catalog.remote.dto.AudioDto
 import com.filmax.data.catalog.remote.dto.MediaTrackDto
 import com.filmax.data.catalog.remote.dto.SubtitleDto
@@ -22,7 +23,7 @@ fun MediaTrackDto.toDomain(seasonNumber: Int = snumber) = MediaTrack(
     audios = audios.map { it.toDomain() },
     subtitles = subtitles.mapNotNull { it.toDomainOrNull() },
     watchedSeconds = watching?.time?.coerceAtLeast(0) ?: 0,
-    watchStatus = watching?.status ?: -1,
+    watchStatus = WatchStatus.fromApi(watching?.status),
 )
 
 fun VideoFileDto.toDomain() = VideoFile(

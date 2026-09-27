@@ -28,6 +28,13 @@ internal enum class EpisodeNavArrow { Previous, Next }
  * Пункт сетки настроек. Первые пять открывают поповер выбора, [Episodes] — панель сезонов
  * и серий, [NextEpisode] — действие сразу.
  */
+/**
+ * Вариант категории настроек плеера: [label] — строка поповера, [shortValue] — то же значение
+ * коротко, под кнопку/плитку («rus», «FHD», «Ориг. + EN»). Оба уже посчитаны из типизированных
+ * данных модели (см. `PlayerChoices.kt`): интерфейс ничего не разбирает из подписи.
+ */
+internal data class PlayerChoice(val label: String, val shortValue: String)
+
 internal enum class SettingsAction(val label: String) {
     Preset("Пресет"),
     Quality("Качество"),
@@ -55,12 +62,16 @@ internal class EpisodesPanelData(
  * Передаётся обработчику клавиш параметром — [TvPlayerUiState] про PlayerState ничего не знает.
  * [episodes] == null — фильм или навигации по сериям нет: пункта «Серии» в ряду не будет.
  */
+// Восемь полей — и есть весь API меню плеера; сворачивать их во вложенные структуры ради порога
+// значило бы разрезать одну раскладку на куски.
+@Suppress("LongParameterList")
 internal class PlayerActions(
     val items: List<SettingsAction>,
-    val options: (SettingsAction) -> List<String>,
-    /** Подпись выбранного сейчас значения категории — по ней считается и стартовый курсор поповера. */
-    val selected: (SettingsAction) -> String,
-    val onSelect: (SettingsAction, String) -> Unit,
+    val options: (SettingsAction) -> List<PlayerChoice>,
+    /** Выбранный сейчас вариант категории (null — выбора нет); по нему считается стартовый курсор поповера. */
+    val selected: (SettingsAction) -> PlayerChoice?,
+    /** Выбор варианта по его индексу в [options] — тот же индекс, что у курсора поповера. */
+    val onSelect: (SettingsAction, Int) -> Unit,
     val onNextEpisode: () -> Unit,
     /** null — предыдущей серии нет (первый эпизод) или граф не дал навигацию по сериям. */
     val onPreviousEpisode: (() -> Unit)? = null,
@@ -74,7 +85,7 @@ internal class PlayerActions(
     val hasPreviousEpisode: Boolean get() = onPreviousEpisode != null
 
     fun selectedIndex(action: SettingsAction): Int =
-        options(action).indexOf(selected(action)).coerceAtLeast(0)
+        selected(action)?.let { options(action).indexOf(it) }?.coerceAtLeast(0) ?: 0
 
     fun isEnabled(action: SettingsAction): Boolean = enabled(action)
 }
@@ -153,7 +164,7 @@ internal class TvPlayerUiState(player: Player) : BasePlayerUiState(player) {
     /** Play и полоса прокрутки — оба «транспорт» (OK везде пауза/воспроизведение), но соседи разные. */
     private fun onTransportKey(key: Key, menu: PlayerActions): Boolean = when (mode) {
         PlayerMode.Progress -> onProgressKey(key)
-        else -> onPlayKey(key, menu)
+        PlayerMode.Transport, PlayerMode.EpisodeNav, PlayerMode.Settings -> onPlayKey(key, menu)
     }
 
     /** Полоса прокрутки: горизонталь — перемотка, ▼ — на Play, ▲ — некуда, стоим. */
@@ -247,7 +258,9 @@ internal class TvPlayerUiState(player: Player) : BasePlayerUiState(player) {
         when (action) {
             SettingsAction.NextEpisode -> menu.onNextEpisode()
             SettingsAction.Episodes -> openEpisodes(menu)
-            else -> openSubmenu(action, menu)
+            SettingsAction.Preset, SettingsAction.Quality, SettingsAction.Audio, SettingsAction.Subtitle,
+            SettingsAction.Speed,
+            -> openSubmenu(action, menu)
         }
         touch()
     }
