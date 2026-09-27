@@ -11,19 +11,6 @@ search, personal collections, and automatic updates.
 
 ---
 
-## Screenshots
-
-![Home screen](docs/screenshots/tv-home.png)
-
-| | |
-|:--:|:--:|
-| ![Title details](docs/screenshots/tv-details.png) | ![Player with the episode panel](docs/screenshots/tv-player-episodes.png) |
-| *Title details with seasons, cast, and a continue-watching action* | *Player with season and episode progress* |
-| ![Catalog](docs/screenshots/tv-catalog.png) | ![Personal library](docs/screenshots/tv-library.png) |
-| *Catalog with genres, sorting, and filters* | *Watching history and personal collections* |
-
----
-
 ## Features
 
 - **Continue watching:** watch progress is synchronized with kino.watch down to the

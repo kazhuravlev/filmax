@@ -14,7 +14,7 @@ jobs:
     env:
       TAG: ${{ github.ref_name }}
     steps:
-      - name: Ждём своей очереди
+      - name: Wait for earlier runs of this workflow
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -31,19 +31,19 @@ jobs:
                          | select(.status | IN(\"queued\",\"in_progress\",\"waiting\",\"requested\",\"pending\"))
                          | \"\\(.databaseId) \\(.displayTitle)\"] | join(\", \")")
             if [ -z "$earlier" ]; then
-              echo "Очередь свободна — собираем $TAG."
+              echo "Queue is clear — building $TAG."
               break
             fi
             if [ "$waited" -ge "$MAX_WAIT_SEC" ]; then
-              echo "::warning::Ждали ${waited} с, соседние запуски всё ещё идут ($earlier) — собираемся без очереди."
+              echo "::warning::Waited ${waited}s, earlier runs are still going ($earlier) — building anyway."
               break
             fi
-            echo "Впереди: $earlier — ждём (${waited} с)…"
+            echo "Ahead of us: $earlier — waiting (${waited}s)…"
             sleep 30
             waited=$((waited + 30))
           done
 
-      - name: Checkout (полная история + теги)
+      - name: Checkout (full history + tags)
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref_name }}
@@ -66,7 +66,7 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::Секрет KEYSTORE_BASE64 не задан — нечем подписывать release."
+            echo "::error::Secret KEYSTORE_BASE64 is not set — nothing to sign the release with."
             exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/filmax-release.jks"
@@ -77,7 +77,7 @@ jobs:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
           if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
-            echo "::warning::Секрет GOOGLE_SERVICES_JSON_BASE64 не задан — релиз без Crashlytics."
+            echo "::warning::Secret GOOGLE_SERVICES_JSON_BASE64 is not set — building without Crashlytics."
             exit 0
           fi
           echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > app/google-services.json
@@ -95,7 +95,7 @@ jobs:
         id: apk
         run: |
           path=$(find . -path '*/outputs/apk/release/*.apk' | head -n1)
-          if [ -z "$path" ]; then echo "::error::release-APK не найден"; exit 1; fi
+          if [ -z "$path" ]; then echo "::error::release APK not found"; exit 1; fi
           version="${TAG#v}"
           dest="filmax-${version}.apk"
           cp "$path" "$dest"
@@ -107,7 +107,7 @@ jobs:
             echo "version=$version"
             echo "size_mb=$size_mb"
           } >> "$GITHUB_OUTPUT"
-          echo "APK: $dest and filmax.apk (${size_mb} МБ)"
+          echo "APK: $dest and filmax.apk (${size_mb} MB)"
 
       - name: Generate SHA-256 checksums
         id: checksums
@@ -124,10 +124,10 @@ jobs:
           prev=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
           if [ -n "$prev" ]; then
             range="${prev}..${TAG}"
-            echo "Изменения с ${prev}:" > "$RUNNER_TEMP/changelog.md"
+            echo "Changes since ${prev}:" > "$RUNNER_TEMP/changelog.md"
           else
             range="${TAG}"
-            echo "Первый релиз Filmax." > "$RUNNER_TEMP/changelog.md"
+            echo "First Filmax release." > "$RUNNER_TEMP/changelog.md"
           fi
           echo >> "$RUNNER_TEMP/changelog.md"
           emit() {
@@ -140,29 +140,29 @@ jobs:
               echo >> "$RUNNER_TEMP/changelog.md"
             fi
           }
-          emit "feat" "Новое"
-          emit "fix"  "Исправления"
-          emit "perf" "Производительность"
+          emit "feat" "New"
+          emit "fix"  "Fixes"
+          emit "perf" "Performance"
           if [ "$(wc -l < "$RUNNER_TEMP/changelog.md")" -le 2 ]; then
-            echo "### Коммиты" >> "$RUNNER_TEMP/changelog.md"
+            echo "### Commits" >> "$RUNNER_TEMP/changelog.md"
             git log --no-merges --pretty='- %s' "$range" >> "$RUNNER_TEMP/changelog.md"
           fi
           echo "---" >> "$RUNNER_TEMP/changelog.md"
-          echo "versionName ${{ steps.apk.outputs.version }} · размер ${{ steps.apk.outputs.size_mb }} МБ" >> "$RUNNER_TEMP/changelog.md"
-          echo "Собрано из тега \`${TAG}\`." >> "$RUNNER_TEMP/changelog.md"
+          echo "versionName ${{ steps.apk.outputs.version }} · size ${{ steps.apk.outputs.size_mb }} MB" >> "$RUNNER_TEMP/changelog.md"
+          echo "Built from tag \`${TAG}\`." >> "$RUNNER_TEMP/changelog.md"
           cat "$RUNNER_TEMP/changelog.md"
 
-      - name: Latest — только наибольший тег
+      - name: Mark as Latest only if this is the highest tag
         id: latest
         run: |
           git fetch --tags --force --quiet
           highest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n1)
           if [ "$highest" = "$TAG" ]; then
             echo "latest=true" >> "$GITHUB_OUTPUT"
-            echo "$TAG — наибольший тег, релиз станет Latest."
+            echo "$TAG is the highest tag — the release will be marked Latest."
           else
             echo "latest=false" >> "$GITHUB_OUTPUT"
-            echo "$TAG не наибольший (есть $highest) — релиз публикуется без бейджа Latest."
+            echo "$TAG is not the highest tag ($highest exists) — publishing without the Latest badge."
           fi
 
       - name: Create or update GitHub Release
@@ -178,11 +178,11 @@ jobs:
             gh release upload "$TAG" "$APK" "$APK_LATEST" "$CHECKSUMS" --clobber
             gh release edit "$TAG" --title "$TITLE" --notes-file "$RUNNER_TEMP/changelog.md" \
               --latest="$LATEST"
-            echo "GitHub Release $TAG обновлён (APK доложен, latest=$LATEST)."
+            echo "GitHub Release $TAG updated (APK uploaded, latest=$LATEST)."
           else
             gh release create "$TAG" "$APK" "$APK_LATEST" "$CHECKSUMS" \
               --title "$TITLE" \
               --notes-file "$RUNNER_TEMP/changelog.md" \
               --latest="$LATEST"
-            echo "GitHub Release $TAG опубликован (latest=$LATEST)."
+            echo "GitHub Release $TAG published (latest=$LATEST)."
           fi
