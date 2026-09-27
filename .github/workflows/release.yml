@@ -16,13 +16,52 @@ on:
 
 permissions:
   contents: write   # нужно для создания GitHub Release
+  actions: read     # «Ждём своей очереди» читает список запусков этого workflow
 
+# Сборки тегов идут СТРОГО по одной, в порядке запуска (см. шаг «Ждём своей очереди»).
+# Не `concurrency:` GitHub: тот держит в очереди только ОДИН ожидающий запуск и отменяет
+# остальные — пуш четырёх тегов подряд потерял бы два релиза.
 jobs:
   release:
     runs-on: ubuntu-latest
     env:
       TAG: ${{ github.ref_name }}
     steps:
+      # Параллельные сборки нескольких тегов финишировали в случайном порядке, и бейдж
+      # «Latest» (по нему приложение ищет обновление — `releases/latest`) доставался тому
+      # релизу, который создался ПОЗЖЕ, а не тому, чей тег больше. Ждём, пока все запуски этого
+      # workflow, стартовавшие раньше нашего (run id растёт монотонно), не завершатся.
+      # Верхняя граница ожидания — страховка от зависшего соседа: дальше собираемся как есть,
+      # бейдж «Latest» всё равно ставится по номеру тега (см. «Latest — только наибольший тег»).
+      - name: Ждём своей очереди
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          WORKFLOW_FILE: ${{ github.workflow_ref }}
+          MAX_WAIT_SEC: 5400
+        run: |
+          workflow="$(basename "${WORKFLOW_FILE%%@*}")"
+          waited=0
+          while :; do
+            earlier=$(gh run list --workflow "$workflow" --limit 100 \
+              --json databaseId,status,displayTitle \
+              --jq "[.[] | select(.databaseId < ($RUN_ID | tonumber))
+                         | select(.status | IN(\"queued\",\"in_progress\",\"waiting\",\"requested\",\"pending\"))
+                         | \"\\(.databaseId) \\(.displayTitle)\"] | join(\", \")")
+            if [ -z "$earlier" ]; then
+              echo "Очередь свободна — собираем $TAG."
+              break
+            fi
+            if [ "$waited" -ge "$MAX_WAIT_SEC" ]; then
+              echo "::warning::Ждали ${waited} с, соседние запуски всё ещё идут ($earlier) — собираемся без очереди."
+              break
+            fi
+            echo "Впереди: $earlier — ждём (${waited} с)…"
+            sleep 30
+            waited=$((waited + 30))
+          done
+
       - name: Checkout (полная история + теги)
         uses: actions/checkout@v4
         with:
@@ -143,6 +182,23 @@ jobs:
           echo "Собрано из тега \`${TAG}\`." >> "$RUNNER_TEMP/changelog.md"
           cat "$RUNNER_TEMP/changelog.md"
 
+      # Бейдж «Latest» — по НОМЕРУ тега, а не по времени создания релиза (дефолт GitHub):
+      # приложение берёт обновление из `releases/latest`, и пересборка старого тега (или
+      # финиш отставшей параллельной сборки) не должна подменять свежую версию старой.
+      # Теги перечитываем прямо сейчас: пока ждали очередь и собирались, мог приехать новый.
+      - name: Latest — только наибольший тег
+        id: latest
+        run: |
+          git fetch --tags --force --quiet
+          highest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n1)
+          if [ "$highest" = "$TAG" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+            echo "$TAG — наибольший тег, релиз станет Latest."
+          else
+            echo "latest=false" >> "$GITHUB_OUTPUT"
+            echo "$TAG не наибольший (есть $highest) — релиз публикуется без бейджа Latest."
+          fi
+
       # Идемпотентно: если Release уже есть (создан заранее через UI или прошлым прогоном) —
       # докладываем APK и обновляем заметки; иначе создаём. Так шаг не падает на «tag already exists».
       - name: Create or update GitHub Release
@@ -152,14 +208,17 @@ jobs:
           APK_LATEST: ${{ steps.apk.outputs.latest_path }}
           CHECKSUMS: SHA256SUMS.txt
           TITLE: Filmax ${{ steps.apk.outputs.version }}
+          LATEST: ${{ steps.latest.outputs.latest }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK" "$APK_LATEST" "$CHECKSUMS" --clobber
-            gh release edit "$TAG" --title "$TITLE" --notes-file "$RUNNER_TEMP/changelog.md"
-            echo "GitHub Release $TAG обновлён (APK доложен)."
+            gh release edit "$TAG" --title "$TITLE" --notes-file "$RUNNER_TEMP/changelog.md" \
+              --latest="$LATEST"
+            echo "GitHub Release $TAG обновлён (APK доложен, latest=$LATEST)."
           else
             gh release create "$TAG" "$APK" "$APK_LATEST" "$CHECKSUMS" \
               --title "$TITLE" \
-              --notes-file "$RUNNER_TEMP/changelog.md"
-            echo "GitHub Release $TAG опубликован."
+              --notes-file "$RUNNER_TEMP/changelog.md" \
+              --latest="$LATEST"
+            echo "GitHub Release $TAG опубликован (latest=$LATEST)."
           fi
