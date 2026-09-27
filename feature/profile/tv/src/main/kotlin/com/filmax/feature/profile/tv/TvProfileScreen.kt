@@ -213,6 +213,7 @@ private data class ProfileActions(
     val onCycleQuality: () -> Unit,
     val onCyclePreset: () -> Unit,
     val onResetTitleTracks: () -> Unit,
+    val onCyclePlayerUi: () -> Unit,
     val onLogout: () -> Unit,
     val onCheckUpdates: () -> Unit,
     val onCycleApiHost: () -> Unit,
@@ -241,6 +242,11 @@ private fun profileActions(
         )
     },
     onResetTitleTracks = { screenModel.dispatch(ProfileEvent.ResetTitleTracks) },
+    onCyclePlayerUi = {
+        screenModel.dispatch(
+            ProfileEvent.SetPlayerUi(next(PlaybackSettings.playerUiOptions, state.playback.playerUi.label))
+        )
+    },
     onLogout = { screenModel.dispatch(ProfileEvent.Logout) },
     onCycleApiHost = {
         val hosts = state.availableApiHosts
@@ -273,6 +279,12 @@ private fun PlaybackRows(state: ProfileState, actions: ProfileActions) {
         SettingRow(
             spec = SettingRowSpec(label = "Озвучка и субтитры", value = state.playback.presetLabel),
             onClick = actions.onCyclePreset,
+        )
+        // Интерфейс плеера — общий для тайтлов и трейлеров (см. PlayerUi). Пока вариант один,
+        // пункт всё равно на месте: следующий интерфейс появится как новое значение перечисления.
+        SettingRow(
+            spec = SettingRowSpec(label = "Интерфейс плеера", value = state.playback.playerUi.label),
+            onClick = actions.onCyclePlayerUi,
         )
         SettingRow(
             spec = SettingRowSpec(

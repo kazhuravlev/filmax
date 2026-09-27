@@ -43,13 +43,32 @@ sealed interface TitleTracks {
 }
 
 /**
+ * Интерфейс плеера — какой набор экранов рисуется поверх кадра. Выбирается в Профиле и
+ * применяется ко ВСЕМ видео в приложении: и к тайтлам, и к трейлерам. Реализации живут в
+ * feature:player:tv (`TvPlayer` → `PlayerUi.implementation()`), новый интерфейс — новый пункт здесь
+ * и новая ветка там.
+ */
+enum class PlayerUi(val label: String) {
+    /** Оверлей с полосой прокрутки, Play и сеткой плиток настроек под пульт. */
+    Classic("UI 1"),
+    ;
+
+    companion object {
+        val Default = Classic
+
+        fun byLabel(label: String): PlayerUi? = entries.firstOrNull { it.label == label }
+    }
+}
+
+/**
  * Пользовательские предпочтения воспроизведения — выбираются в Профиле и
- * применяются на экране плеера (качество по умолчанию и пресет дорожек).
+ * применяются на экране плеера (качество по умолчанию, пресет дорожек, интерфейс плеера).
  */
 data class PlaybackSettings(
     val quality: String = QualityAuto,
     /** Пресет по умолчанию для тайтлов без своего выбора; null — «Авто» (см. [TrackPreset]). */
     val preset: TrackPreset? = null,
+    val playerUi: PlayerUi = PlayerUi.Default,
 ) {
     /** Подпись пресета для настроек: «Авто» или имя пресета. */
     val presetLabel: String get() = preset?.label ?: PresetAuto
@@ -65,6 +84,8 @@ data class PlaybackSettings(
 
         /** «Авто» первым, дальше пресеты в порядке авто-подбора. */
         val presetOptions: List<String> = listOf(PresetAuto) + TrackPreset.entries.map { it.label }
+
+        val playerUiOptions: List<String> = PlayerUi.entries.map { it.label }
     }
 }
 
@@ -75,6 +96,8 @@ interface PlaybackSettingsRepository {
 
     /** null — «Авто». */
     suspend fun setPreset(preset: TrackPreset?)
+
+    suspend fun setPlayerUi(ui: PlayerUi)
 
     /**
      * Память тайтла о дорожках (см. [TitleTracks]); разделяется всеми сериями сериала. null —

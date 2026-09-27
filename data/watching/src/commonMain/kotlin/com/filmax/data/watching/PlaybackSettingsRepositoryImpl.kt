@@ -2,6 +2,7 @@ package com.filmax.data.watching
 
 import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.domain.playback.PlaybackSettingsRepository
+import com.filmax.core.domain.playback.PlayerUi
 import com.filmax.core.domain.playback.TitleTracks
 import com.filmax.core.domain.playback.TrackPreset
 import com.russhwolf.settings.Settings
@@ -21,6 +22,8 @@ internal class PlaybackSettingsRepositoryImpl(
     override suspend fun setQuality(quality: String) = update { it.copy(quality = quality) }
 
     override suspend fun setPreset(preset: TrackPreset?) = update { it.copy(preset = preset) }
+
+    override suspend fun setPlayerUi(ui: PlayerUi) = update { it.copy(playerUi = ui) }
 
     // Память тайтла — точечные ключи мимо state: это не глобальная настройка, а «что выбрали в
     // этом сериале», и подписки на неё не нужны. Пресет и ручной выбор — взаимоисключающие
@@ -69,6 +72,7 @@ internal class PlaybackSettingsRepositoryImpl(
         val updated = transform(state.value)
         storage.putString(KEY_QUALITY, updated.quality)
         storage.putString(KEY_PRESET, updated.preset.toRaw())
+        storage.putString(KEY_PLAYER_UI, updated.playerUi.name)
         state.value = updated
     }
 
@@ -79,23 +83,29 @@ internal class PlaybackSettingsRepositoryImpl(
         return PlaybackSettings(
             quality = storage.getStringOrNull(KEY_QUALITY) ?: PlaybackSettings.QualityAuto,
             preset = storage.getStringOrNull(KEY_PRESET)?.toPreset(),
+            // Неизвестное имя (интерфейс убрали) — дефолтный, а не падение при загрузке.
+            playerUi = storage.getStringOrNull(KEY_PLAYER_UI)
+                ?.let { raw -> PlayerUi.entries.firstOrNull { it.name == raw } }
+                ?: PlayerUi.Default,
         )
     }
-
-    private fun TrackPreset?.toRaw(): String = this?.name ?: PRESET_AUTO
-
-    /** Неизвестное имя (пресет переименовали/удалили) читается как «Авто», а не роняет загрузку. */
-    private fun String.toPreset(): TrackPreset? = TrackPreset.entries.firstOrNull { it.name == this }
 
     private companion object {
         const val KEY_QUALITY = "playback_quality"
         const val KEY_PRESET = "playback_preset"
+        const val KEY_PLAYER_UI = "playback_player_ui"
         const val KEY_LEGACY_AUDIO = "playback_audio"
         const val KEY_LEGACY_SUBTITLES = "playback_subtitles"
         const val KEY_TITLE_PRESET_PREFIX = "playback_preset_"
         const val KEY_VOICE_PREFIX = "playback_voice_"
         const val KEY_SUBTITLE_PREFIX = "playback_subtitle_"
-        const val PRESET_AUTO = "auto"
         val TITLE_PREFIXES = listOf(KEY_TITLE_PRESET_PREFIX, KEY_VOICE_PREFIX, KEY_SUBTITLE_PREFIX)
     }
 }
+
+private const val PRESET_AUTO = "auto"
+
+private fun TrackPreset?.toRaw(): String = this?.name ?: PRESET_AUTO
+
+/** Неизвестное имя (пресет переименовали/удалили) читается как «Авто», а не роняет загрузку. */
+private fun String.toPreset(): TrackPreset? = TrackPreset.entries.firstOrNull { it.name == this }

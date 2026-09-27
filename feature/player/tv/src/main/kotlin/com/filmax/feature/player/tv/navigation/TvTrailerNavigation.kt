@@ -10,8 +10,8 @@ import com.filmax.feature.player.tv.TvTrailerScreen
  * Регистрирует TV-экран трейлера на ТОТ ЖЕ маршрут [TrailerRoute], что и мобильная фича.
  *
  * Отдельного ScreenModel нет: [TrailerRoute.url] — готовый временный HLS-плейлист (.m3u8) с
- * истекающим токеном, поэтому играем его как есть штатным контроллером Media3, а «Назад» пульта
- * закрывает экран ([onBack]).
+ * истекающим токеном, поэтому играем его как есть в общем интерфейсе плеера (см. `TvPlayer`),
+ * а «Назад» пульта закрывает экран ([onBack]).
  */
 fun NavGraphBuilder.tvTrailerScreen(onBack: () -> Unit) {
     composable<TrailerRoute> { entry ->

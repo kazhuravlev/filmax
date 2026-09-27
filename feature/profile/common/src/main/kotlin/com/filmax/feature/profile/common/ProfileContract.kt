@@ -12,7 +12,7 @@ data class ProfileState(
     val favoritesCount: Int = 0,
     /** Максимальное качество устройства — из `device/info` (4K/HDR/HEVC/HD). */
     val quality: String? = null,
-    /** Пользовательские настройки воспроизведения (качество и пресет дорожек). */
+    /** Пользовательские настройки воспроизведения (качество, пресет дорожек, интерфейс плеера). */
     val playback: PlaybackSettings = PlaybackSettings(),
     /** Текущий хост API (см. [com.filmax.core.domain.network.ApiHostRepository]). */
     val apiHost: String = "",
@@ -46,6 +46,9 @@ sealed interface ProfileEvent {
 
     /** Забыть выбор дорожек (пресет/ручной) у всех тайтлов. */
     data object ResetTitleTracks : ProfileEvent
+
+    /** Подпись из [PlaybackSettings.playerUiOptions]. */
+    data class SetPlayerUi(val label: String) : ProfileEvent
     data class SetApiHost(val host: String) : ProfileEvent
     data object ClearImageCache : ProfileEvent
     data class SetImageProxyEnabled(val enabled: Boolean) : ProfileEvent
