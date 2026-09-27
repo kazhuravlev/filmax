@@ -134,6 +134,10 @@ internal class Ui2PlayerUiState(player: Player) : BasePlayerUiState(player) {
     var zone by mutableStateOf(Ui2Zone.Controls)
     var controlCursor by mutableIntStateOf(0)
 
+    /** На паузе оверлей остаётся: экран паузы с синопсисом — это и есть состояние, а не бездействие. */
+    override val idleHidesOverlay: Boolean
+        get() = visible && isPlaying
+
     override fun hideOverlay() {
         super.hideOverlay()
         zone = Ui2Zone.Controls
@@ -270,7 +274,23 @@ private fun Ui2Overlay(ui: Ui2PlayerUiState, session: TvPlayerSession) {
                     session.subtitle,
                     style = MaterialTheme.typography.bodyMedium,
                     color = TvOnSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            // Экран паузы: синопсис под названием, пока стоим. При воспроизведении он лишний —
+            // текст на кадре должен исчезать вместе с оверлеем, а не жить на нём.
+            if (!ui.isPlaying && session.description.isNotBlank()) {
+                Text(
+                    session.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TvOnSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .fillMaxWidth(DESCRIPTION_WIDTH_FRACTION),
                 )
             }
             Ui2Scrubber(ui = ui, modifier = Modifier.padding(top = 14.dp))
@@ -322,6 +342,7 @@ private fun Ui2Scrubber(ui: Ui2PlayerUiState, modifier: Modifier = Modifier) {
     val position = if (ui.isScrubbing) ui.scrubTargetMs else ui.positionMs
     val duration = ui.durationMs
     val fraction = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    val buffered = if (duration > 0) (ui.bufferedMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
     val timeStyle = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum")
 
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
@@ -350,6 +371,7 @@ private fun Ui2Scrubber(ui: Ui2PlayerUiState, modifier: Modifier = Modifier) {
             }
             Ui2Track(
                 fraction = fraction,
+                buffered = buffered,
                 thumbCenter = thumbCenter,
                 focused = focused,
                 modifier = Modifier
@@ -370,9 +392,18 @@ private fun Ui2Scrubber(ui: Ui2PlayerUiState, modifier: Modifier = Modifier) {
     }
 }
 
-/** Трек, заливка и thumb; [thumbCenter] — уже посчитанная от ширины трека координата центра. */
+/**
+ * Трек, докачанный участок ([buffered], светлее трека), заливка и thumb; [thumbCenter] — уже
+ * посчитанная от ширины трека координата центра.
+ */
 @Composable
-private fun Ui2Track(fraction: Float, thumbCenter: Dp, focused: Boolean, modifier: Modifier = Modifier) {
+private fun Ui2Track(
+    fraction: Float,
+    buffered: Float,
+    thumbCenter: Dp,
+    focused: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val trackHeight = if (focused) TrackFocused else Track
     val thumbSize = if (focused) ThumbFocused else Thumb
     Box(modifier) {
@@ -383,6 +414,14 @@ private fun Ui2Track(fraction: Float, thumbCenter: Dp, focused: Boolean, modifie
                 .height(trackHeight)
                 .clip(CircleShape)
                 .background(TrackBackground),
+        )
+        Box(
+            Modifier
+                .align(Alignment.CenterStart)
+                .fillMaxWidth(buffered)
+                .height(trackHeight)
+                .clip(CircleShape)
+                .background(BufferedBackground),
         )
         Box(
             Modifier
@@ -507,6 +546,10 @@ private val Ui2Accent = Color(0xFFE50914)
 private val PausedDim = Color(0x59000000)
 private val BottomShade = Color(0xE6000000)
 private val TrackBackground = Color(0x59FFFFFF)
+private val BufferedBackground = Color(0x40FFFFFF)
+
+/** Синопсис на паузе — не шире половины кадра, как абзац, а не бегущая строка. */
+private const val DESCRIPTION_WIDTH_FRACTION = 0.55f
 private val BubbleBackground = Color(0xCC000000)
 
 private val BottomInset = 36.dp

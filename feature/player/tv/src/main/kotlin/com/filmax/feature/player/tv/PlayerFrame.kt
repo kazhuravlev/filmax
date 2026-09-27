@@ -107,6 +107,7 @@ internal fun PlayerEffects(ui: BasePlayerUiState, session: TvPlayerSession) {
             val duration = player.duration.takeIf { it > 0 } ?: continue
             ui.durationMs = duration
             if (!ui.isScrubbing) ui.positionMs = player.currentPosition
+            ui.bufferedMs = player.bufferedPosition
 
             // Автопереход: плашка появляется в конце серии, отсчёт дошёл до нуля — следующая.
             ui.updateAutoNext(

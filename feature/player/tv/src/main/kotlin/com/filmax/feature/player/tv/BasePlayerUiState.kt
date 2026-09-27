@@ -52,6 +52,9 @@ internal abstract class BasePlayerUiState(val player: Player) {
     var positionMs by mutableLongStateOf(0L)
     var durationMs by mutableLongStateOf(0L)
 
+    /** Докуда докачан поток — интерфейс может показать это на полосе. */
+    var bufferedMs by mutableLongStateOf(0L)
+
     /** Скраббинг: позиция, которую двигает D-pad до подтверждения seekTo. */
     var isScrubbing by mutableStateOf(false)
     var scrubTargetMs by mutableLongStateOf(0L)
@@ -82,7 +85,7 @@ internal abstract class BasePlayerUiState(val player: Player) {
     }
 
     /** Оверлей уходит после любого бездействия, в том числе в открытом селекторе. */
-    val idleHidesOverlay: Boolean
+    open val idleHidesOverlay: Boolean
         get() = visible
 
     /** Было действие пользователя: оверлей на экран, таймер автоскрытия — с нуля. */

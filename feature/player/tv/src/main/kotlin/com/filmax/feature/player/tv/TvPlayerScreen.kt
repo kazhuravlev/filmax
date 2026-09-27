@@ -45,6 +45,7 @@ fun TvPlayerScreen(
         player = screenModel.player,
         title = state.item?.title.orEmpty(),
         subtitle = playerSubtitle(state),
+        description = state.item?.plot.orEmpty(),
         loading = state.loading,
         error = appError,
         subscriptionRequired = state.subscriptionRequired,
@@ -131,12 +132,18 @@ private fun episodesPanelData(
     )
 }
 
-/** Подстрока шапки: «Сезон 2 · Серия 5» у сериала, «год · качество» у фильма. */
+/**
+ * Подстрока шапки: «Сезон 2 · Серия 5 · Название серии» у сериала (название — если оно не
+ * дублирует номер), «год · качество» у фильма.
+ */
 private fun playerSubtitle(state: PlayerState): String {
     val track = state.track ?: return ""
+    val episodeTitle = track.title.takeIf { it.isNotBlank() && it != "Серия ${track.number}" }
     return when {
-        track.seasonNumber > 0 -> "Сезон ${track.seasonNumber} · Серия ${track.number}"
-        state.item?.tracklist.orEmpty().size > 1 -> "Серия ${track.number}"
+        track.seasonNumber > 0 ->
+            listOfNotNull("Сезон ${track.seasonNumber} · Серия ${track.number}", episodeTitle).joinToString(" · ")
+        state.item?.tracklist.orEmpty().size > 1 ->
+            listOfNotNull("Серия ${track.number}", episodeTitle).joinToString(" · ")
         else -> listOfNotNull(state.item?.year?.takeIf { it > 0 }?.toString(), state.currentQuality)
             .joinToString(" · ")
     }

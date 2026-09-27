@@ -14,6 +14,8 @@ internal class TvPlayerSession(
     val player: Player,
     val title: String,
     val subtitle: String,
+    /** Синопсис — для экрана паузы; пусто, если рассказать нечего (трейлер). */
+    val description: String,
     /** Данные ещё грузятся (у тайтла — детали и ссылка на поток); буферизацию плеера интерфейс видит сам. */
     val loading: Boolean,
     val error: AppError?,

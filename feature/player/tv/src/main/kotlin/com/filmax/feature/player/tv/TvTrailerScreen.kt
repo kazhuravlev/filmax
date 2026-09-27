@@ -67,6 +67,7 @@ fun TvTrailerScreen(
         player = exoPlayer,
         title = title,
         subtitle = "Трейлер",
+        description = "",
         loading = false,
         error = error,
         subscriptionRequired = false,
