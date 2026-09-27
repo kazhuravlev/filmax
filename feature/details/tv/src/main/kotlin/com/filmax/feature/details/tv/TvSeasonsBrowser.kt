@@ -68,8 +68,24 @@ import com.filmax.core.tv.designsystem.tvFocusGroup
 import com.filmax.core.ui.components.PosterImage
 import com.filmax.feature.details.common.WATCH_STATUS_FINISHED
 
-/** Промежуток между колонками: сезоны · серии · превью. */
-private val ColumnGap = 24.dp
+/**
+ * Промежуток между колонками: сезоны · серии · превью. Небольшой: у каждой колонки ещё по
+ * [TvMetrics.FocusInset] с обеих сторон под рамку фокуса, так что видимый зазор вдвое больше.
+ */
+private val ColumnGap = 8.dp
+
+/**
+ * Левое поле браузера — меньше [TvMetrics.SafeHorizontal]: колонки сезонов и серий узкие, и
+ * с полным полем слева оставалась пустая полоса. Первая строка начинается на 40 + 12dp
+ * (FocusInset) = 52dp от края — не ближе минимума Google в 48dp для оверскана.
+ */
+private val BrowserStart = 40.dp
+
+/**
+ * Колонка серий вдвое шире, чем нужно подписи «Серия 24»: названию серии второй строкой
+ * так хватает места, и строка под курсором не выглядит обрезком.
+ */
+private const val EPISODE_COLUMN_WIDTH_FACTOR = 2f
 
 /** Вертикальный шаг строк в колонках — плотнее рядов карточек: строки текстовые. */
 private val RowGap = 8.dp
@@ -168,14 +184,19 @@ private fun SeasonsBrowser(content: SeasonsBrowserContent, onPlay: (MediaTrack) 
     val episodeWidth = rememberColumnWidth(
         remember(seasons) { seasons.flatMap { it.second }.map { episodeLabel(it.number) }.distinct() },
         rowStyle,
-    )
+    ) * EPISODE_COLUMN_WIDTH_FACTOR
 
     Row(
         modifier = Modifier
             .fillMaxSize()
             .background(TvSurface)
             .then(focus.containerModifier)
-            .padding(horizontal = TvMetrics.SafeHorizontal, vertical = TvMetrics.SafeVertical),
+            .padding(
+                start = BrowserStart,
+                end = TvMetrics.SafeHorizontal,
+                top = TvMetrics.SafeVertical,
+                bottom = TvMetrics.SafeVertical,
+            ),
         horizontalArrangement = Arrangement.spacedBy(ColumnGap),
     ) {
         if (multiSeason) {
