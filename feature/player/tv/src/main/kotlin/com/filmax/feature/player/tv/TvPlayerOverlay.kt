@@ -519,9 +519,12 @@ private fun SettingsButton(
         // Две строки текста ровно по своим lineHeight (16 + 18 sp) плюс вертикальные отступы — это
         // и есть высота плитки: ничего не режется и не вылезает; длинная подпись обрезается
         // многоточием, а не переносится.
+        // Только ширина на всю плитку: fillMaxSize здесь нельзя — у карточки задан лишь минимум
+        // высоты, максимум приходит от экрана, и колонка растянулась бы на весь кадр.
         Column(
             Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
+                .heightIn(min = SettingsButtonHeight)
                 .clip(TvMetrics.ChipShape)
                 .background(if (selected) TvAccent else PlayerControlBackground)
                 .padding(horizontal = 10.dp, vertical = SettingsButtonVerticalPadding),
