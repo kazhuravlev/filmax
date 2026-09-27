@@ -10,6 +10,13 @@ import com.filmax.core.domain.watching.model.WatchingItem
 enum class LibrarySection(val title: String) {
     WATCHING("Я смотрю"),
     BOOKMARKS("Подборки"),
+
+    /**
+     * История просмотра — своя вкладка верхнего меню, а не сегмент внутри «Я смотрю». Данные те
+     * же, что грузит [WATCHING] (история приходит вторым тактом того же запроса), поэтому и
+     * обновляется она вместе с ним.
+     */
+    HISTORY("История"),
 }
 
 /**

@@ -42,6 +42,7 @@ import com.filmax.core.tv.designsystem.TvOnSurfaceDim
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.feature.home.tv.navigation.TvHomeRoute
 import com.filmax.feature.library.tv.navigation.TvBookmarksRoute
+import com.filmax.feature.library.tv.navigation.TvHistoryRoute
 import com.filmax.feature.library.tv.navigation.TvWatchingRoute
 import com.filmax.feature.profile.tv.navigation.TvProfileRoute
 import com.filmax.feature.search.tv.navigation.TvSearchRoute
@@ -57,14 +58,16 @@ internal data class TvTopNavBarActions(
 
 /**
  * Разделы верхней навигации. «Поиск» уехал внутрь «Каталога» (печатать пультом дорого — каталог даёт
- * способ найти фильм вообще без набора текста), а личное содержимое разделено на «Я смотрю» и
- * «Подборки». Настройки остаются отдельным разделом.
+ * способ найти фильм вообще без набора текста), а личное содержимое разделено на «Я смотрю»
+ * (недосмотренное), «Подборки» и «Историю» — три соседние вкладки, без переключателя внутри.
+ * Настройки остаются отдельным разделом.
  */
 private val TABS = listOf(
     TvTab("Главная", TvHomeRoute) { it?.hasRoute(TvHomeRoute::class) == true },
     TvTab("Я смотрю", TvWatchingRoute) { it?.hasRoute(TvWatchingRoute::class) == true },
-    TvTab("Каталог", TvSearchRoute) { it?.hasRoute(TvSearchRoute::class) == true },
     TvTab("Подборки", TvBookmarksRoute) { it?.hasRoute(TvBookmarksRoute::class) == true },
+    TvTab("История", TvHistoryRoute) { it?.hasRoute(TvHistoryRoute::class) == true },
+    TvTab("Каталог", TvSearchRoute) { it?.hasRoute(TvSearchRoute::class) == true },
     TvTab("Настройки", TvProfileRoute) { it?.hasRoute(TvProfileRoute::class) == true },
 )
 
@@ -72,8 +75,9 @@ private val TABS = listOf(
 val TOP_LEVEL_ROUTES: List<KClass<*>> = listOf(
     TvHomeRoute::class,
     TvWatchingRoute::class,
-    TvSearchRoute::class,
     TvBookmarksRoute::class,
+    TvHistoryRoute::class,
+    TvSearchRoute::class,
     TvProfileRoute::class,
 )
 

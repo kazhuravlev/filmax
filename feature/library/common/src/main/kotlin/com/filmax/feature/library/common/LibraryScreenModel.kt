@@ -69,7 +69,7 @@ class LibraryScreenModel(
 
     private fun refresh(section: LibrarySection) {
         when (section) {
-            LibrarySection.WATCHING -> refreshWatching()
+            LibrarySection.WATCHING, LibrarySection.HISTORY -> refreshWatching()
             LibrarySection.BOOKMARKS -> refreshBookmarks()
         }
     }
@@ -83,7 +83,7 @@ class LibraryScreenModel(
      */
     private fun refreshIfDirty(section: LibrarySection) {
         when (section) {
-            LibrarySection.WATCHING ->
+            LibrarySection.WATCHING, LibrarySection.HISTORY ->
                 if (DataInvalidation.consumeDirty(DataDomain.WATCHING)) refreshWatchingSilently()
 
             LibrarySection.BOOKMARKS ->

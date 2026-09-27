@@ -98,7 +98,11 @@ import com.filmax.feature.library.common.LibraryState
 import com.filmax.feature.library.common.OpenBookmarkFolder
 import org.koin.androidx.compose.koinViewModel
 
-/** Подразделы «Я смотрю»; в разделе «Подборки» сразу показывается сетка подборок. */
+/**
+ * Содержимое сетки раздела. Раньше «Я смотрю» переключался чипами между «В процессе» и
+ * «Историей»; теперь у каждого раздела верхнего меню ровно один сегмент, а история — своя
+ * вкладка. Список сегментов остался, чтобы шапка и сетка не знали о разделах напрямую.
+ */
 private enum class LibrarySegment(val label: String) {
     WATCHING("В процессе"),
     HISTORY("История"),
@@ -107,7 +111,8 @@ private enum class LibrarySegment(val label: String) {
 
 private val LibrarySection.segments: List<LibrarySegment>
     get() = when (this) {
-        LibrarySection.WATCHING -> listOf(LibrarySegment.WATCHING, LibrarySegment.HISTORY)
+        LibrarySection.WATCHING -> listOf(LibrarySegment.WATCHING)
+        LibrarySection.HISTORY -> listOf(LibrarySegment.HISTORY)
         LibrarySection.BOOKMARKS -> emptyList()
     }
 

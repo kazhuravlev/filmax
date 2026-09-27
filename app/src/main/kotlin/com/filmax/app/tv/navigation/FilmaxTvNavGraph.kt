@@ -47,6 +47,7 @@ import com.filmax.feature.details.tv.navigation.tvDetailsScreen
 import com.filmax.feature.home.tv.navigation.TvHomeRoute
 import com.filmax.feature.home.tv.navigation.tvHomeScreen
 import com.filmax.feature.library.tv.navigation.tvBookmarksScreen
+import com.filmax.feature.library.tv.navigation.tvHistoryScreen
 import com.filmax.feature.library.tv.navigation.tvWatchingScreen
 import com.filmax.feature.onboarding.tv.navigation.TvOnboardingRoute
 import com.filmax.feature.onboarding.tv.navigation.tvOnboardingScreen
@@ -244,6 +245,9 @@ private fun NavGraphBuilder.tvDestinations(
         onOpenItem = { navController.navigate(DetailsRoute(it)) },
     )
     tvBookmarksScreen(
+        onOpenItem = { navController.navigate(DetailsRoute(it)) },
+    )
+    tvHistoryScreen(
         onOpenItem = { navController.navigate(DetailsRoute(it)) },
     )
     tvProfileScreen(
