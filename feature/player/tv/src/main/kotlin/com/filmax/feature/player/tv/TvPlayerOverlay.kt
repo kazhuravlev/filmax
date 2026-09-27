@@ -553,7 +553,7 @@ private fun SettingsButton(
 
 private fun SettingsAction.buttonValue(menu: PlayerActions): String = when (this) {
     SettingsAction.Audio, SettingsAction.Subtitle -> menu.selected(this).languageCode()
-    SettingsAction.Quality, SettingsAction.Speed -> menu.selected(this).ifBlank { "—" }
+    SettingsAction.Preset, SettingsAction.Quality, SettingsAction.Speed -> menu.selected(this).ifBlank { "—" }
     SettingsAction.Episodes -> "Выбрать"
     SettingsAction.NextEpisode -> "Далее"
 }

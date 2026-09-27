@@ -15,11 +15,6 @@ class AudioSelectionTest {
     private val candidates = listOf(original, russianDub, russianVoiceover, english)
 
     @Test
-    fun `off never overrides the player default`() {
-        assertNull(resolveAudioGroupIndex(PlaybackSettings.AudioOff, candidates))
-    }
-
-    @Test
     fun `original matches a blank language track`() {
         assertEquals(0, resolveAudioGroupIndex(PlaybackSettings.AudioOriginal, candidates))
     }

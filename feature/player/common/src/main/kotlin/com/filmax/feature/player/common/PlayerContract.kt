@@ -3,6 +3,7 @@ package com.filmax.feature.player.common
 import com.filmax.core.domain.catalog.model.Item
 import com.filmax.core.domain.catalog.model.MediaTrack
 import com.filmax.core.domain.playback.PlaybackSettings
+import com.filmax.core.domain.playback.TrackPreset
 
 /**
  * Доступное качество потока. [urls] — варианты доставки в порядке предпочтения (hls4 → hls → http):
@@ -44,8 +45,8 @@ internal fun SubtitleOption.preferenceKey(): String =
  *    Тот же язык нашёлся на дорожке с другим лейблом (другая серия/качество сменили набор) —
  *    старое поведение: не-forced приоритетнее forced, лишь бы не «Выкл».
  * 2. Очень старое сохранение per-title без обвязки `track:` — целиком совпавший лейбл дорожки.
- * 3. Глобальный default профиля («Русский»/«English», см. [PlaybackSettings.subtitleOptions]) —
- *    lowercase-substring эвристика по языку/подписи дорожки, см. [matchSubtitleByLanguage].
+ * 3. Язык из пресета («Русский»/«English», см. [TrackPreset.subtitle]) — lowercase-substring
+ *    эвристика по языку/подписи дорожки, см. [matchSubtitleByLanguage].
  *    Ничего не подошло (включая «Выкл» и нераспознанные значения) — «Выкл»: показать субтитры не
  *    на том языке хуже, чем не показать вовсе.
  */
@@ -79,8 +80,8 @@ private fun resolveSavedSubtitleTrack(
 private enum class SubtitleLanguageTarget { RUSSIAN, ENGLISH }
 
 /**
- * Приводит предпочтение к языковому бакету — принимает и новые display-значения из
- * [PlaybackSettings.subtitleOptions] («Русский»/«English»), и старые сырые ISO-коды («rus»/«eng»),
+ * Приводит предпочтение к языковому бакету — принимает и display-значения пресетов
+ * («Русский»/«English», см. [TrackPreset.subtitle]), и старые сырые ISO-коды («rus»/«eng»),
  * которыми per-title выбор субтитров сохранялся до появления схемы `track:` (см. [preferenceKey]):
  * для эвристики это один и тот же смысл — «дай русскую/английскую дорожку».
  */
@@ -150,10 +151,8 @@ data class AudioOption(val label: String, val groupIndex: Int)
 internal data class AudioMatchCandidate(val lang: String?, val label: String)
 
 /**
- * Эвристика авто-выбора озвучки по глобальному предпочтению из настроек профиля
- * ([PlaybackSettings.audioOptions]) — lowercase-substring поиск по языку/подписи дорожки, по той же
- * логике, что и субтитры (см. `matchSubtitleByLanguage`):
- * - «Выкл» — авто-выбор отключён, override не ставим, играет дефолтная дорожка плеера.
+ * Эвристика авто-выбора озвучки по языку из пресета ([TrackPreset.audio]) — lowercase-substring
+ * поиск по языку/подписи дорожки, по той же логике, что и субтитры (см. `matchSubtitleByLanguage`):
  * - «Оригинал» — первая дорожка с пустым/бланковым языком ИЛИ подписью/языком, содержащими
  *   «оригинал»/«original» (так API размечает оригинальную озвучку).
  * - «Русский» / «English» — первая дорожка, чей язык/подпись содержит «rus»/«рус» либо
@@ -167,7 +166,6 @@ internal fun resolveAudioGroupIndex(
     preference: String,
     candidates: List<AudioMatchCandidate>,
 ): Int? {
-    if (preference == PlaybackSettings.AudioOff) return null
     val index = when (preference) {
         PlaybackSettings.AudioOriginal -> candidates.indexOfFirst { candidate ->
             candidate.lang.isNullOrBlank() || candidate.matchesAudio("оригинал", "original")
@@ -237,6 +235,8 @@ data class PlayerState(
     val currentAudio: String = "",
     val subtitles: List<SubtitleOption> = emptyList(),
     val currentSubtitle: String = "Выкл",
+    /** Подпись плитки «Пресет»: «Авто», короткое имя пресета или «Свой» (см. [TrackResolution]). */
+    val currentPreset: String = PlaybackSettings.PresetAuto,
     /** Скорость воспроизведения; сессионная, дефолт — обычная (1.0). */
     val currentSpeed: Float = PlaybackSpeeds.NormalSpeed,
     /** У аккаунта нет активной подписки — поток не отдаётся, плеер объясняет это плашкой. */
@@ -257,6 +257,9 @@ sealed interface PlayerEvent {
     data class SelectQuality(val label: String) : PlayerEvent
     data class SelectAudio(val label: String) : PlayerEvent
     data class SelectSubtitle(val label: String) : PlayerEvent
+
+    /** Подпись из [PlaybackSettings.presetOptions]: «Авто» или имя пресета. */
+    data class SelectPreset(val label: String) : PlayerEvent
     data class SetSpeed(val speed: Float) : PlayerEvent
 
     /**

@@ -2,6 +2,8 @@ package com.filmax.data.watching
 
 import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.domain.playback.PlaybackSettingsRepository
+import com.filmax.core.domain.playback.TitleTracks
+import com.filmax.core.domain.playback.TrackPreset
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,53 +20,82 @@ internal class PlaybackSettingsRepositoryImpl(
 
     override suspend fun setQuality(quality: String) = update { it.copy(quality = quality) }
 
-    override suspend fun setAudioLanguage(language: String) = update { it.copy(audioLanguage = language) }
+    override suspend fun setPreset(preset: TrackPreset?) = update { it.copy(preset = preset) }
 
-    override suspend fun setSubtitleLanguage(language: String) = update { it.copy(subtitleLanguage = language) }
-
-    // Выбор субтитров — свой для тайтла: сериал переносит его между сериями, а фильм — между
-    // запусками. Записи не чистим автоматически, только явным действием из настроек.
-    override suspend fun subtitlePreferenceFor(itemId: Int): String? =
-        storage.getStringOrNull(KEY_SUBTITLE_PREFIX + itemId)
-
-    override suspend fun setSubtitlePreference(itemId: Int, selectionKey: String) {
-        storage.putString(KEY_SUBTITLE_PREFIX + itemId, selectionKey)
+    // Память тайтла — точечные ключи мимо state: это не глобальная настройка, а «что выбрали в
+    // этом сериале», и подписки на неё не нужны. Пресет и ручной выбор — взаимоисключающие
+    // ключи: запись одного стирает другой, чтобы чтение было однозначным.
+    //
+    // Ручной выбор хранится в тех же двух ключах (озвучка и субтитры), что были до появления
+    // пресетов, — старые записи читаются как [TitleTracks.Custom] без миграции.
+    override suspend fun titleTracksFor(itemId: Int): TitleTracks? {
+        val preset = storage.getStringOrNull(KEY_TITLE_PRESET_PREFIX + itemId)
+        val voice = storage.getStringOrNull(KEY_VOICE_PREFIX + itemId)
+        val subtitle = storage.getStringOrNull(KEY_SUBTITLE_PREFIX + itemId)
+        return when {
+            preset != null -> TitleTracks.Preset(preset.toPreset())
+            voice != null || subtitle != null -> TitleTracks.Custom(voiceKey = voice, subtitleKey = subtitle)
+            else -> null
+        }
     }
 
-    override suspend fun clearSubtitlePreferences() {
+    override suspend fun setTitleTracks(itemId: Int, tracks: TitleTracks) {
+        when (tracks) {
+            is TitleTracks.Preset -> {
+                storage.remove(KEY_VOICE_PREFIX + itemId)
+                storage.remove(KEY_SUBTITLE_PREFIX + itemId)
+                storage.putString(KEY_TITLE_PRESET_PREFIX + itemId, tracks.preset.toRaw())
+            }
+
+            is TitleTracks.Custom -> {
+                storage.remove(KEY_TITLE_PRESET_PREFIX + itemId)
+                putOrRemove(KEY_VOICE_PREFIX + itemId, tracks.voiceKey)
+                putOrRemove(KEY_SUBTITLE_PREFIX + itemId, tracks.subtitleKey)
+            }
+        }
+    }
+
+    override suspend fun clearTitleTracks() {
         storage.keys
-            .filter { it.startsWith(KEY_SUBTITLE_PREFIX) }
+            .filter { key -> TITLE_PREFIXES.any { key.startsWith(it) } }
             .forEach(storage::remove)
     }
 
-    // Озвучка на тайтл — точечные ключи мимо state: это не глобальная настройка, а память
-    // «какую дорожку слушали в этом сериале», и подписки на неё не нужны.
-    override suspend fun voiceKeyFor(itemId: Int): String? =
-        storage.getStringOrNull(KEY_VOICE_PREFIX + itemId)
-
-    override suspend fun setVoiceKey(itemId: Int, key: String) {
-        storage.putString(KEY_VOICE_PREFIX + itemId, key)
+    private fun putOrRemove(key: String, value: String?) {
+        if (value == null) storage.remove(key) else storage.putString(key, value)
     }
 
     private fun update(transform: (PlaybackSettings) -> PlaybackSettings) {
         val updated = transform(state.value)
         storage.putString(KEY_QUALITY, updated.quality)
-        storage.putString(KEY_AUDIO, updated.audioLanguage)
-        storage.putString(KEY_SUBTITLES, updated.subtitleLanguage)
+        storage.putString(KEY_PRESET, updated.preset.toRaw())
         state.value = updated
     }
 
-    private fun load() = PlaybackSettings(
-        quality = storage.getStringOrNull(KEY_QUALITY) ?: PlaybackSettings.QualityAuto,
-        audioLanguage = storage.getStringOrNull(KEY_AUDIO) ?: PlaybackSettings.AudioOriginal,
-        subtitleLanguage = storage.getStringOrNull(KEY_SUBTITLES) ?: PlaybackSettings.SubtitleOff,
-    )
+    private fun load(): PlaybackSettings {
+        // Глобальные «язык аудио»/«субтитры» заменены пресетом — их ключи больше не читаем.
+        storage.remove(KEY_LEGACY_AUDIO)
+        storage.remove(KEY_LEGACY_SUBTITLES)
+        return PlaybackSettings(
+            quality = storage.getStringOrNull(KEY_QUALITY) ?: PlaybackSettings.QualityAuto,
+            preset = storage.getStringOrNull(KEY_PRESET)?.toPreset(),
+        )
+    }
+
+    private fun TrackPreset?.toRaw(): String = this?.name ?: PRESET_AUTO
+
+    /** Неизвестное имя (пресет переименовали/удалили) читается как «Авто», а не роняет загрузку. */
+    private fun String.toPreset(): TrackPreset? = TrackPreset.entries.firstOrNull { it.name == this }
 
     private companion object {
         const val KEY_QUALITY = "playback_quality"
-        const val KEY_AUDIO = "playback_audio"
-        const val KEY_SUBTITLES = "playback_subtitles"
+        const val KEY_PRESET = "playback_preset"
+        const val KEY_LEGACY_AUDIO = "playback_audio"
+        const val KEY_LEGACY_SUBTITLES = "playback_subtitles"
+        const val KEY_TITLE_PRESET_PREFIX = "playback_preset_"
         const val KEY_VOICE_PREFIX = "playback_voice_"
         const val KEY_SUBTITLE_PREFIX = "playback_subtitle_"
+        const val PRESET_AUTO = "auto"
+        val TITLE_PREFIXES = listOf(KEY_TITLE_PRESET_PREFIX, KEY_VOICE_PREFIX, KEY_SUBTITLE_PREFIX)
     }
 }

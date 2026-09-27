@@ -27,10 +27,11 @@ internal enum class PlayerMode { Transport, Progress, EpisodeNav, Settings }
 internal enum class EpisodeNavArrow { Previous, Next }
 
 /**
- * Пункт сетки настроек. Первые четыре открывают поповер выбора, [Episodes] — панель сезонов
+ * Пункт сетки настроек. Первые пять открывают поповер выбора, [Episodes] — панель сезонов
  * и серий, [NextEpisode] — действие сразу.
  */
 internal enum class SettingsAction(val label: String) {
+    Preset("Пресет"),
     Quality("Качество"),
     Audio("Аудио"),
     Subtitle("Субтитры"),

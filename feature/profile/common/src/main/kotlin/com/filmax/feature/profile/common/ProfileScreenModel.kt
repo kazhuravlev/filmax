@@ -10,6 +10,7 @@ import com.filmax.core.domain.common.RequestResult
 import com.filmax.core.domain.favorites.FavoritesRepository
 import com.filmax.core.domain.network.ApiHostRepository
 import com.filmax.core.domain.playback.PlaybackSettingsRepository
+import com.filmax.core.domain.playback.TrackPreset
 import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.presentation.BaseScreenModel
@@ -111,9 +112,8 @@ class ProfileScreenModel(
         when (event) {
             ProfileEvent.Logout -> logout()
             is ProfileEvent.SetQuality -> setQuality(event.quality)
-            is ProfileEvent.SetAudioLanguage -> setAudioLanguage(event.language)
-            is ProfileEvent.SetSubtitleLanguage -> setSubtitleLanguage(event.language)
-            ProfileEvent.ResetSubtitlePreferences -> resetSubtitlePreferences()
+            is ProfileEvent.SetPreset -> setPreset(event.label)
+            ProfileEvent.ResetTitleTracks -> resetTitleTracks()
             is ProfileEvent.SetApiHost -> setApiHost(event.host)
             ProfileEvent.ClearImageCache -> clearImageCache()
             is ProfileEvent.SetImageProxyEnabled -> setImageProxyEnabled(event.enabled)
@@ -147,16 +147,13 @@ class ProfileScreenModel(
         playbackSettings.setQuality(quality)
     }
 
-    private fun setAudioLanguage(language: String) = screenModelScope {
-        playbackSettings.setAudioLanguage(language)
+    /** «Авто» и неизвестная подпись — null, то есть авто-подбор по порядку пресетов. */
+    private fun setPreset(label: String) = screenModelScope {
+        playbackSettings.setPreset(TrackPreset.byLabel(label))
     }
 
-    private fun setSubtitleLanguage(language: String) = screenModelScope {
-        playbackSettings.setSubtitleLanguage(language)
-    }
-
-    private fun resetSubtitlePreferences() = screenModelScope {
-        playbackSettings.clearSubtitlePreferences()
+    private fun resetTitleTracks() = screenModelScope {
+        playbackSettings.clearTitleTracks()
     }
 
     private fun clearImageCache() = screenModelScope {

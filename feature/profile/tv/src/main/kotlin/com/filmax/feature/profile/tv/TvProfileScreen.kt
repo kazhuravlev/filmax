@@ -211,9 +211,8 @@ private fun ProfileHeader(profile: UserProfile?) {
 
 private data class ProfileActions(
     val onCycleQuality: () -> Unit,
-    val onCycleAudio: () -> Unit,
-    val onCycleSubtitle: () -> Unit,
-    val onResetSubtitlePreferences: () -> Unit,
+    val onCyclePreset: () -> Unit,
+    val onResetTitleTracks: () -> Unit,
     val onLogout: () -> Unit,
     val onCheckUpdates: () -> Unit,
     val onCycleApiHost: () -> Unit,
@@ -236,19 +235,12 @@ private fun profileActions(
             ProfileEvent.SetQuality(next(PlaybackSettings.qualityOptions, state.playback.quality))
         )
     },
-    onCycleAudio = {
+    onCyclePreset = {
         screenModel.dispatch(
-            ProfileEvent.SetAudioLanguage(next(PlaybackSettings.audioOptions, state.playback.audioLanguage))
+            ProfileEvent.SetPreset(next(PlaybackSettings.presetOptions, state.playback.presetLabel))
         )
     },
-    onCycleSubtitle = {
-        screenModel.dispatch(
-            ProfileEvent.SetSubtitleLanguage(
-                next(PlaybackSettings.subtitleOptions, state.playback.subtitleLanguage)
-            )
-        )
-    },
-    onResetSubtitlePreferences = { screenModel.dispatch(ProfileEvent.ResetSubtitlePreferences) },
+    onResetTitleTracks = { screenModel.dispatch(ProfileEvent.ResetTitleTracks) },
     onLogout = { screenModel.dispatch(ProfileEvent.Logout) },
     onCycleApiHost = {
         val hosts = state.availableApiHosts
@@ -276,20 +268,18 @@ private fun PlaybackRows(state: ProfileState, actions: ProfileActions) {
             spec = SettingRowSpec(label = "Качество видео", value = state.playback.quality),
             onClick = actions.onCycleQuality,
         )
+        // «Авто» — первый пресет из списка, чьи озвучка и субтитры есть у тайтла; в плеере
+        // пресет можно сменить или переопределить ручным выбором дорожек — на этот тайтл.
         SettingRow(
-            spec = SettingRowSpec(label = "Язык аудио", value = state.playback.audioLanguage),
-            onClick = actions.onCycleAudio,
-        )
-        SettingRow(
-            spec = SettingRowSpec(label = "Субтитры", value = state.playback.subtitleLanguage),
-            onClick = actions.onCycleSubtitle,
+            spec = SettingRowSpec(label = "Озвучка и субтитры", value = state.playback.presetLabel),
+            onClick = actions.onCyclePreset,
         )
         SettingRow(
             spec = SettingRowSpec(
-                label = "Сбросить настройки субтитров",
+                label = "Сбросить дорожки тайтлов",
                 labelColor = TvError,
             ),
-            onClick = actions.onResetSubtitlePreferences,
+            onClick = actions.onResetTitleTracks,
         )
     }
 }

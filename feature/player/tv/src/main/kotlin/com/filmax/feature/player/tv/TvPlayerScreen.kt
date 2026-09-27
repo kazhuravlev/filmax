@@ -32,6 +32,7 @@ import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
 import com.filmax.core.domain.catalog.model.MediaTrack
 import com.filmax.core.domain.error.AppError
+import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.tv.designsystem.TvAccent
 import com.filmax.core.tv.designsystem.TvMetrics
 import com.filmax.core.tv.designsystem.TvSurface
@@ -83,7 +84,10 @@ fun TvPlayerScreen(
     PlayerContent(ui = ui, state = state, menu = menu, error = appError, modifier = modifier)
 }
 
-/** Порядок плиток справа от Play: сначала дорожки, затем скорость/следующая серия и качество/серии. */
+/**
+ * Порядок плиток справа от Play: пресет первым (слева сверху), под ним аудио, дальше субтитры и
+ * скорость, следующая серия/качество, серии.
+ */
 private fun playerMenu(
     state: PlayerState,
     episodesPanel: EpisodesPanelData?,
@@ -91,6 +95,7 @@ private fun playerMenu(
     dispatch: (PlayerEvent) -> Unit,
 ): PlayerActions = PlayerActions(
     items = buildList {
+        add(SettingsAction.Preset)
         add(SettingsAction.Audio)
         add(SettingsAction.Subtitle)
         add(SettingsAction.Speed)
@@ -373,6 +378,7 @@ private fun playerSubtitle(state: PlayerState): String {
 
 private fun SettingsAction.options(state: PlayerState): List<String> = when (this) {
     SettingsAction.Quality -> state.qualities.map { it.label }
+    SettingsAction.Preset -> PlaybackSettings.presetOptions
     SettingsAction.Audio -> state.audioTracks.map { it.label }
     SettingsAction.Subtitle -> state.subtitles.map { it.label }
     SettingsAction.Speed -> PlaybackSpeeds.labels
@@ -381,6 +387,9 @@ private fun SettingsAction.options(state: PlayerState): List<String> = when (thi
 
 private fun SettingsAction.selected(state: PlayerState): String = when (this) {
     SettingsAction.Quality -> state.currentQuality.orEmpty()
+    // Короткая подпись плитки в списке поповера отсутствует («Свой» и shortLabel) — курсор встанет
+    // на «Авто», это ожидаемо: пресет сейчас не выбран.
+    SettingsAction.Preset -> state.currentPreset
     SettingsAction.Audio -> state.currentAudio
     SettingsAction.Subtitle -> state.currentSubtitle
     SettingsAction.Speed -> PlaybackSpeeds.labelFor(state.currentSpeed)
@@ -389,6 +398,7 @@ private fun SettingsAction.selected(state: PlayerState): String = when (this) {
 
 private fun SettingsAction.toEvent(label: String): PlayerEvent? = when (this) {
     SettingsAction.Quality -> PlayerEvent.SelectQuality(label)
+    SettingsAction.Preset -> PlayerEvent.SelectPreset(label)
     SettingsAction.Audio -> PlayerEvent.SelectAudio(label)
     SettingsAction.Subtitle -> PlayerEvent.SelectSubtitle(label)
     SettingsAction.Speed -> PlaybackSpeeds.valueFor(label)?.let { PlayerEvent.SetSpeed(it) }
