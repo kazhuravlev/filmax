@@ -446,51 +446,47 @@ private fun Ui2Track(
 }
 
 /**
- * Ряд кнопок: транспорт слева, действия прижаты вправо. Под озвучкой, субтитрами и качеством —
- * текущее значение мелким шрифтом (см. [caption]); у остальных подписи нет. Строка подписей
- * зарезервирована всегда, чтобы ряд не прыгал. Никакого tooltip над кнопкой под курсором:
- * «Смотреть»/«Пауза» над иконкой паузы ничего не сообщали, а строку занимали. Скорости в ряду
- * нет вовсе: на ТВ ей не пользуются, а кнопка занимала место.
+ * Ряд кнопок: транспорт слева, действия прижаты вправо. Каждая кнопка вместе со своей подписью —
+ * одна колонка ([Ui2ControlSlot]) шириной ровно в кнопку: подпись не может уехать от кнопки,
+ * а место под неё зарезервировано у всех, чтобы ряд не прыгал, когда подпись появляется.
+ * Скорости в ряду нет вовсе: на ТВ ей не пользуются, а кнопка занимала место.
  */
 @Composable
 private fun Ui2ControlsRow(ui: Ui2PlayerUiState, menu: PlayerActions, modifier: Modifier = Modifier) {
     val controls = ui2Controls(menu)
     val focusedIndex = ui.controlCursor.coerceIn(0, controls.lastIndex.coerceAtLeast(0))
-    Column(modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            controls.forEachIndexed { index, control ->
-                Ui2Button(
-                    icon = control.icon(ui.isPlaying),
-                    contentDescription = control.label(menu, ui.isPlaying),
-                    focused = ui.zone == Ui2Zone.Controls && index == focusedIndex,
-                )
-                if (control == Ui2Control.Forward) Spacer(Modifier.weight(1f)) else Spacer(Modifier.width(ButtonGap))
-            }
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        controls.forEachIndexed { index, control ->
+            Ui2ControlSlot(
+                icon = control.icon(ui.isPlaying),
+                contentDescription = control.label(menu, ui.isPlaying),
+                caption = control.caption(menu),
+                focused = ui.zone == Ui2Zone.Controls && index == focusedIndex,
+            )
+            if (control == Ui2Control.Forward) Spacer(Modifier.weight(1f)) else Spacer(Modifier.width(ButtonGap))
         }
-        Row(
-            Modifier
-                .fillMaxWidth()
+    }
+}
+
+/**
+ * Кнопка и подпись под ней в одном контейнере. Подпись — мелким шрифтом по центру кнопки
+ * (см. [caption]); у транспорта, серий и пресета она пустая, но строка под неё всё равно есть.
+ */
+@Composable
+private fun Ui2ControlSlot(icon: ImageVector, contentDescription: String, caption: String, focused: Boolean) {
+    Column(Modifier.width(ButtonSize), horizontalAlignment = Alignment.CenterHorizontally) {
+        Ui2Button(icon = icon, contentDescription = contentDescription, focused = focused)
+        Text(
+            caption,
+            style = MaterialTheme.typography.labelSmall,
+            color = CaptionColor,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier
+                .padding(top = CaptionGap)
                 .height(CaptionHeight),
-            verticalAlignment = Alignment.Top,
-        ) {
-            controls.forEach { control ->
-                // Слот подписи шире кнопки на зазор, чтобы «1080p» не резалось; сдвиг на ползазора
-                // влево возвращает центр подписи под центр кнопки.
-                Text(
-                    control.caption(menu),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = CaptionColor,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .offset(x = -ButtonGap / 2)
-                        .width(ButtonSize + ButtonGap),
-                )
-                if (control == Ui2Control.Forward) Spacer(Modifier.weight(1f)) else Spacer(Modifier.width(ButtonGap))
-            }
-        }
+        )
     }
 }
 
@@ -609,10 +605,11 @@ private val BubbleHeight = 30.dp
 private val ButtonSize = 44.dp
 private val IconSize = 26.dp
 private val ButtonGap = 10.dp
-private val CaptionHeight = 18.dp
+private val CaptionHeight = 16.dp
+private val CaptionGap = 2.dp
 
 /** Подпись значения под кнопкой — приглушённо-белая: значение, а не действие. */
 private val CaptionColor = Color(0xCCFFFFFF)
 
 /** Поповер стоит над рядом кнопок, чуть выше его верхнего края; подписи под кнопками — ниже. */
-private val PopoverBottom = BottomInset + CaptionHeight + ButtonSize + 12.dp
+private val PopoverBottom = BottomInset + ButtonSize + CaptionGap + CaptionHeight + 12.dp
