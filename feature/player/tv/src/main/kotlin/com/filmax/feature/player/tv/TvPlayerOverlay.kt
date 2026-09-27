@@ -2,6 +2,7 @@ package com.filmax.feature.player.tv
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,12 +13,16 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -29,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +46,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -58,8 +65,6 @@ import com.filmax.core.tv.designsystem.TvOnSurfaceDim
 import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvOverline
 import com.filmax.core.tv.designsystem.TvSurface
-import com.filmax.core.tv.designsystem.TvSurfaceContainer
-import com.filmax.core.tv.designsystem.TvSurfaceContainerHigh
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.feature.player.common.formatPlayerTime
 import kotlin.math.roundToInt
@@ -70,7 +75,7 @@ import kotlin.math.roundToInt
  */
 internal fun Modifier.playerPanel(): Modifier = this
     .clip(TvMetrics.PanelShape)
-    .background(TvSurfaceContainer.copy(alpha = PANEL_ALPHA))
+    .background(PlayerControlBackground)
     .border(1.dp, TvSurfaceContainerHighest.copy(alpha = PANEL_ALPHA), TvMetrics.PanelShape)
 
 /**
@@ -256,8 +261,8 @@ private fun PlayerTransport(ui: TvPlayerUiState, menu: PlayerActions, modifier: 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(28.dp),
+                .padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
             // По верху: Play стоит на одной линии с верхним рядом сетки — «влево» из него ведёт на Play.
             verticalAlignment = Alignment.Top,
         ) {
@@ -403,15 +408,15 @@ private fun TransportHints(
                             if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                             contentDescription = null,
                             tint = TvOnAccent,
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size(PauseIconSize),
                         )
                     }
                 }
             }
             if (episodeNav != null) {
                 Row(
-                    modifier = Modifier.padding(top = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(top = EpisodeNavTopGap),
+                    horizontalArrangement = Arrangement.spacedBy(EpisodeNavGap),
                 ) {
                     EpisodeNavButton(
                         icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
@@ -445,12 +450,13 @@ private fun EpisodeNavButton(
         modifier = Modifier.alpha(if (enabled) 1f else 0.4f),
     ) {
         CircleBox(size = EpisodeNavFocusInner, color = if (focused) TvFocusHalo else TvFocusHalo.copy(alpha = 0f)) {
-            CircleBox(size = EpisodeNavButtonSize, color = TvSurfaceContainerHigh) {
+            // Та же подложка, что у плиток настроек: весь нижний ряд в одном материале.
+            CircleBox(size = EpisodeNavButtonSize, color = PlayerControlBackground) {
                 Icon(
                     icon,
                     contentDescription = contentDescription,
                     tint = TvOnSurface,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(EpisodeNavIconSize),
                 )
             }
         }
@@ -504,16 +510,21 @@ private fun SettingsButton(
         shape = TvMetrics.ChipShape,
         modifier = Modifier
             .width(SettingsButtonWidth)
-            .height(SettingsButtonHeight)
+            // Минимум, а не фиксированная высота: при увеличенном системном шрифте плитка чуть
+            // подрастёт вместе с текстом, а не обрежет его.
+            .heightIn(min = SettingsButtonHeight)
             .alpha(if (enabled) 1f else 0.45f)
             .focusProperties { canFocus = false },
     ) {
+        // Две строки текста ровно по своим lineHeight (16 + 18 sp) плюс вертикальные отступы — это
+        // и есть высота плитки: ничего не режется и не вылезает; длинная подпись обрезается
+        // многоточием, а не переносится.
         Column(
             Modifier
                 .fillMaxSize()
                 .clip(TvMetrics.ChipShape)
-                .background(if (selected) TvAccent else TvSurfaceContainerHigh)
-                .padding(horizontal = 12.dp, vertical = 7.dp),
+                .background(if (selected) TvAccent else PlayerControlBackground)
+                .padding(horizontal = 10.dp, vertical = SettingsButtonVerticalPadding),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
@@ -521,14 +532,16 @@ private fun SettingsButton(
                 style = MaterialTheme.typography.labelSmall,
                 color = if (selected) TvOnAccent else TvOnSurfaceDim,
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 value,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = if (selected) TvOnAccent else TvOnSurface,
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -557,6 +570,10 @@ private fun String.languageCode(): String {
 /**
  * Поповер выбора: галочка стоит у текущего значения, подсветка — у курсора, и курсор при открытии
  * встаёт на текущее значение (см. [TvPlayerUiState.activate]).
+ *
+ * Ширина — четверть экрана, высота — не больше [POPOVER_MAX_HEIGHT_FRACTION] экрана: длинный список
+ * (десяток озвучек) прокручивается, а не уходит за кадр, и курсор всегда в видимой части —
+ * см. [keepCursorVisible].
  */
 @Composable
 private fun SettingsPopover(
@@ -567,39 +584,78 @@ private fun SettingsPopover(
 ) {
     val options = menu.options(action)
     val current = menu.selected(action)
+    val listState = rememberLazyListState()
+    val rowHeightPx = with(LocalDensity.current) { PopoverRowHeight.roundToPx() }
+    LaunchedEffect(listState, cursor) { listState.keepCursorVisible(cursor, rowHeightPx) }
     Column(
         modifier
-            .width(PopoverWidth)
+            .fillMaxWidth(POPOVER_WIDTH_FRACTION)
+            .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * POPOVER_MAX_HEIGHT_FRACTION)
             .playerPanel()
             .padding(12.dp),
     ) {
         TvOverline(action.label, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
-        options.forEachIndexed { index, option ->
-            SettingsRow(label = option, highlighted = index == cursor, current = option == current)
+        LazyColumn(state = listState, modifier = Modifier.weight(1f, fill = false)) {
+            items(options.size) { index ->
+                val option = options[index]
+                SettingsRow(label = option, highlighted = index == cursor, current = option == current)
+            }
         }
     }
 }
 
-/** [highlighted] — под курсором, [current] — выбранное сейчас значение. Это разные вещи. */
+/**
+ * Докручивает список так, чтобы строка курсора была видна целиком: снизу — прижимая её к
+ * нижнему краю, сверху — к верхнему. Если строка и так на экране, ничего не трогает: список не
+ * должен «ездить» при каждом шаге курсора. До первой раскладки видимых строк ещё нет — тогда
+ * просто ставим курсор в начало окна без анимации (открытие поповера на текущем значении).
+ */
+private suspend fun LazyListState.keepCursorVisible(cursor: Int, rowHeightPx: Int) {
+    val info = layoutInfo
+    if (info.visibleItemsInfo.isEmpty()) {
+        scrollToItem(cursor)
+        return
+    }
+    val viewport = info.viewportEndOffset - info.viewportStartOffset
+    val row = info.visibleItemsInfo.firstOrNull { it.index == cursor }
+    when {
+        row == null && cursor < info.visibleItemsInfo.first().index -> animateScrollToItem(cursor)
+        row == null -> animateScrollToItem(cursor, scrollOffset = rowHeightPx - viewport)
+        row.offset < info.viewportStartOffset -> animateScrollToItem(cursor)
+        row.offset + row.size > info.viewportEndOffset ->
+            animateScrollToItem(cursor, scrollOffset = rowHeightPx - viewport)
+    }
+}
+
+/**
+ * [highlighted] — под курсором, [current] — выбранное сейчас значение. Это разные вещи.
+ * Подпись всегда в одну строку: длинная под курсором бежит, без курсора — обрезается многоточием.
+ */
 @Composable
 private fun SettingsRow(label: String, highlighted: Boolean, current: Boolean) {
     Row(
         Modifier
             .fillMaxWidth()
-            .height(40.dp)
+            .height(PopoverRowHeight)
             .clip(MaterialTheme.shapes.small)
             // Курсор — сплошная белая заливка (акцент), а не еле заметный серый: сразу видно, на чём
             // стоишь. Выбранное сейчас значение помечает галочка независимо от положения курсора.
             .background(if (highlighted) TvAccent else TvSurface.copy(alpha = 0f))
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
             label,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = if (highlighted) FontWeight.Bold else FontWeight.Normal,
             color = if (highlighted) TvOnAccent else TvOnSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+            overflow = if (highlighted) TextOverflow.Clip else TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .then(if (highlighted) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier),
         )
         if (current) {
             Icon(
@@ -612,10 +668,16 @@ private fun SettingsRow(label: String, highlighted: Boolean, current: Boolean) {
     }
 }
 
-/** Прозрачность плавающих панелей: кадр просвечивает, текст остаётся читаемым. */
+/** Прозрачность рамки плавающих панелей. */
 private const val PANEL_ALPHA = 0.85f
 
-private val PopoverWidth = 260.dp
+/** Подложка кнопок транспорта и панелей: чёрная полупрозрачная — кадр просвечивает, текст читается. */
+private val PlayerControlBackground = Color(0xA6000000)
+
+/** Поповер выбора — четверть ширины экрана и не выше 60% его высоты; дальше список прокручивается. */
+private const val POPOVER_WIDTH_FRACTION = 0.25f
+private const val POPOVER_MAX_HEIGHT_FRACTION = 0.6f
+private val PopoverRowHeight = 40.dp
 private val AutoNextCardMaxWidth = 460.dp
 private val SubscriptionCardMaxWidth = 480.dp
 
@@ -629,15 +691,27 @@ private val ScrubThumbHaloActive = 38.dp
 /** Насколько кольцо фокуса при перемотке шире тёмного ореола thumb. */
 private val ScrubFocusRingExtra = 6.dp
 
-/** Кнопка OK и кольца её виртуального фокуса: белое снаружи и тёмный зазор вокруг круга кнопки. */
-private val PauseButtonSize = 50.dp
-private val PauseFocusOuter = 62.dp
-private val PauseFocusInner = 56.dp
+/**
+ * Кнопка OK и кольца её виртуального фокуса: белое снаружи и тёмный зазор вокруг круга кнопки.
+ * Весь нижний ряд ужат в полтора раза относительно первой версии (58dp-плитки): Play со
+ * стрелками под ним укладывается в высоту двухрядной сетки (2 × 38 + 6 = 82dp).
+ */
+private val PauseButtonSize = 34.dp
+private val PauseFocusOuter = 42.dp
+private val PauseFocusInner = 38.dp
+private val PauseIconSize = 16.dp
 
 /** Стрелки серий под Play — заметно мельче самой кнопки, это второстепенное управление. */
-private val EpisodeNavButtonSize = 34.dp
-private val EpisodeNavFocusOuter = 44.dp
-private val EpisodeNavFocusInner = 40.dp
-private val SettingsGridGap = 8.dp
+private val EpisodeNavButtonSize = 24.dp
+private val EpisodeNavFocusOuter = 30.dp
+private val EpisodeNavFocusInner = 27.dp
+private val EpisodeNavIconSize = 13.dp
+private val EpisodeNavTopGap = 6.dp
+private val EpisodeNavGap = 8.dp
+
+private val SettingsGridGap = 6.dp
 private val SettingsButtonWidth = 136.dp
-private val SettingsButtonHeight = 58.dp
+
+/** Высота плитки: две строки текста по lineHeight (16 + 18 sp ≈ 34dp) плюс отступы по 2dp. */
+private val SettingsButtonHeight = 38.dp
+private val SettingsButtonVerticalPadding = 2.dp
