@@ -94,6 +94,32 @@ Network (Ktor Client)
 - `PlayerRoute.resumePositionSeconds` gets the saved position only from actual continuations
 - Normal series launch from details = zero position, starts from beginning
 
+### Typed contracts (no "text contracts")
+
+Anything that crosses a module boundary is a type, never a string that both sides must spell the
+same way. The compiler (exhaustive `when`, distinct types) or a unit test must catch a mismatch:
+
+- **Errors**: `safeRequest` resolves the failure kind once into `RequestResult.Error.kind: AppError`
+  (typed by `KtorErrorClassifier` from the exception class / HTTP status; text heuristics are only a
+  fallback in `AppError.resolveHeuristically`). Presentation branches on `kind`, never on `message`.
+- **Enums instead of API strings**: `ItemType`, `WatchStatus` (`watching.status` -1/0/1),
+  `WatchingListType` (`watching/movies|serials`), `PosterSize` (image cache key suffix),
+  `ItemsShortcut` (`items/hot|new`). The raw value lives in one `apiValue`/`key` property and is
+  only touched in the mapper or the API class.
+- **Playback**: `TrackLanguage` (ISO codes ↔ display ↔ short code), `AudioPreference`,
+  `SubtitlePreference`, `QualityPreference` (`Auto` is a case, not a magic label), `PresetSelection`.
+  Persisted per-title keys are value classes `VoiceKey` / `SubtitleKey`; only
+  `SubtitleSelection.parse` in `feature:player:common` knows their format.
+- **Events carry values, not labels**: `PlayerEvent.SelectAudio(option)`, `SelectPreset(preset?)`,
+  `ProfileEvent.SetQuality(QualityPreference)` … The TV menu (`PlayerActions`) hands out typed
+  `PlayerChoice`s built in `PlayerChoices.kt`; UI code never parses a label back into meaning.
+- **Storage keys** (`TokenStorage.PREFERENCES_NAME`, playback keys) are declared next to the code
+  that reads them; nothing else spells them.
+- **Lint**: `ElseCaseInsteadOfExhaustiveWhen` and `UnsafeCast` are on (type-resolution tasks
+  `detektDebug` / `detektAndroidDebug`). Adding an enum case or a sealed subtype must break every
+  `when` that has to handle it. Pure mapping logic gets a unit test next to it
+  (`PlayerChoicesTest`, `SubtitleSelectionTest`, `ImageCacheKeysTest`).
+
 ### Build configuration
 
 - **Convention plugins**: `build-logic/` (reusable, applied to feature modules)

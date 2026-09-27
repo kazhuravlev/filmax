@@ -100,6 +100,14 @@ potential-bugs:
   # Ловит `!!` (unsafe call on nullable). Требует type resolution — см. CI-шаг detektMain.
   UnsafeCallOnNullableType:
     active: true
+  # `when` по enum/sealed без `else`: новое значение (язык дорожки, действие плеера, тип ошибки)
+  # обязано сломать компиляцию во всех местах ветвления, а не тихо провалиться в `else`.
+  # Требует type resolution — как и UnsafeCallOnNullableType.
+  ElseCaseInsteadOfExhaustiveWhen:
+    active: true
+  # `as` без проверки — разрыв связи типов; в проекте только `as?` по sealed-веткам.
+  UnsafeCast:
+    active: true
 
 # Кастомные правила Filmax (модуль :detekt-rules, подключается через detektPlugins).
 filmax-rules:
