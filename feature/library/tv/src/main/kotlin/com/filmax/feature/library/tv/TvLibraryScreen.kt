@@ -34,7 +34,6 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayCircleOutline
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -75,7 +74,6 @@ import com.filmax.core.tv.designsystem.TvFocusCard
 import com.filmax.core.tv.designsystem.TvMetrics
 import com.filmax.core.tv.designsystem.TvOnSurface
 import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
-import com.filmax.core.tv.designsystem.TvOutlineVariant
 import com.filmax.core.tv.designsystem.TvPosterCard
 import com.filmax.core.tv.designsystem.TvPosterGrid
 import com.filmax.core.tv.designsystem.TvRail
@@ -103,11 +101,7 @@ import org.koin.androidx.compose.koinViewModel
  * «Историей»; теперь у каждого раздела верхнего меню ровно один сегмент, а история — своя
  * вкладка. Список сегментов остался, чтобы шапка и сетка не знали о разделах напрямую.
  */
-private enum class LibrarySegment(val label: String) {
-    WATCHING("В процессе"),
-    HISTORY("История"),
-    BOOKMARKS("Подборки"),
-}
+private enum class LibrarySegment { WATCHING, HISTORY, BOOKMARKS }
 
 private val LibrarySection.segments: List<LibrarySegment>
     get() = when (this) {
@@ -160,7 +154,7 @@ fun TvLibraryScreen(
     // Показываем то, что уже загружено, и тихо обновляем в фоне, только если данные раздела
     // реально могли устареть (см. DataInvalidation) — без спиннера и лишнего похода в сеть.
     LaunchedEffect(section) { screenModel.dispatch(LibraryEvent.RefreshIfDirty(section)) }
-    var segment by rememberSaveable(section) { mutableStateOf(section.initialSegment) }
+    val segment = section.initialSegment
     val ui = remember { TvBookmarkUi() }
 
     // Смена или закрытие подборки сбрасывает режим удаления: он относится к конкретной открытой подборке.
@@ -183,20 +177,7 @@ fun TvLibraryScreen(
             .background(TvSurface),
     ) {
         Column(Modifier.fillMaxSize()) {
-            MineHeader(
-                section = section,
-                state = state,
-                segment = segment,
-                ui = ui,
-                onSegment = { next ->
-                    segment = next
-                    // Уход из подборок закрывает открытую подборку: иначе возврат показал бы содержимое,
-                    // которое уже никто не просил.
-                    if (next != LibrarySegment.BOOKMARKS && state.openFolder != null) {
-                        screenModel.dispatch(LibraryEvent.CloseFolder)
-                    }
-                },
-            )
+            MineHeader(section = section, state = state, ui = ui)
 
             if (state.loading) {
                 LoadingBox(Modifier.fillMaxSize())
@@ -231,33 +212,13 @@ private fun BoxScope.TvLibraryRetryNotification(visible: Boolean) {
 }
 
 /**
- * Шапка «Я смотрю». В «Подборках» остаётся только панель открытой подборки.
+ * Шапка раздела. В «Подборках» — панель открытой подборки; в «Я смотрю» и «Истории» шапки как
+ * таковой нет: раздел уже назван вкладкой таб-бара, а разделительная линия под пустой шапкой
+ * читалась как случайная полоска над сеткой. Отступ сверху нужен всегда — иначе сетка заезжает
+ * под верхний таб-бар: тот рисуется отдельным оверлеем и своё место в раскладке не резервирует.
  */
 @Composable
-private fun MineHeader(
-    section: LibrarySection,
-    state: LibraryState,
-    segment: LibrarySegment,
-    ui: TvBookmarkUi,
-    onSegment: (LibrarySegment) -> Unit,
-) {
-    if (section == LibrarySection.BOOKMARKS) {
-        // Отступ сверху нужен всегда, а не только при открытой подборке — иначе список подборок
-        // без него заезжает под верхний таб-бар: тот рисуется отдельным оверлеем и своё место
-        // в раскладке не резервирует.
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(
-                    start = TvMetrics.SafeHorizontal,
-                    end = TvMetrics.SafeHorizontal,
-                    top = TvMetrics.ContentTop,
-                ),
-        ) {
-            state.openFolder?.let { folder -> OpenFolderBar(folder = folder.folder, ui = ui) }
-        }
-        return
-    }
+private fun MineHeader(section: LibrarySection, state: LibraryState, ui: TvBookmarkUi) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -267,21 +228,9 @@ private fun MineHeader(
                 top = TvMetrics.ContentTop,
             ),
     ) {
-        // Один-единственный подраздел — чипов не рисуем: верхний таб-бар уже назвал раздел
-        // «Я смотрю», повторять то же название второй строкой ниже было бы лишним.
-        if (section.segments.size > 1) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                section.segments.forEach { entry ->
-                    TvChip(
-                        label = entry.label,
-                        selected = entry == segment,
-                        onClick = { onSegment(entry) },
-                    )
-                }
-            }
-            Spacer(Modifier.height(14.dp))
+        if (section == LibrarySection.BOOKMARKS) {
+            state.openFolder?.let { folder -> OpenFolderBar(folder = folder.folder, ui = ui) }
         }
-        HorizontalDivider(thickness = 1.dp, color = TvOutlineVariant)
     }
 }
 

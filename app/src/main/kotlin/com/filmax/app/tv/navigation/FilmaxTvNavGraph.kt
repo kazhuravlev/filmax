@@ -28,13 +28,12 @@ import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.filmax.app.navigation.AuthStateNavigation
 import com.filmax.app.navigation.RootScreenModel
-import com.filmax.app.navigation.navFadeIn
-import com.filmax.app.navigation.navFadeOut
+import com.filmax.app.navigation.navEnter
+import com.filmax.app.navigation.navExit
 import com.filmax.core.tv.designsystem.LocalTvNavBarFocused
 import com.filmax.core.tv.designsystem.LocalTvRefreshRequests
 import com.filmax.core.tv.designsystem.LocalTvScrollToTop
@@ -62,7 +61,6 @@ import com.filmax.feature.search.tv.navigation.tvFilmographyScreen
 import com.filmax.feature.search.tv.navigation.tvSearchScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.serialization.Serializable
 import org.koin.androidx.compose.koinViewModel
 
 // Корневой composable намеренно оркестрирует auth, back, focus, tab navigation и общие
@@ -159,10 +157,10 @@ fun FilmaxTvNavGraph(
                     .focusRequester(contentFocus)
                     .focusProperties { up = navBarFocus }
                     .focusGroup(),
-                enterTransition = { navFadeIn },
-                exitTransition = { navFadeOut },
-                popEnterTransition = { navFadeIn },
-                popExitTransition = { navFadeOut },
+                enterTransition = { navEnter },
+                exitTransition = { navExit },
+                popEnterTransition = { navEnter },
+                popExitTransition = { navExit },
             ) {
                 tvDestinations(navController, onCheckUpdates)
             }
