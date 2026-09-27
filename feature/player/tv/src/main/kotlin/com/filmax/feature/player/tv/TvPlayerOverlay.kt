@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -72,7 +73,11 @@ internal fun Modifier.playerPanel(): Modifier = this
     .background(TvSurfaceContainer.copy(alpha = PANEL_ALPHA))
     .border(1.dp, TvSurfaceContainerHighest.copy(alpha = PANEL_ALPHA), TvMetrics.PanelShape)
 
-/** Круг с содержимым по центру — из таких слоёв собраны кнопка паузы и thumb скраббера. */
+/**
+ * Круг с содержимым по центру — из таких слоёв собраны кнопка паузы и thumb скраббера.
+ * `requiredSize`, а не `size`: обычный `size` уступает ограничениям родителя, и круг шире
+ * контейнера по одной оси сжимался в овал (так кольцо фокуса thumb'а становилось 44×38).
+ */
 @Composable
 internal fun CircleBox(
     size: Dp,
@@ -82,7 +87,7 @@ internal fun CircleBox(
 ) {
     Box(
         modifier
-            .size(size)
+            .requiredSize(size)
             .clip(CircleShape)
             .background(color),
         contentAlignment = Alignment.Center,
@@ -228,7 +233,11 @@ private fun PlayerTopBar(title: String, subtitle: String, modifier: Modifier = M
     }
 }
 
-/** Нижний блок: скраббер, Play слева и двухрядная сетка управляющих кнопок справа. */
+/**
+ * Нижний блок — две строки: полоса прокрутки и ряд кнопок. Ряд кнопок — две колонки: слева
+ * Play со стрелками серий под ним, справа сетка настроек. Раскладка пульта повторяет эту
+ * геометрию, см. [TvPlayerUiState.onKey].
+ */
 @Composable
 private fun PlayerTransport(ui: TvPlayerUiState, menu: PlayerActions, modifier: Modifier = Modifier) {
     Column(
@@ -249,7 +258,8 @@ private fun PlayerTransport(ui: TvPlayerUiState, menu: PlayerActions, modifier: 
                 .fillMaxWidth()
                 .padding(top = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(28.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            // По верху: Play стоит на одной линии с верхним рядом сетки — «влево» из него ведёт на Play.
+            verticalAlignment = Alignment.Top,
         ) {
             TransportHints(
                 isPlaying = ui.isPlaying,
@@ -309,10 +319,12 @@ private fun RowScope.ScrubTrack(fraction: Float, active: Boolean) {
     val trackHeight by animateDpAsState(if (active) ScrubTrackHeightActive else ScrubTrackHeight, label = "scrubTrack")
     val thumbSize by animateDpAsState(if (active) ScrubThumbActive else ScrubThumb, label = "scrubThumb")
     val haloSize by animateDpAsState(if (active) ScrubThumbHaloActive else ScrubThumbHalo, label = "scrubHalo")
+    // Высота — по самому большому слою thumb'а (кольцо фокуса при перемотке), иначе кольцо
+    // не помещалось по вертикали.
     BoxWithConstraints(
         Modifier
             .weight(1f)
-            .height(ScrubThumbHaloActive),
+            .height(ScrubThumbHaloActive + ScrubFocusRingExtra),
     ) {
         val density = LocalDensity.current
         val trackPx = with(density) { maxWidth.toPx() }

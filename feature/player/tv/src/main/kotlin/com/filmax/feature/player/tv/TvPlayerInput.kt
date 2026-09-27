@@ -12,8 +12,14 @@ import androidx.media3.common.Player
 import com.filmax.core.domain.catalog.model.MediaTrack
 
 /**
- * Что сейчас ведёт D-pad: Play/Pause, прогресс-бар, ряд стрелок соседних серий под Play или
- * сетка настроек справа от него.
+ * Что сейчас ведёт D-pad — один из трёх блоков оверлея (см. `PlayerTransport`):
+ *
+ *  - [Progress] — полоса прокрутки (верхняя строка);
+ *  - [Transport] и [EpisodeNav] — левая колонка нижней строки: Play и ряд стрелок серий под ним;
+ *  - [Settings] — правая колонка нижней строки: сетка настроек.
+ *
+ * У каждого блока своя точка входа: полоса, Play, первая плитка сетки. Внутри блока курсор ходит
+ * по его геометрии, на границе — переходит в соседний блок ровно на его точку входа.
  */
 internal enum class PlayerMode { Transport, Progress, EpisodeNav, Settings }
 
@@ -168,11 +174,17 @@ internal class TvPlayerUiState(val player: Player) {
     }
 
     /**
-     * Раскладка D-pad — дословно по гайдлайну Google: Center — пауза/воспроизведение, Left/Right —
-     * перемотка доступна только после перехода на прогресс-бар клавишей Up; Right ведёт в сетку
-     * справа от Play, а Down — сперва на стрелки соседних серий под Play (если хоть одна есть),
-     * и уже с них дальше вниз — в ту же сетку. Неизвестные клавиши не трогаем — иначе съедим
-     * громкость и системные.
+     * Раскладка D-pad по блокам оверлея (см. [PlayerMode]):
+     *
+     *  - Полоса прокрутки: ◄/► — перемотка, ▼ — на Play. OK — пауза/воспроизведение.
+     *  - Play: OK — пауза/воспроизведение, ▲ — полоса, ▼ — стрелки серий (если есть хоть одна),
+     *    ► — сетка настроек. Вход в блок всегда на Play.
+     *  - Стрелки серий: вход на «Следующая» (если она есть), ◄ — «Предыдущая», ► — «Следующая»
+     *    или дальше в сетку, ▲ — Play.
+     *  - Сетка: вход на первую плитку слева сверху; ◄/► — по столбцам, ▲/▼ — внутри столбца;
+     *    ▲ из верхнего ряда — полоса, ◄ из левого столбца — Play.
+     *
+     * Неизвестные клавиши не трогаем — иначе съедим громкость и системные.
      */
     fun onKey(key: Key, menu: PlayerActions): Boolean = when {
         // OK при видимой плашке автоперехода (и только в транспорте) — следующая серия сразу.
@@ -247,19 +259,19 @@ internal class TvPlayerUiState(val player: Player) {
 
     /**
      * Сетка настроек — по геометрии (см. [SettingsGridNavigation]): ◄/► ходят между столбцами,
-     * ▲/▼ — внутри столбца. Слева от первого столбца — Play (транспорт); выше верхней строки —
-     * стрелки серий под Play, если они есть, иначе сам Play.
+     * ▲/▼ — внутри столбца. Слева от левого столбца — Play; выше верхнего ряда — полоса прокрутки.
+     * Вправо и вниз за краем сетки ничего нет — курсор остаётся на месте.
      */
     private fun onSettingsKey(key: Key, menu: PlayerActions): Boolean {
         when (key) {
             Key.DirectionLeft -> {
                 val next = menu.neighbourColumn(settingsCursor, -1)
-                if (next == null) mode = PlayerMode.Transport else settingsCursor = next
+                if (next == null) openTransport() else settingsCursor = next
             }
             Key.DirectionRight -> menu.neighbourColumn(settingsCursor, +1)?.let { settingsCursor = it }
             Key.DirectionUp -> {
                 val above = menu.sameColumnNeighbour(settingsCursor, -1)
-                if (above != null) settingsCursor = above else leaveSettingsUp(menu)
+                if (above != null) settingsCursor = above else openProgress()
             }
             Key.DirectionDown -> menu.sameColumnNeighbour(settingsCursor, +1)?.let { settingsCursor = it }
             Key.DirectionCenter, Key.Enter -> menu.items.getOrNull(settingsCursor)?.let { activate(it, menu) }
@@ -269,31 +281,49 @@ internal class TvPlayerUiState(val player: Player) {
         return true
     }
 
-    /** Выход из сетки вверх: если под Play есть стрелки серий — они между Play и настройками. */
-    private fun leaveSettingsUp(menu: PlayerActions) {
-        if (menu.hasPreviousEpisode || menu.hasNextEpisode) openEpisodeNav(menu) else mode = PlayerMode.Transport
+    /** Play и полоса прокрутки — оба «транспорт» (OK везде пауза/воспроизведение), но соседи разные. */
+    private fun onTransportKey(key: Key, menu: PlayerActions): Boolean = when (mode) {
+        PlayerMode.Progress -> onProgressKey(key)
+        else -> onPlayKey(key, menu)
     }
 
-    private fun onTransportKey(key: Key, menu: PlayerActions): Boolean {
+    /** Полоса прокрутки: горизонталь — перемотка, ▼ — на Play, ▲ — некуда, стоим. */
+    private fun onProgressKey(key: Key): Boolean {
         when (key) {
-            Key.DirectionLeft, Key.MediaRewind -> if (mode == PlayerMode.Progress) scrub(-1) else touch()
-            Key.DirectionRight -> if (mode == PlayerMode.Progress) scrub(1) else openSettings(menu)
-            Key.MediaFastForward -> if (mode == PlayerMode.Progress) scrub(1) else touch()
+            Key.DirectionLeft, Key.MediaRewind -> scrub(-1)
+            Key.DirectionRight, Key.MediaFastForward -> scrub(1)
             Key.DirectionCenter, Key.Enter, Key.MediaPlayPause -> togglePlay()
-            // Есть соседняя серия — вниз сперва идут стрелки под Play, а не сразу настройки.
-            Key.DirectionDown -> if (menu.hasPreviousEpisode || menu.hasNextEpisode) {
-                openEpisodeNav(menu)
-            } else {
-                openSettings(menu)
-            }
-            Key.DirectionUp -> {
-                mode = PlayerMode.Progress
-                seekLabel = null
-                touch()
-            }
+            Key.DirectionDown -> openTransport()
+            Key.DirectionUp -> touch()
             else -> return false
         }
         return true
+    }
+
+    /** Кнопка Play: ▲ — полоса, ▼ — стрелки серий (если есть), ► — сетка, ◄ — некуда, стоим. */
+    private fun onPlayKey(key: Key, menu: PlayerActions): Boolean {
+        when (key) {
+            Key.DirectionCenter, Key.Enter, Key.MediaPlayPause -> togglePlay()
+            Key.DirectionUp -> openProgress()
+            Key.DirectionDown -> if (menu.hasPreviousEpisode || menu.hasNextEpisode) openEpisodeNav(menu) else touch()
+            Key.DirectionRight -> openSettings(menu)
+            Key.DirectionLeft, Key.MediaRewind, Key.MediaFastForward -> touch()
+            else -> return false
+        }
+        return true
+    }
+
+    /** Точка входа в левую колонку — всегда Play, откуда бы ни пришли. */
+    private fun openTransport() {
+        mode = PlayerMode.Transport
+        seekLabel = null
+        touch()
+    }
+
+    private fun openProgress() {
+        mode = PlayerMode.Progress
+        seekLabel = null
+        touch()
     }
 
     /**
@@ -308,14 +338,22 @@ internal class TvPlayerUiState(val player: Player) {
         touch()
     }
 
+    /**
+     * Стрелки под Play: ◄ — «Предыдущая» (если есть), ► — «Следующая», а с неё (или когда
+     * следующей нет) — дальше в сетку настроек; ▲ — Play; ▼ — под стрелками ничего нет.
+     */
     // Тот же каркас, что у onSettingsKey/onEpisodesKey: ветка «клавиша не наша» обязана вернуть false.
     @Suppress("ReturnCount")
     private fun onEpisodeNavKey(key: Key, menu: PlayerActions): Boolean {
         when (key) {
             Key.DirectionLeft -> if (menu.hasPreviousEpisode) episodeNavArrow = EpisodeNavArrow.Previous
-            Key.DirectionRight -> if (menu.hasNextEpisode) episodeNavArrow = EpisodeNavArrow.Next
+            Key.DirectionRight -> if (episodeNavArrow == EpisodeNavArrow.Previous && menu.hasNextEpisode) {
+                episodeNavArrow = EpisodeNavArrow.Next
+            } else {
+                openSettings(menu)
+            }
             Key.DirectionUp -> mode = PlayerMode.Transport
-            Key.DirectionDown -> openSettings(menu)
+            Key.DirectionDown -> Unit
             Key.DirectionCenter, Key.Enter -> when (episodeNavArrow) {
                 EpisodeNavArrow.Previous -> menu.onPreviousEpisode?.invoke()
                 EpisodeNavArrow.Next -> menu.onNextEpisode()
@@ -326,6 +364,7 @@ internal class TvPlayerUiState(val player: Player) {
         return true
     }
 
+    /** Точка входа в сетку — первая включённая плитка слева сверху, откуда бы ни пришли. */
     private fun openSettings(menu: PlayerActions) {
         if (menu.items.isEmpty()) return
         mode = PlayerMode.Settings
