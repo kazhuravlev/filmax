@@ -27,6 +27,18 @@ interface ImagePrefetcher {
     val progress: StateFlow<PrefetchProgress>
 
     fun enqueue(images: List<PrefetchImage>)
+
+    /**
+     * Прогреть картинки СЕЙЧАС, а не «когда-нибудь в фоне»: пользователь только что открыл
+     * экран, где вот-вот пролистает их все (браузер серий — кадры каждой серии). В отличие от
+     * [enqueue] — без cooldown-троттлинга ([ImagePrefetchThrottle]: он стоит 10 с после любого
+     * обычного запроса, а каждое показанное превью и есть обычный запрос — фоновая очередь
+     * при листании не сдвинулась бы вовсе), без придушивания скорости и не одна за раз, а
+     * несколькими параллельно. Это не фоновая докачка, а явное действие пользователя, поэтому
+     * [BackgroundFetchSettings] не учитывается. Уже закэшированное не перекачивается.
+     * По умолчанию — обычная очередь: фейкам и реализациям без «сейчас» этого достаточно.
+     */
+    fun warm(images: List<PrefetchImage>) = enqueue(images)
 }
 
 /**
@@ -43,6 +55,11 @@ object ImageDiscovery {
 
     fun discovered(images: List<PrefetchImage>) {
         if (images.isNotEmpty()) prefetcher.enqueue(images)
+    }
+
+    /** См. [ImagePrefetcher.warm] — картинки экрана, который пользователь только что открыл. */
+    fun warm(images: List<PrefetchImage>) {
+        if (images.isNotEmpty()) prefetcher.warm(images)
     }
 }
 

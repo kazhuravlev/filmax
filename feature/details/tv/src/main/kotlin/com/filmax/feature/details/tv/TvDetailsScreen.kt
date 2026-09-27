@@ -234,6 +234,9 @@ fun TvDetailsScreen(
                     onToggleFolder = { folder -> screenModel.dispatch(DetailsEvent.ToggleFolder(folder)) },
                     onCreateFolder = { title -> screenModel.dispatch(DetailsEvent.CreateFolderAndAdd(title)) },
                     onPrefetchPlayback = { screenModel.dispatch(DetailsEvent.PrefetchPlayback) },
+                    onPrefetchEpisodeThumbnails = {
+                        screenModel.dispatch(DetailsEvent.PrefetchEpisodeThumbnails)
+                    },
                     awaitContinuation = screenModel::awaitContinuation,
                 ),
             )
@@ -348,6 +351,8 @@ private data class DetailsActions(
     val onCreateFolder: (title: String) -> Unit,
     /** Фокус зашёл на кнопку «Смотреть» — см. [DetailsEvent.PrefetchPlayback]. */
     val onPrefetchPlayback: () -> Unit,
+    /** Открыли браузер серий — прогреть кадры всех серий, см. [DetailsEvent.PrefetchEpisodeThumbnails]. */
+    val onPrefetchEpisodeThumbnails: () -> Unit,
     /** Ждёт настоящий ответ continuation, если он ещё грузится — см. `DetailsScreenModel.awaitContinuation`. */
     val awaitContinuation: suspend () -> Continuation?,
 )
@@ -491,7 +496,12 @@ private fun DetailsContent(
                         },
                         onOpenFolderPicker = { folderPicker.pickerOpen = true },
                         // Браузер серий есть у любого сериала с дорожками; у фильма кнопки нет.
-                        onOpenSeasons = series?.takeIf { it.seasons.isNotEmpty() }?.let { { seasonsOpen = true } },
+                        onOpenSeasons = series?.takeIf { it.seasons.isNotEmpty() }?.let {
+                            {
+                                seasonsOpen = true
+                                actions.onPrefetchEpisodeThumbnails()
+                            }
+                        },
                         seasonsModifier = focus.item(HERO_SEASONS_KEY),
                         seasonsLabel = if ((series?.seasons?.size ?: 0) > 1) "Сезоны и серии" else "Серии",
                         onToggleWantToWatch = actions.onToggleWantToWatch,

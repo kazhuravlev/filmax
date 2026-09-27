@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -74,6 +76,10 @@ internal class ImagePrefetcherImpl(
     private val channel = Channel<PrefetchImage>(capacity = Channel.UNLIMITED)
     private val queuedKeys = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
 
+    /** Прогрев «сейчас» (см. [warm]): свой лимит параллельности и своя защита от дублей. */
+    private val warmSlots = Semaphore(PerformanceTuning.BackgroundQueues.WARM_IMAGE_CONCURRENCY)
+    private val warmingKeys = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+
     init {
         ImageDiscovery.prefetcher = this
         scope.launch {
@@ -103,6 +109,32 @@ internal class ImagePrefetcherImpl(
         }
     }
 
+    /**
+     * См. [ImagePrefetcher.warm]. Мимо [channel] и [queuedKeys]: фоновая очередь строго
+     * последовательна и ждёт снятия троттла перед каждым элементом, а здесь ждать нечего —
+     * пользователь уже листает этот список. Запрос без [BACKGROUND_FETCH_HEADER]: он не должен
+     * придушиваться по скорости, как фоновый. Прогресс [progress] не трогаем — это счётчик
+     * фоновой очереди для настроек, а не этого действия.
+     */
+    override fun warm(images: List<PrefetchImage>) {
+        for (image in images) {
+            if (!warmingKeys.add(image.key)) continue
+            scope.launch {
+                try {
+                    warmSlots.withPermit {
+                        runCatching {
+                            withTimeoutOrNull(PerformanceTuning.BackgroundQueues.IMAGE_PREFETCH_TIMEOUT_MS) {
+                                prefetchOne(image, background = false)
+                            }
+                        }
+                    }
+                } finally {
+                    warmingKeys.remove(image.key)
+                }
+            }
+        }
+    }
+
     /** Пропускает картинку без похода в сеть, если фоновая загрузка выключена уже после
      * постановки в очередь — экран всё равно догрузит её сам, когда пользователь до неё дойдёт.
      * Перед обработкой ждём, пока пользователь неактивен (см. doc класса) — иначе декодирование
@@ -119,7 +151,8 @@ internal class ImagePrefetcherImpl(
         }
     }
 
-    private suspend fun prefetchOne(image: PrefetchImage) {
+    /** [background] = false — прогрев «сейчас» ([warm]): без маркера фоновой закачки. */
+    private suspend fun prefetchOne(image: PrefetchImage, background: Boolean = true) {
         val imageLoader = SingletonImageLoader.get(context)
         if (isAlreadyCached(imageLoader, image.key)) return
         val request = ImageRequest.Builder(context)
@@ -127,7 +160,9 @@ internal class ImagePrefetcherImpl(
             // Маркер для FilmaxImageLoaderFactory (app): там по нему придушивают скорость именно
             // фоновой закачки, не трогая обычные запросы — см. BACKGROUND_FETCH_HEADER. До сервера
             // заголовок не доезжает, интерцептор снимает его перед отправкой.
-            .httpHeaders(NetworkHeaders.Builder().set(BACKGROUND_FETCH_HEADER, "1").build())
+            .apply {
+                if (background) httpHeaders(NetworkHeaders.Builder().set(BACKGROUND_FETCH_HEADER, "1").build())
+            }
             // Прогрев должен наполнить только ДИСКОВЫЙ кэш — декодированный битмап тут же
             // выбрасывается, класть его в память некуда и незачем. Раньше запрос без .size()
             // декодировался в полное разрешение и оседал в memory cache Coil ПОД ТЕМ ЖЕ ключом,

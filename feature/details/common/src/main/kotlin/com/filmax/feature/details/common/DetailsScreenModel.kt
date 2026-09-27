@@ -57,6 +57,9 @@ class DetailsScreenModel(
     /** Не долбим сеть повторно, если фокус ещё раз вернётся на «Смотреть» — см. [prefetchPlayback]. */
     private var playbackPrefetched = false
 
+    /** Кадры серий прогреты — повторное открытие браузера серий их не переспрашивает. */
+    private var episodeThumbnailsWarmed = false
+
     /** Текущая загрузка continuation — см. doc [loadContinuation] и [awaitContinuation]. */
     private var continuationJob: Deferred<Continuation?>? = null
 
@@ -73,7 +76,23 @@ class DetailsScreenModel(
             is DetailsEvent.ToggleFolder -> toggleFolder(event.folder)
             is DetailsEvent.CreateFolderAndAdd -> createFolderAndAdd(event.title)
             DetailsEvent.PrefetchPlayback -> prefetchPlayback()
+            DetailsEvent.PrefetchEpisodeThumbnails -> prefetchEpisodeThumbnails()
         }
+    }
+
+    /**
+     * См. [DetailsEvent.PrefetchEpisodeThumbnails]. Порядок — как в плейлисте: браузер
+     * открывается на первом сезоне, его кадры и нужны первыми. Серии без кадра (у kino.watch
+     * thumbnail часто пустой) пропускаем — прогревать нечего.
+     */
+    private fun prefetchEpisodeThumbnails() {
+        if (episodeThumbnailsWarmed) return
+        val item = state.item ?: return
+        episodeThumbnailsWarmed = true
+        val images = item.tracklist
+            .filter { it.thumbnail.isNotBlank() }
+            .map { track -> PrefetchImage(key = ImageCacheKeys.episodeThumbnail(track.id), url = track.thumbnail) }
+        ImageDiscovery.warm(images)
     }
 
     /**

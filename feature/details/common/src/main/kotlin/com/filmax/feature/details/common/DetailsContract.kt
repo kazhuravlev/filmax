@@ -70,6 +70,13 @@ sealed interface DetailsEvent {
      * мгновенным вместо нового похода в сеть. Модель ограничивает это одним разом за жизнь экрана.
      */
     data object PrefetchPlayback : DetailsEvent
+
+    /**
+     * Открыли браузер «Сезоны и серии»: прогреть кадры ВСЕХ серий всех сезонов сразу
+     * (`ImagePrefetcher.warm`), чтобы превью при листании бралось из кэша, а не ждало сеть на
+     * каждой серии. Один раз за жизнь экрана — прогрев сам пропускает уже закэшированное.
+     */
+    data object PrefetchEpisodeThumbnails : DetailsEvent
 }
 
 sealed interface DetailsSideEffect
