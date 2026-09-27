@@ -8,13 +8,11 @@ data class WatchingListResponseDto(
     val items: List<WatchingItemDto> = emptyList(),
 )
 
-/** Ответ `watching/toggle` — помимо статуса конкретного видео несёт итоговый флаг тайтла. */
 @Serializable
 data class ToggleWatchedResponseDto(
     val watched: Int = 0,
 )
 
-/** Ответ `watching/togglewatchlist`: `watching` = 1 — тайтл теперь в списке «Буду смотреть». */
 @Serializable
 data class ToggleWatchlistResponseDto(
     val watching: Int = 0,
@@ -22,11 +20,6 @@ data class ToggleWatchlistResponseDto(
     val inWatchlist: Boolean get() = watching == 1
 }
 
-/**
- * Ответ `api/v1/history` — точный таймкод (`time` по каждому видео), но по СЕРИЯМ, а не тайтлам:
- * один сериал — десятки записей. Источник для `Continuation` (точная позиция одного тайтла),
- * не для списка «в процессе» целиком — для него см. [WatchingListResponseDto].
- */
 @Serializable
 data class HistoryListResponseDto(
     val history: List<HistoryEntryDto> = emptyList(),
@@ -35,7 +28,6 @@ data class HistoryListResponseDto(
 
 @Serializable
 data class HistoryEntryDto(
-    /** Просмотрено секунд — по конкретному [media], а не по тайтлу целиком. */
     val time: Int = 0,
     val item: HistoryEntryItemDto,
     val media: HistoryMediaDto? = null,
@@ -50,30 +42,20 @@ data class HistoryEntryItemDto(
     val duration: HistoryDurationDto? = null,
 )
 
-/** Конкретное видео: серия сериала или единственная дорожка фильма. */
 @Serializable
 data class HistoryMediaDto(
-    /** Номер видео — им же kino.watch принимает и отдаёт прогресс (`marktime?video=`). */
     val number: Int = 0,
-    /** Номер сезона; 0 — у фильма. */
     val snumber: Int = 0,
-    /** Кадр серии 16:9 — лучшая картинка для широкой карточки. */
     val thumbnail: String = "",
     val duration: Int = 0,
 )
 
 @Serializable
 data class HistoryDurationDto(
-    /** Средняя длительность серии; у фильма — его длительность. */
     val average: Double = 0.0,
     val total: Int = 0,
 )
 
-/**
- * Элемент `watching/{type}` — облегчённая карточка тайтла, БЕЗ точного таймкода (сервер его тут
- * не отдаёт вовсе). `total`/`watched`/`new` — только у сериалов (`type=serials`), для фильмов
- * сервер их не считает и не присылает.
- */
 @Serializable
 data class WatchingItemDto(
     val id: Int,
@@ -90,8 +72,6 @@ data class PostersDto(
     val small: String = "",
     val medium: String = "",
     val big: String = "",
-    // Кадр 16:9. Карточки «Продолжить»/«История» — широкие, и вертикальный постер 2:3 в них
-    // обрезается по центру в кашу. Пустая строка — если бэкенд кадра не отдал.
     val wide: String = "",
 )
 

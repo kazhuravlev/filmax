@@ -5,18 +5,11 @@ import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.user.model.DeviceSettings
 import com.filmax.core.presentation.BaseScreenModel
 
-/**
- * Экран «Настройки устройства» (качество/HEVC/HDR/4K/смешанный плейлист/тип потока/сервер раздачи).
- *
- * Общий для mobile и TV: раскладка у платформ своя, а загрузка/редактирование/сохранение — одни.
- * Правки копятся в [DeviceSettingsState.settings] локально и уходят на сервер разом по [Save].
- */
 class DeviceSettingsScreenModel(
     private val user: UserRepository,
 ) : BaseScreenModel<DeviceSettingsState, DeviceSettingsSideEffect, DeviceSettingsEvent>(
     DeviceSettingsState(),
 ) {
-
     init {
         onFetchData()
     }
@@ -46,7 +39,6 @@ class DeviceSettingsScreenModel(
         }
     }
 
-    /** Правит рабочую копию настроек; до загрузки (settings == null) события просто игнорируются. */
     private fun edit(transform: (DeviceSettings) -> DeviceSettings) {
         screenModelScope {
             updateState { state ->

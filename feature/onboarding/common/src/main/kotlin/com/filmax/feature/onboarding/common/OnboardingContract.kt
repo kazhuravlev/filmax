@@ -16,6 +16,5 @@ sealed interface OnboardingEvent {
 }
 
 sealed interface OnboardingSideEffect {
-    /** Устройство авторизовано — экран должен увести пользователя дальше. */
     data object Authenticated : OnboardingSideEffect
 }

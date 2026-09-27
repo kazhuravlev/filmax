@@ -13,10 +13,8 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.http.Parameters
 
-// Один метод на эндпоинт `user`/`device`/`bookmarks` — ровно столько, сколько их у kino.watch.
 @Suppress("TooManyFunctions")
 internal class UserApi(private val client: HttpClient) {
-
     suspend fun getAccountInfo(): AccountInfoDto =
         client.get("api/v1/user").body()
 
@@ -56,7 +54,6 @@ internal class UserApi(private val client: HttpClient) {
             parameter("page", page)
         }.body()
 
-    /** Папки, в которых лежит тайтл — `bookmarks/get-item-folders?item=` (как в веб-клиенте kino.watch). */
     suspend fun getItemFolders(itemId: Int): ItemFoldersDto =
         client.get("api/v1/bookmarks/get-item-folders") {
             parameter("item", itemId)

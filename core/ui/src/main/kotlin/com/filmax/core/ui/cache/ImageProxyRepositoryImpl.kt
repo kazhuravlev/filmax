@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** Персистентность на обычных SharedPreferences — тот же подход, что и у [ImageCacheRepositoryImpl] рядом. */
 internal class ImageProxyRepositoryImpl(context: Context) : ImageProxyRepository {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val enabledState = MutableStateFlow(prefs.getBoolean(KEY_ENABLED, true))

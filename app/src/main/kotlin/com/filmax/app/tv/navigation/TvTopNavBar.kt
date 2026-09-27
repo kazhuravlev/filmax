@@ -50,18 +50,11 @@ import kotlin.reflect.KClass
 
 private data class TvTab(val label: String, val route: Any, val match: (NavDestination?) -> Boolean)
 
-/** Действия таб-бара объединены, чтобы его Compose API оставался компактным. */
 internal data class TvTopNavBarActions(
     val onSelectTab: (route: Any) -> Unit,
     val onReselectActiveTab: () -> Unit,
 )
 
-/**
- * Разделы верхней навигации. «Поиск» уехал внутрь «Каталога» (печатать пультом дорого — каталог даёт
- * способ найти фильм вообще без набора текста), а личное содержимое разделено на «Я смотрю»
- * (недосмотренное), «Подборки» и «Историю» — три соседние вкладки, без переключателя внутри.
- * Настройки остаются отдельным разделом.
- */
 private val TABS = listOf(
     TvTab("Главная", TvHomeRoute) { it?.hasRoute(TvHomeRoute::class) == true },
     TvTab("Я смотрю", TvWatchingRoute) { it?.hasRoute(TvWatchingRoute::class) == true },
@@ -71,7 +64,6 @@ private val TABS = listOf(
     TvTab("Настройки", TvProfileRoute) { it?.hasRoute(TvProfileRoute::class) == true },
 )
 
-/** Маршруты, на которых показывается таб-бар. Выводится из [TABS] — один источник правды. */
 val TOP_LEVEL_ROUTES: List<KClass<*>> = listOf(
     TvHomeRoute::class,
     TvWatchingRoute::class,
@@ -86,13 +78,6 @@ internal data class TvTopNavBarFocus(
     val content: FocusRequester,
 )
 
-/**
- * Верхний таб-бар. Не боковое меню: крупные стриминговые TV-клиенты в 2025 независимо ушли наверх, а
- * при горизонтальных рядах карточек боковое меню перехватывало бы фокус на «влево» из первой
- * карточки — верхний бар лежит на естественной оси «вверх».
- *
- * Фон сплошной, без градиента: серый градиент в монохроме — первый кандидат на бандинг.
- */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun TvTopNavBar(
@@ -103,7 +88,6 @@ internal fun TvTopNavBar(
     modifier: Modifier = Modifier,
 ) {
     val activeIndex = TABS.indexOfFirst { it.match(currentDestination) }.coerceAtLeast(0)
-    // Стабильный requester на каждую вкладку (не «переезжает» между нодами).
     val tabFocusRequesters = remember { TABS.map { FocusRequester() } }
 
     Row(
@@ -111,8 +95,6 @@ internal fun TvTopNavBar(
             .fillMaxWidth()
             .height(TvMetrics.TopBarHeight)
             .focusRequester(focus.navBar)
-            // Любой вход фокуса в таб-бар уводим на активную вкладку — фокус всегда
-            // совпадает с открытым разделом.
             .focusProperties { enter = { tabFocusRequesters[activeIndex] } }
             .focusGroup()
             .padding(horizontal = TvMetrics.SafeHorizontal),
@@ -124,8 +106,6 @@ internal fun TvTopNavBar(
             activeIndex = activeIndex,
             tabFocusRequesters = tabFocusRequesters,
             contentFocus = focus.content,
-            // Раздел открывается сразу по фокусу, без задержек и без OK: на пульте лишнее
-            // нажатие на каждый переход — половина всей навигации по приложению.
             onTabFocused = { index -> if (index != activeIndex) actions.onSelectTab(TABS[index].route) },
             onActiveTabClick = actions.onReselectActiveTab,
         )
@@ -134,7 +114,6 @@ internal fun TvTopNavBar(
     }
 }
 
-/** Бренд-лейбл. В монохроме — разрядка вместо акцентной точки. */
 @Composable
 private fun TvBrandLabel() {
     Text(
@@ -161,8 +140,6 @@ private fun TvNavTabs(
             NavTab(
                 label = tab.label,
                 active = index == activeIndex,
-                // Переключение разделов остаётся мгновенным по фокусу. OK по уже активной
-                // вкладке обновляет её данные; «вниз» переводит фокус в контент.
                 onClick = {
                     if (index == activeIndex) onActiveTabClick() else onTabFocused(index)
                 },
@@ -175,7 +152,6 @@ private fun TvNavTabs(
     }
 }
 
-/** Круглый аватар: инициалы либо иконка-заглушка. Ровная серая заливка вместо градиента. */
 @Composable
 private fun TvAvatar(initials: String) {
     Box(
@@ -204,15 +180,9 @@ private fun TvAvatar(initials: String) {
     }
 }
 
-/**
- * Вкладка: активная — белым текстом с подчёркиванием, неактивная — приглушённая. Заливки нет:
- * заливкой в монохроме отмечается выбор в чипах, а вкладку достаточно подчеркнуть.
- */
 @Composable
 private fun NavTab(label: String, active: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     TvFocusCard(onClick = onClick, shape = TvMetrics.ButtonShape, modifier = modifier) {
-        // width(IntrinsicSize.Max) обязателен: без него fillMaxWidth() у подчёркивания раздувает
-        // вкладку на всю свободную ширину строки и выталкивает соседние вкладки за экран.
         Column(
             modifier = Modifier
                 .width(IntrinsicSize.Max)

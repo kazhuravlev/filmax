@@ -15,11 +15,6 @@ import com.filmax.core.tv.designsystem.TvOnSurface
 import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.ui.components.appErrorText
 
-/**
- * Карточка ошибки поверх кадра TV-плеера. Кнопок нет намеренно: единственный выход из
- * плеера — «Назад». До неё сбой загрузки серии оставлял чёрный экран без индикации
- * (жалоба «следующая серия не запустилась»).
- */
 @Composable
 internal fun PlayerErrorCard(error: AppError, modifier: Modifier = Modifier) {
     Column(

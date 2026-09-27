@@ -7,16 +7,10 @@ import com.filmax.core.domain.search.SearchRepository
 import com.filmax.core.presentation.BaseScreenModel
 import com.filmax.feature.search.common.navigation.FilmographyRoute
 
-/**
- * Список работ одного человека. Источник выбирает [FilmographyRoute.isDirector]: работы
- * режиссёра (`searchByDirector`) или роли актёра (`searchByActor`). perPage оставляем дефолтным —
- * фильмография человека в один экран укладывается.
- */
 class FilmographyScreenModel(
     savedStateHandle: SavedStateHandle,
     private val search: SearchRepository,
 ) : BaseScreenModel<FilmographyState, FilmographySideEffect, FilmographyEvent>(FilmographyState()) {
-
     private val route = savedStateHandle.toRoute<FilmographyRoute>()
 
     init {

@@ -11,14 +11,11 @@ data class AccountInfoDto(
 
 @Serializable
 data class UserDto(
-    // Ответ `api/v1/user` для текущего пользователя НЕ содержит `id` — делаем поле
-    // необязательным, иначе вся десериализация падает и профиль не загружается.
     val id: Int? = null,
     val username: String,
     val email: String? = null,
     val avatar: String? = null,
     @SerialName("reg_date") val regDate: Int? = null,
-    // kino.watch возвращает подписку вложенной в `user`, а не на верхнем уровне.
     val subscription: SubscriptionDto? = null,
     val profile: ProfileDto? = null,
 )
@@ -32,8 +29,6 @@ data class ProfileDto(
 @Serializable
 data class SubscriptionDto(
     val active: Boolean,
-    // Поле называется `end_time` (unix-секунды); `days` приходит ДРОБНЫМ (напр. 6.1),
-    // поэтому Double, а не Int — иначе ошибка парсинга роняет весь ответ.
     @SerialName("end_time") val endTime: Long? = null,
     val days: Double? = null,
 )
@@ -71,13 +66,6 @@ data class BookmarkFolderDto(
     @SerialName("updated_at") val updatedAt: Int? = null,
 )
 
-/**
- * Ответ `bookmarks/get-item-folders`: список папок тайтла. Из полей нужен только `id` — остальное
- * (название, счётчик) уже есть в общем списке `bookmarks`; лишние ключи JSON игнорируются.
- * `folders` намеренно nullable без дефолта: ответ 200 БЕЗ этого ключа — не «тайтл ни в одной
- * папке», а незнакомая форма ответа, и репозиторий обязан отдать ошибку (вызывающий тогда
- * откатится на постраничный обход папок), а не тихую пустоту.
- */
 @Serializable
 data class ItemFoldersDto(
     val folders: List<ItemFolderRefDto>? = null,

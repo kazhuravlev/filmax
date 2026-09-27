@@ -1,4 +1,3 @@
-// Логический слой Details (без UI): ScreenModel + контракт + DI + маршрут.
 plugins {
     id("filmax.android.library")
     alias(libs.plugins.kotlin.serialization)

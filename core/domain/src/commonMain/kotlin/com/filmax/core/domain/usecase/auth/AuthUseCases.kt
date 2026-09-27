@@ -6,11 +6,6 @@ import com.filmax.core.domain.auth.model.Token
 import com.filmax.core.domain.common.RequestResult
 import kotlinx.coroutines.flow.Flow
 
-/**
- * Общий контракт OAuth device-flow для Android и iOS.
- * Тонкие UseCase поверх [AuthRepository] — единая точка входа для обоих presentation-слоёв.
- */
-
 class ObserveAuthStateUseCase(private val repository: AuthRepository) {
     operator fun invoke(): Flow<Boolean> = repository.isAuthenticated
 }

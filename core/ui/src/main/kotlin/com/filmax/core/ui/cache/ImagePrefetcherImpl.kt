@@ -31,44 +31,10 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * Тихая фоновая закачка обнаруженных картинок (постеры/фото актёров) в кэш Coil — раньше, чем
- * пользователь реально откроет экран с ними (см. [ImageDiscovery]).
- *
- * Собственный [CoroutineScope], не завязанный ни на один экран: очередь переживает навигацию и
- * продолжает работать, даже когда открыт плеер — закачка не мешает воспроизведению, потому что
- * идёт СТРОГО последовательно (одна картинка за раз, `for` по [Channel] в одной корутине), а не
- * параллельным залпом, который отъедал бы соединения у активного контента.
- *
- * Перед каждой закачкой явно проверяем дисковый кэш Coil по ключу ([isAlreadyCached]) и, если
- * запись уже есть, вообще не трогаем сеть — не полагаемся молча на то, что [SingletonImageLoader]
- * сам решит не ходить в сеть на свежую запись: на практике полагаться получалось не всегда
- * (одни и те же постеры перекачивались повторно). Кроме того, не поставить один и тот же ключ в
- * очередь дважды, пока первый ещё не обработан ([queuedKeys]).
- *
- * Включена/выключена — общим [BackgroundFetchSettings] (единый выключатель ВСЕЙ фоновой докачки,
- * не только картинок). Выключение не отменяет уже стоящую в очереди картинку — очередь просто
- * перестаёт забирать из неё сеть, пропуская элементы без похода в сеть (см. [processOne]), так
- * что [PrefetchProgress.remaining] всё равно корректно стекает к нулю, а не зависает.
- *
- * Очередь ограничена [PerformanceTuning.BackgroundQueues.MAX_QUEUED_IMAGE_KEYS] элементами
- * (drop-newest): при переполнении новый элемент не попадает ни в [queuedKeys], ни в [channel] —
- * иначе экран со списком из тысяч постеров разом
- * забивает [Channel.UNLIMITED] и [queuedKeys] безграничным множеством ключей, которое никогда не
- * догоняется. Дропаем именно новые, а не старые — иначе пришлось бы вычищать уже отправленный в
- * канал элемент, а `Channel` этого не умеет.
- *
- * Перед КАЖДЫМ элементом (см. [processOne]) ждём, пока [ImagePrefetchThrottle.shouldThrottle] не
- * станет false — раньше придушивалась только скорость самой закачки (см. `ThrottledResponseBody`
- * в `FilmaxImageLoaderFactory`), а декодирование картинки всё равно шло сразу и соревновалось с
- * UI-потоком за CPU/память во время скролла. Теперь фоновая очередь не трогает CPU вовсе, пока
- * пользователь активен.
- */
 internal class ImagePrefetcherImpl(
     private val context: Context,
     private val backgroundFetch: BackgroundFetchSettings,
 ) : ImagePrefetcher {
-
     private val progressState = MutableStateFlow(PrefetchProgress())
     override val progress: StateFlow<PrefetchProgress> = progressState.asStateFlow()
 
@@ -76,7 +42,6 @@ internal class ImagePrefetcherImpl(
     private val channel = Channel<PrefetchImage>(capacity = Channel.UNLIMITED)
     private val queuedKeys = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
 
-    /** Прогрев «сейчас» (см. [warm]): свой лимит параллельности и своя защита от дублей. */
     private val warmSlots = Semaphore(PerformanceTuning.BackgroundQueues.WARM_IMAGE_CONCURRENCY)
     private val warmingKeys = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
 
@@ -96,12 +61,7 @@ internal class ImagePrefetcherImpl(
     override fun enqueue(images: List<PrefetchImage>) {
         if (!backgroundFetch.enabled.value) return
         for (image in images) {
-            // Переполнение — дропаем новый элемент, не трогая ни очередь, ни queuedKeys (см. doc
-            // класса): ключ не должен остаться в множестве, иначе он никогда не будет обработан
-            // и не освободит место для будущих элементов.
             if (queuedKeys.size >= PerformanceTuning.BackgroundQueues.MAX_QUEUED_IMAGE_KEYS) continue
-            // add() возвращает false, если ключ уже стоит в очереди/обрабатывается — второй раз
-            // тот же тайтл из другого списка (например, попал и в «Похожее», и в поиск) не дублируем.
             if (queuedKeys.add(image.key)) {
                 channel.trySend(image)
                 progressState.update { it.copy(remaining = queuedKeys.size) }
@@ -109,13 +69,6 @@ internal class ImagePrefetcherImpl(
         }
     }
 
-    /**
-     * См. [ImagePrefetcher.warm]. Мимо [channel] и [queuedKeys]: фоновая очередь строго
-     * последовательна и ждёт снятия троттла перед каждым элементом, а здесь ждать нечего —
-     * пользователь уже листает этот список. Запрос без [BACKGROUND_FETCH_HEADER]: он не должен
-     * придушиваться по скорости, как фоновый. Прогресс [progress] не трогаем — это счётчик
-     * фоновой очереди для настроек, а не этого действия.
-     */
     override fun warm(images: List<PrefetchImage>) {
         for (image in images) {
             if (!warmingKeys.add(image.key)) continue
@@ -135,10 +88,6 @@ internal class ImagePrefetcherImpl(
         }
     }
 
-    /** Пропускает картинку без похода в сеть, если фоновая загрузка выключена уже после
-     * постановки в очередь — экран всё равно догрузит её сам, когда пользователь до неё дойдёт.
-     * Перед обработкой ждём, пока пользователь неактивен (см. doc класса) — иначе декодирование
-     * прогрева соревнуется с UI-потоком прямо во время скролла/воспроизведения. */
     private suspend fun processOne(image: PrefetchImage) {
         if (!backgroundFetch.enabled.value) return
         while (ImagePrefetchThrottle.shouldThrottle) {
@@ -151,25 +100,14 @@ internal class ImagePrefetcherImpl(
         }
     }
 
-    /** [background] = false — прогрев «сейчас» ([warm]): без маркера фоновой закачки. */
     private suspend fun prefetchOne(image: PrefetchImage, background: Boolean = true) {
         val imageLoader = SingletonImageLoader.get(context)
         if (isAlreadyCached(imageLoader, image.key)) return
         val request = ImageRequest.Builder(context)
             .data(CacheableImage(key = image.key, url = image.url))
-            // Маркер для FilmaxImageLoaderFactory (app): там по нему придушивают скорость именно
-            // фоновой закачки, не трогая обычные запросы — см. BACKGROUND_FETCH_HEADER. До сервера
-            // заголовок не доезжает, интерцептор снимает его перед отправкой.
             .apply {
                 if (background) httpHeaders(NetworkHeaders.Builder().set(BACKGROUND_FETCH_HEADER, "1").build())
             }
-            // Прогрев должен наполнить только ДИСКОВЫЙ кэш — декодированный битмап тут же
-            // выбрасывается, класть его в память некуда и незачем. Раньше запрос без .size()
-            // декодировался в полное разрешение и оседал в memory cache Coil ПОД ТЕМ ЖЕ ключом,
-            // что и обычная загрузка на экране (см. Keyer<CacheableImage> в
-            // FilmaxImageLoaderFactory) — несколько таких прогревов подряд вымывали LRU большими
-            // битмапами. INEXACT + маленький размер — декодер может даунсэмплить не глядя на
-            // реальные пропорции, результат всё равно не используется.
             .memoryCachePolicy(CachePolicy.DISABLED)
             .size(PerformanceTuning.BackgroundQueues.IMAGE_PREFETCH_DECODE_SIZE_PX)
             .precision(Precision.INEXACT)
@@ -177,9 +115,6 @@ internal class ImagePrefetcherImpl(
         imageLoader.execute(request)
     }
 
-    /** `openSnapshot` блокирует поток на файловом I/O, но мы и так уже на [Dispatchers.IO]
-     * (см. [scope]) — отдельного переключения диспетчера не нужно. Снапшот тут же закрывается
-     * ([use]): нужен только сам факт, есть ли запись, не её содержимое. */
     private fun isAlreadyCached(imageLoader: ImageLoader, key: String): Boolean =
         imageLoader.diskCache?.openSnapshot(key)?.use { true } ?: false
 }

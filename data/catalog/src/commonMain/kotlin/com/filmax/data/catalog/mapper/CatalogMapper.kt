@@ -1,7 +1,3 @@
-// Мапперы DTO->domain для всего каталога держим одним файлом ради единообразия форматов
-// (posters/duration/pagination и т.п. переиспользуются между Item/Collection) — дробить ради
-// лимита незачем, т.к. добавление toDomainOnly (кэш-хит без побочных эффектов) — тот же маппинг
-// ItemDto, а не новая обязанность файла.
 @file:Suppress("TooManyFunctions")
 
 package com.filmax.data.catalog.mapper
@@ -24,7 +20,6 @@ import com.filmax.core.domain.catalog.model.ItemRating
 import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.catalog.model.Pagination
 import com.filmax.core.domain.catalog.model.Posters
-import com.filmax.core.domain.tuning.PerformanceTuning
 import com.filmax.core.network.networkJson
 import com.filmax.data.catalog.remote.dto.CollectionDto
 import com.filmax.data.catalog.remote.dto.CollectionItemsDto
@@ -37,10 +32,8 @@ import com.filmax.data.catalog.remote.dto.PaginationDto
 import com.filmax.data.catalog.remote.dto.PostersDto
 import kotlinx.serialization.encodeToString
 
-// Размер страницы по умолчанию для фолбэка пагинации, когда API не вернул блок pagination.
 private const val DEFAULT_PER_PAGE = 20
 
-// API отдаёт длительность в секундах — делим на это число, чтобы получить минуты.
 private const val SECONDS_PER_MINUTE = 60
 
 fun ItemsResponseDto.toDomain(): ItemPage = ItemPage(
@@ -48,40 +41,10 @@ fun ItemsResponseDto.toDomain(): ItemPage = ItemPage(
     pagination = pagination?.toDomain() ?: Pagination(0, 1, DEFAULT_PER_PAGE),
 )
 
-/** Ключ кэша тайтла (`items/{id}`) — см. [ItemDetailsCacheAccess]. */
 internal fun itemCacheKey(id: Int): String = "item:$id"
 
-/** Ключ кэша списка «похожих» на тайтл (`items/similar?id=`) — см. `CatalogRepositoryImpl.getSimilarItems`. */
 internal fun similarCacheKey(id: Int): String = "similar:$id"
 
-/**
- * Полный маппинг + «заявки» в фоновые кэши: любой тайтл, прошедший через API (список, поиск,
- * похожее, детали) — кандидат на фоновую докачку и постера ([ImageDiscovery]), и полных деталей
- * тайтла целиком ([ItemDiscovery]), даже если экран его ещё не отрисовал. Единственное место, где
- * оба побочных эффекта запускаются — повторный вызов [toDomainOnly] (кэш-хит в
- * `CatalogRepositoryImpl`) их МИНУЕТ, иначе постер/детали грузились бы заново при каждом
- * повторном просмотре списка.
- *
- * Списковый DTO целиком передаём в [ItemDiscovery]: он уже содержит почти всю карточку и сразу
- * сохраняется как preview через `rememberIfAbsent`. Условная запись принципиальна — очередной
- * список не может затереть уже закэшированный полный ответ пустыми `videos`/`seasons`. Если DTO
- * действительно пришёл из `items/{id}` и содержит треклист, [ItemDetailsCacheAccess] заменяет им
- * preview обычным [com.filmax.core.domain.cache.ItemDetailsCache.remember].
- *
- * Шлём id и доступный JSON КАЖДОГО тайтла КАЖДОГО спискового ответа (все ряды главной, каталог,
- * поиск, похожее, подборки) в [ItemDiscovery] — раньше это было намеренно запрещено (см. историю
- * в doc-комментарии
- * [ItemDiscovery]): кэш деталей был файлом `Settings`/SharedPreferences без потолка размера, и
- * обычный скролл раздувал бы его тысячами записей, переживающих даже перезапуск приложения.
- * Ограничение снято: [ItemDetailsCacheAccess.cache] теперь — SQLite (`ItemDetailsCacheDb`,
- * core:network) с жёстким потолком строк и TTL-вытеснением, а сама очередь фоновой докачки —
- * строго последовательная, с собственным потолком (drop-newest) и паузой на время активности
- * пользователя (см. `TitleBackgroundFetcherImpl`). Самозацикливания нет: пока фетчер обрабатывает
- * id, тот числится «в работе» в его внутреннем множестве, и `discovered(id)` из результата ЭТОГО
- * ЖЕ запроса (тот же тайтл, повторно прошедший через `toDomain()`) молча отклоняется как дубликат;
- * а кэш-хит по уже свежим деталям фетчер обрабатывает вовсе без похода в сеть — так что повторный
- * маппинг одного и того же id из разных списков почти бесплатен.
- */
 fun ItemDto.toDomain(): Item {
     val item = toDomainOnly()
     val serialized = networkJson.encodeToString(this)
@@ -93,11 +56,9 @@ fun ItemDto.toDomain(): Item {
     return item
 }
 
-/** Списковые ответы не содержат ни `videos`, ни `seasons`; detail полон при наличии треклиста. */
 internal val ItemDto.hasFullDetails: Boolean
     get() = !videos.isNullOrEmpty() || !seasons.isNullOrEmpty()
 
-/** Тот же маппинг, но без побочных эффектов — для чтения уже закэшированного тайтла. */
 internal fun ItemDto.toDomainOnly(): Item = Item(
     id = id,
     title = title,
@@ -111,14 +72,11 @@ internal fun ItemDto.toDomainOnly(): Item = Item(
     rating = ItemRating(
         filmax = rating,
         filmaxPercentage = ratingPercentage.toString(),
-        // API отдаёт оценки числом или null; `null?.toString()` дал бы строку "null",
-        // поэтому маппим только реальные значения, отсутствие — настоящий null.
         imdb = imdbRating?.toString(),
         kinopoisk = kinopoiskRating?.toString(),
     ),
     posters = posters?.toDomain() ?: Posters("", "", "", null),
     duration = duration.toDomain(),
-    // Сериал: эпизоды лежат в seasons[].episodes (номер сезона — на родителе). Фильм: в videos.
     tracklist = if (!seasons.isNullOrEmpty()) {
         seasons.flatMap { season -> season.episodes.map { it.toDomain(season.number) } }
     } else {
@@ -133,17 +91,6 @@ internal fun ItemDto.toDomainOnly(): Item = Item(
     quality = quality,
 )
 
-/**
- * Только маленький постер — он один переиспользуется повсеместно (ряды, каталог, поиск,
- * подборки, библиотека). Широкий фон/бэкдроп сюда намеренно не входит: он показывается только
- * в hero и «продолжить» на главной (см. `HomeScreenModel`, который прогревает его сам для своего
- * маленького набора тайтлов) и на экране деталей (грузится по факту открытия). Прогревать его для
- * КАЖДОГО тайтла, когда-либо прошедшего через любой список/поиск/похожее — почти чистая трата:
- * бэкдропы тяжелее постера на порядок, и на дисковом кэше в 1 ГБ (см.
- * [PerformanceTuning.ImageCache.DISK_CACHE_MAX_SIZE_BYTES]) быстро вытесняют как раз те
- * маленькие постеры, что реально переиспользуются между экранами — отсюда и повторные закачки
- * одного и того же при возврате на главную/в подборку.
- */
 internal fun Item.posterPrefetchImages(): List<PrefetchImage> = buildList {
     posters.medium.takeIf { it.isNotBlank() }?.let { url ->
         add(PrefetchImage(ImageCacheKeys.poster(type, id, PosterSize.Medium), url))
@@ -154,9 +101,6 @@ fun GenreDto.toDomain() = Genre(id = id, title = title, type = type)
 
 fun CountryDto.toDomain() = Country(id = id, title = title)
 
-// wide остаётся null, а не "": экраны фолбэчат `wide ?: big` (HeroBackdrop, TvHomeScreen и т.д.) —
-// с пустой строкой вместо null этот `?:` никогда бы не срабатывал, и при отсутствии широкого
-// кадра герой получал бы пустой url вместо постера.
 fun PostersDto?.toDomain() = Posters(
     small = this?.small ?: "",
     medium = this?.medium ?: "",
@@ -164,7 +108,6 @@ fun PostersDto?.toDomain() = Posters(
     wide = this?.wide,
 )
 
-// API отдаёт длительность в секундах — переводим в минуты.
 fun DurationDto.toDomain() = Duration(
     averageMinutes = average?.let { it / SECONDS_PER_MINUTE },
     totalMinutes = total?.let { it / SECONDS_PER_MINUTE },

@@ -11,13 +11,6 @@ private const val APK_MIME = "application/vnd.android.package-archive"
 
 private fun updateAuthority(context: Context): String = "${context.packageName}.updates"
 
-/**
- * Запускает системный установщик для скачанного APK.
- *
- * Без права «установка из неизвестных источников» сначала открывает его настройку для нашего
- * пакета: диалог обновления остаётся на экране, и после выдачи права пользователь жмёт
- * «Установить» ещё раз — APK уже скачан, повторного скачивания не будет.
- */
 fun installApk(context: Context, apk: File) {
     if (!context.packageManager.canRequestPackageInstalls()) {
         context.startActivity(

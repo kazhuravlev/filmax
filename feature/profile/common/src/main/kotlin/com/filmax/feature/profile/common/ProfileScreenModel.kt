@@ -17,8 +17,6 @@ import com.filmax.core.domain.user.UserRepository
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.presentation.BaseScreenModel
 
-// Экран профиля сводит аккаунт, воспроизведение, сервер API и кэш изображений/тайтлов в одной
-// модели — один короткий обработчик на каждую настройку, дробить их по классам ради лимита незачем.
 @Suppress("LongParameterList", "TooManyFunctions")
 class ProfileScreenModel(
     private val user: UserRepository,
@@ -33,7 +31,6 @@ class ProfileScreenModel(
     private val itemCache: ItemDetailsCache,
     private val techOverlay: TechOverlaySettings,
 ) : BaseScreenModel<ProfileState, ProfileSideEffect, ProfileEvent>(ProfileState()) {
-
     init {
         onFetchData()
         observeFavorites()
@@ -150,7 +147,6 @@ class ProfileScreenModel(
         playbackSettings.setQuality(quality)
     }
 
-    /** null — «Авто», то есть авто-подбор по порядку пресетов. */
     private fun setPreset(preset: TrackPreset?) = screenModelScope {
         playbackSettings.setPreset(preset)
     }
@@ -169,7 +165,6 @@ class ProfileScreenModel(
 
     override fun onFetchData() {
         screenModelScope { snapshot ->
-            // Профиль — основной запрос: от него зависит отрисовка экрана.
             when (val result = user.getProfile()) {
                 is RequestResult.Success ->
                     updateState { it.copy(loading = false, profile = result.data) }
@@ -180,12 +175,9 @@ class ProfileScreenModel(
                 }
             }
 
-            // Статистика — best-effort: ошибки не блокируют экран, поля остаются по умолчанию.
             (watching.getHistory() as? RequestResult.Success)?.let { history ->
                 updateState { it.copy(watchedCount = history.data.size) }
             }
-            // device/info не запрашиваем: бэкенд отвечает 500, а блок «Устройство» с экранов
-            // временно убран. Вернуть вместе с блоком, когда бэкенд починят.
         }
     }
 

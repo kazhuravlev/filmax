@@ -2,14 +2,8 @@ package com.filmax.core.ui.components
 
 import com.filmax.core.domain.error.AppError
 
-/** Заголовок и пояснение ошибки — то, что читает пользователь. */
 data class AppErrorText(val title: String, val message: String)
 
-/**
- * Единственное место, где [AppError] превращается в человеческие слова: карточка ошибки
- * TV-плеера и состояние ошибки экранов (`TvErrorState`) берут тексты отсюда и различаются
- * только оформлением. Держать два набора формулировок значило бы рано или поздно развести их.
- */
 fun appErrorText(error: AppError): AppErrorText = when (error) {
     AppError.Offline -> AppErrorText(
         "Нет подключения",

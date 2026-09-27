@@ -6,13 +6,6 @@ import androidx.navigation.toRoute
 import com.filmax.feature.player.common.navigation.TrailerRoute
 import com.filmax.feature.player.tv.TvTrailerScreen
 
-/**
- * Регистрирует TV-экран трейлера на ТОТ ЖЕ маршрут [TrailerRoute], что и мобильная фича.
- *
- * Отдельного ScreenModel нет: [TrailerRoute.url] — готовый временный HLS-плейлист (.m3u8) с
- * истекающим токеном, поэтому играем его как есть в общем интерфейсе плеера (см. `TvPlayer`),
- * а «Назад» пульта закрывает экран ([onBack]).
- */
 fun NavGraphBuilder.tvTrailerScreen(onBack: () -> Unit) {
     composable<TrailerRoute> { entry ->
         val route = entry.toRoute<TrailerRoute>()

@@ -4,14 +4,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavHostController
 
-/**
- * Единая реакция графа на смену auth-состояния (телефонный и TV-граф передают свои маршруты).
- *
- * popUpTo(0) — чистим ВЕСЬ стек, а не только сплэш: при протухании сессии посреди работы
- * онбординг вставал ПОВЕРХ авторизованных экранов («Назад» возвращал на них), а после logout
- * к онбордингу колбэка профиля добавлялся второй экземпляр от этого эффекта. Онбординг/главная
- * всегда единственный корень — «Назад» с онбординга закрывает приложение (гостевого режима нет).
- */
 @Composable
 internal fun AuthStateNavigation(
     isAuthenticated: Boolean?,

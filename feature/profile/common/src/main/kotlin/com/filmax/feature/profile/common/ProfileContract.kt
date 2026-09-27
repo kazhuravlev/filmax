@@ -9,32 +9,16 @@ import com.filmax.core.domain.user.model.UserProfile
 
 data class ProfileState(
     val profile: UserProfile? = null,
-    /** Кол-во просмотренного контента — из истории просмотров (`watching/history`). */
     val watchedCount: Int = 0,
-    /** Кол-во элементов в избранном — из локального кэша favorites. */
     val favoritesCount: Int = 0,
-    /** Максимальное качество устройства — из `device/info` (4K/HDR/HEVC/HD). */
     val quality: String? = null,
-    /** Пользовательские настройки воспроизведения (качество, пресет дорожек, интерфейс плеера). */
     val playback: PlaybackSettings = PlaybackSettings(),
-    /** Текущий хост API (см. [com.filmax.core.domain.network.ApiHostRepository]). */
     val apiHost: String = "",
-    /** Хосты-кандидаты для пункта настроек «Сервер API». */
     val availableApiHosts: List<String> = emptyList(),
-    /** Включён ли прокси изображений (см. [com.filmax.core.domain.cache.ImageProxyRepository]). */
     val imageProxyEnabled: Boolean = true,
-    /** Единый выключатель ВСЕЙ автоматической фоновой докачки — картинок и информации о тайтлах
-     * (см. [com.filmax.core.domain.cache.BackgroundFetchSettings]). */
     val backgroundFetchEnabled: Boolean = true,
-    /** Показывать ли оверлей с живой диагностикой фоновых очередей и сети в углу экрана (см.
-     * [com.filmax.core.domain.cache.TechOverlaySettings]). Не связан с [backgroundFetchEnabled] —
-     * только видимость, ничего не включает/выключает сам. */
     val techOverlayEnabled: Boolean = false,
-    /** Сколько сейчас реально занято на диске кэшем изображений — для подписи на кнопке сброса. */
     val imageCacheStats: ImageCacheStats = ImageCacheStats(),
-    /** Сколько тайтлов сейчас в кэше статической информации (см.
-     * [com.filmax.core.domain.cache.ItemDetailsCache]) — для подписи на кнопке сброса; растёт не
-     * сканированием, а счётчиком в самой реализации (см. `ItemDetailsCacheImpl`). */
     val itemCacheCount: Int = 0,
     val loading: Boolean = true,
     val error: String? = null,
@@ -44,10 +28,8 @@ sealed interface ProfileEvent {
     data object Logout : ProfileEvent
     data class SetQuality(val quality: QualityPreference) : ProfileEvent
 
-    /** Один из [PlaybackSettings.presetOptions]: null — «Авто». */
     data class SetPreset(val preset: TrackPreset?) : ProfileEvent
 
-    /** Забыть выбор дорожек (пресет/ручной) у всех тайтлов. */
     data object ResetTitleTracks : ProfileEvent
 
     data class SetPlayerUi(val ui: PlayerUi) : ProfileEvent
@@ -60,6 +42,5 @@ sealed interface ProfileEvent {
 }
 
 sealed interface ProfileSideEffect {
-    /** Сессия завершена — экран должен увести пользователя на онбординг. */
     data object LoggedOut : ProfileSideEffect
 }

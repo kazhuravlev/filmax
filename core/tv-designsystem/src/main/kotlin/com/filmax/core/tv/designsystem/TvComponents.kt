@@ -39,12 +39,6 @@ import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 
-/**
- * Кнопка для пульта. [primary] — главное действие: белая заливка, тёмный текст. Вторичная —
- * тёмная поверхность со светлым текстом. Цветной заливки в приложении нет: акцент = белый.
- */
-// Компонент дизайн-системы: параметры — его публичный API (Compose-конвенция: modifier — прямой
-// параметр, хвост — опции с дефолтами). Обёртка в data-класс сломала бы «минимальный API» и modifier.
 @Suppress("LongParameterList")
 @Composable
 fun TvButton(
@@ -53,7 +47,6 @@ fun TvButton(
     modifier: Modifier = Modifier,
     primary: Boolean = true,
     leadingIcon: ImageVector? = null,
-    /** null — иконка красится в контентный цвет кнопки, как обычно (моно-акцент проекта). */
     leadingIconTint: Color? = null,
     focusRequester: FocusRequester? = null,
 ) {
@@ -79,7 +72,6 @@ fun TvButton(
         colors = colors,
         shape = ButtonDefaults.shape(shape),
         scale = ButtonDefaults.scale(focusedScale = TvMetrics.FocusScale),
-        // Рамка + тёмный ореол снаружи: белая обводка на белой кнопке иначе неразличима.
         border = ButtonDefaults.border(
             focusedBorder = Border(BorderStroke(TvMetrics.FocusBorderWidth, TvFocus), shape = shape),
         ),
@@ -110,17 +102,6 @@ fun TvButton(
     }
 }
 
-/**
- * Фокусируемая карточка-контейнер. Содержимое (постер, плитка) передаётся слотом.
- *
- * Индикация фокуса — три сигнала сразу, и это не избыточность:
- * 1. масштаб — геометрия, работает поверх любой подложки;
- * 2. белая рамка — читается на тёмном;
- * 3. тёмный ореол СНАРУЖИ рамки — единственное, что спасает её на светлом постере.
- *
- * Рамка рисуется поверх контента (постер на `fillMaxSize` перекрыл бы обводку самого Surface)
- * и внутри Surface — чтобы масштаб фокуса применился и к ней.
- */
 @Composable
 fun TvFocusCard(
     onClick: () -> Unit,
@@ -129,10 +110,6 @@ fun TvFocusCard(
     focusRequester: FocusRequester? = null,
     content: @Composable () -> Unit,
 ) {
-    // focused держим в обычном State и читаем ТОЛЬКО внутри draw-лямбды ниже, поэтому смена
-    // фокуса инвалидирует лишь фазу отрисовки рамки, а не рекомпозицию content() (постера).
-    // Это критично для TV: при навигации пультом фокус прыгает по десяткам карточек, и лишняя
-    // рекомпозиция каждого PosterImage на каждый шаг фокуса заметно роняла FPS.
     val focused = remember { mutableStateOf(false) }
     Surface(
         onClick = onClick,
@@ -160,10 +137,6 @@ fun TvFocusCard(
     }
 }
 
-/**
- * Рисует ореол и рамку фокуса по контуру [shape]. Ореол идёт первым и шире — он ложится
- * под белую рамку тёмной подложкой, поэтому рамку видно и на светлом постере.
- */
 private fun DrawScope.drawFocusRing(shape: Shape) {
     val halo = Stroke(width = TvMetrics.FocusHaloWidth.toPx())
     val border = Stroke(width = TvMetrics.FocusBorderWidth.toPx())
@@ -189,16 +162,6 @@ private fun DrawScope.drawFocusRing(shape: Shape) {
     }
 }
 
-/**
- * Приглушает несфокусированные карточки ряда — монохромный аналог подсветки: сфокусированная
- * карточка светится в полную яркость, соседи отступают.
- *
- * Возвращает сам [State], а не разыменованное значение: тот же приём, что и с фокусом в
- * [TvFocusCard] выше — если читать альфу тут (в composable-функции), каждый кадр анимации
- * рекомпозирует всю карточку целиком (включая AsyncImage постера), а не только слой отрисовки.
- * Вызывающая сторона обязана читать `.value` внутри `Modifier.graphicsLayer { }`, а не
- * передавать его в `Modifier.alpha(...)` напрямую.
- */
 @Composable
 fun rememberDimAlpha(focused: Boolean): State<Float> =
     animateFloatAsState(

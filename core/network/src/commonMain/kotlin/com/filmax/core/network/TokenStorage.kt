@@ -5,13 +5,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/**
- * Хранилище OAuth-токенов на multiplatform-settings.
- * [settings] предоставляется платформой: SharedPreferences на Android, Keychain на iOS.
- *
- * Реактивность обеспечивается [MutableStateFlow] (KeychainSettings не наблюдаемы),
- * состояние сидируется из персистентного хранилища при создании синглтона.
- */
 class TokenStorage(
     private val settings: Settings,
 ) {
@@ -39,10 +32,6 @@ class TokenStorage(
         refreshState.value = null
     }
 
-    /**
-     * Засеивает пару токенов, только если хранилище пустое (demo-сборка стартует авторизованной).
-     * Единственный вход для такого засева: ключи и файл хранилища знает только этот класс.
-     */
     fun seedIfEmpty(accessToken: String, refreshToken: String) {
         if (accessState.value != null) return
         settings.putString(KEY_ACCESS, accessToken)
@@ -52,7 +41,6 @@ class TokenStorage(
     }
 
     companion object {
-        /** Имя платформенного хранилища (файл SharedPreferences / сервис Keychain) под токены. */
         const val PREFERENCES_NAME = "filmax_tokens"
 
         private const val KEY_ACCESS = "access_token"

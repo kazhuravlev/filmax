@@ -29,28 +29,8 @@ import com.filmax.core.designsystem.ShapePoster
 import com.filmax.core.ui.cache.CacheableImage
 import com.filmax.core.ui.cache.proxiedImageUrl
 
-/**
- * Включён ли прокси изображений ([com.filmax.core.domain.cache.ImageProxyRepository.enabled]) —
- * читается через `CompositionLocal`, а не через прямой `koinInject` + `collectAsState` в каждом
- * [PosterImage]: на экране одновременно живут десятки постеров, и подписка на `StateFlow` в
- * каждом из них означала десятки independent-коллекторов на один и тот же флаг. Значение
- * собирается ОДИН раз на корне приложения и прокидывается вниз, см. `MainActivity.kt`.
- *
- * Дефолт `false` — безопасное значение для превью/тестов, где провайдер не установлен.
- */
 val LocalImageProxyEnabled = compositionLocalOf { false }
 
-/**
- * Постер с ленивой загрузкой через Coil [AsyncImage]. Под обложкой всегда лежит статичный
- * градиент-плейсхолдер: он виден, пока постер грузится или если ссылка пустая/битая, а после
- * загрузки полностью перекрывается картинкой ([ContentScale.Crop] заполняет всю область).
- *
- * Намеренно используется лёгкий [AsyncImage], а НЕ `SubcomposeAsyncImage` с анимированным
- * shimmer: на Android TV десятки постеров в каруселях рендерятся одновременно, и subcomposition
- * на каждом + бесконечная shimmer-анимация на каждом грузящемся постере роняли FPS. Плейсхолдер
- * сделан статичным по той же причине — никакой `rememberInfiniteTransition` в hot-path списков.
- */
-// Компонент дизайн-системы: параметры — его публичный API (см. `TvPosterCard` в core:tv-designsystem).
 @Suppress("LongParameterList")
 @Composable
 fun PosterImage(
@@ -58,13 +38,7 @@ fun PosterImage(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     shape: Shape = ShapePoster,
-    // Дефолт берём из темы, а не из константы. Раньше здесь был зашит розовый #B4305A: любой
-    // вызов без явного accentColor красил плейсхолдер мимо схемы — цветное пятно там, где во
-    // всём приложении цвет только у постеров.
     accentColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    // Стабильный ключ кэша вида `entityType:entityId:subId` (см. `ImageCacheKeys` в core:ui) —
-    // независим от [url], поэтому смена источника (прямая ссылка/прокси) не рвёт кэш. null —
-    // старое поведение (кэш по url), для мест, которые ещё не завели свой ключ.
     cacheKey: String? = null,
 ) {
     val placeholder = remember(accentColor) { posterPlaceholderBrush(accentColor) }
@@ -73,9 +47,6 @@ fun PosterImage(
     val model = remember(cacheKey, effectiveUrl) {
         if (cacheKey != null) CacheableImage(key = cacheKey, url = effectiveUrl) else effectiveUrl
     }
-    // Битую ссылку помечаем знаком, а не оставляем пустую плашку: kino.watch отдаёт адрес постера
-    // всегда, даже когда файла нет (у подборки 967 это честный 404), и голый градиент читается
-    // как вечная загрузка. Ключ — url: при переиспользовании карточки в ленте флаг сбрасывается.
     var failed by remember(url) { mutableStateOf(false) }
     Box(modifier.clip(shape).background(placeholder), contentAlignment = Alignment.Center) {
         AsyncImage(
@@ -96,17 +67,13 @@ fun PosterImage(
     }
 }
 
-/** Знак «постера нет» — заметен на карточке в ряду и не спорит с обложками соседей. */
 private val BrokenPosterIconSize = 28.dp
 
-/** Нижний (тёмный) цвет градиента-заглушки постера. Нейтральный, как и вся палитра. */
 private val PlaceholderBottomColor = Color(0xFF0F0F0F)
 
-/** Конечная точка линейного градиента-заглушки (диагональ сверху-слева вниз-вправо). */
 private const val PLACEHOLDER_GRADIENT_END_X = 200f
 private const val PLACEHOLDER_GRADIENT_END_Y = 600f
 
-/** Тёмный градиент-заглушка постера (под обложкой и при ошибке загрузки). */
 private fun posterPlaceholderBrush(accentColor: Color): Brush =
     Brush.linearGradient(
         colors = listOf(accentColor.copy(alpha = 0.7f), PlaceholderBottomColor),
@@ -114,7 +81,6 @@ private fun posterPlaceholderBrush(accentColor: Color): Brush =
         end = Offset(PLACEHOLDER_GRADIENT_END_X, PLACEHOLDER_GRADIENT_END_Y),
     )
 
-/** Тот же градиент как самостоятельный composable — для превью дизайн-системы. */
 @Composable
 fun GradientPosterPlaceholder(accentColor: Color, modifier: Modifier = Modifier) {
     val placeholder = remember(accentColor) { posterPlaceholderBrush(accentColor) }

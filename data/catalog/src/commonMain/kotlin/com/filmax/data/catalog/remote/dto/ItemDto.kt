@@ -29,14 +29,9 @@ data class ItemDto(
     @SerialName("rating_percentage") val ratingPercentage: Double = 0.0,
     @SerialName("imdb_rating") val imdbRating: Double? = null,
     @SerialName("kinopoisk_rating") val kinopoiskRating: Double? = null,
-    // Числовой IMDb-id (не рейтинг!) — для сопоставления с TMDB ради фото актёров.
     @SerialName("imdb") val imdb: Int? = null,
     val finished: Boolean = false,
-    // Флаг «в видео есть реклама» — карточка постера рисует по нему предупреждающий бейдж.
     val advert: Boolean = false,
-    // Максимальное доступное качество — высота кадра в пикселях (2160/1080/720/480…), как в
-    // конфиге kino.watch (`quality_list`/`quality_list_w`: 4K/FHD/HD/SD). 0 — сервер не прислал
-    // (тайтл без загруженного видео) — бейдж качества на карточке в этом случае не рисуем.
     val quality: Int = 0,
     @SerialName("in_watchlist") val inWatchlist: Boolean = false,
     @SerialName("posters") val posters: PostersDto? = null,
@@ -44,7 +39,6 @@ data class ItemDto(
     val views: Int = 0,
     val genres: List<GenreDto> = emptyList(),
     val countries: List<CountryDto> = emptyList(),
-    // Фильмы отдают список видео в `videos`, сериалы — сезоны с эпизодами в `seasons`.
     val videos: List<MediaTrackDto>? = null,
     val seasons: List<SeasonDto>? = null,
     val trailer: TrailerDto? = null,
@@ -75,7 +69,6 @@ data class DurationDto(
 data class GenreDto(
     val id: Int,
     val title: String,
-    // Есть только в ответе api/v1/genres (жанры всех типов одним списком); внутри тайтла — нет.
     val type: String? = null,
 )
 
@@ -135,8 +128,6 @@ data class AudioDto(
     val channels: Int = 2,
     val lang: String? = null,
     val title: String? = null,
-    // Тип озвучки («Многоголосый», «Оригинал») и студия («BaibaKo») — из них оригинальный
-    // клиент kino.watch собирает подписи дорожек в плеере.
     val type: AudioMetaDto? = null,
     val author: AudioMetaDto? = null,
 )
@@ -150,9 +141,6 @@ data class AudioMetaDto(
 @Serializable
 data class SubtitleDto(
     val lang: String,
-    // url бывает null/отсутствует у части тайтлов (видели в проде на serials) — обязательное
-    // поле роняло парсинг ВСЕГО ответа items/{id}, и детали не открывались. Маппер такие
-    // субтитры отбрасывает: без ссылки дорожка бесполезна.
     val url: String? = null,
     val shift: Int = 0,
 )
@@ -167,7 +155,6 @@ data class TrailerDto(
 
 @Serializable
 data class PaginationDto(
-    // kino.watch: `total` — число страниц, `perpage` — элементов на странице.
     val total: Int = 0,
     val current: Int = 1,
     @SerialName("perpage") val perPage: Int = 50,

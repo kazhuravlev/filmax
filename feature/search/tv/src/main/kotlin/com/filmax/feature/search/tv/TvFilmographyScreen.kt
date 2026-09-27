@@ -45,17 +45,8 @@ import com.filmax.feature.search.common.FilmographyState
 import com.filmax.feature.search.common.itemTypeLabel
 import org.koin.androidx.compose.koinViewModel
 
-/** Сетка постеров: 4×190dp + 3×18dp зазора ложатся между safe area, как в TV-Каталоге. */
 private const val GRID_COLUMNS = 4
 
-/**
- * TV-«Фильмография» — сетка работ одного человека. Открывается из деталей по актёру или режиссёру;
- * тип запроса (роли или постановки) уже выбран маршрутом, экран лишь рисует выдачу поверх общего
- * [FilmographyScreenModel] (имя и признак режиссёра берутся из маршрута через SavedStateHandle).
- *
- * Своей кнопки «назад» нет — как и у других push-экранов TV: «Назад» это кнопка пульта, её
- * перехватывает [BackHandler] (тот же приём, что в TV-трейлере).
- */
 @Composable
 fun TvFilmographyScreen(
     onBack: () -> Unit,
@@ -78,7 +69,6 @@ fun TvFilmographyScreen(
     }
 }
 
-/** Шапка: имя человека и подпись-раздел. Имя приезжает в состоянии сразу, до ответа сети. */
 @Composable
 private fun FilmographyHeading(heading: String) {
     Column(Modifier.padding(horizontal = TvMetrics.SafeHorizontal)) {
@@ -118,7 +108,6 @@ private fun FilmographyGrid(items: List<Item>, onOpenItem: (Int) -> Unit) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(GRID_COLUMNS),
         modifier = Modifier.fillMaxSize().then(focus.containerModifier),
-        // Запас сверху/снизу под рамку фокуса крайних карточек — иначе клип сетки её срезает.
         contentPadding = PaddingValues(
             start = TvMetrics.SafeHorizontal,
             end = TvMetrics.SafeHorizontal,
@@ -160,14 +149,12 @@ private fun FilmographyPoster(
             contentDescription = item.title,
             modifier = posterModifier,
             shape = TvMetrics.PosterShape,
-            // Плейсхолдер-градиент по умолчанию цветной; в монохроме под постером — поверхность.
             accentColor = TvSurfaceContainer,
             cacheKey = ImageCacheKeys.poster(item.type, item.id, PosterSize.Medium),
         )
     }
 }
 
-/** Сбой сети — не «ничего не найдено»: сетка пуста по обеим причинам, а причины разные. */
 @Composable
 private fun FilmographyEmpty(error: String?) {
     Column(

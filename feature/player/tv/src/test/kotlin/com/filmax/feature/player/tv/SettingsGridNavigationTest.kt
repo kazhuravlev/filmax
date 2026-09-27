@@ -4,12 +4,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
-/**
- * Раскладка сериала с обеими стрелками: столбцы [Audio, Subtitle] [Speed, NextEpisode]
- * [Quality, Episodes] — индексы 0..5. Выключенные плитки задаются множеством индексов.
- */
 class SettingsGridNavigationTest {
-
     private val rows = SETTINGS_GRID_ROWS
     private val size = 6
 
@@ -46,7 +41,6 @@ class SettingsGridNavigationTest {
 
     @Test
     fun `up never changes the column`() {
-        // Раньше «вверх» из «Серии» при выключенном «Качество» уводил влево, в «Следующая серия».
         assertNull(up(5, disabled = setOf(4)))
         assertEquals(4, up(5))
         assertNull(up(4))
@@ -61,21 +55,17 @@ class SettingsGridNavigationTest {
 
     @Test
     fun `right prefers the same row and falls back to the other row of that column`() {
-        // Из «Скорость» (2) вправо: «Качество» (4) выключено — берём «Серии» (5) в том же столбце.
         assertEquals(5, right(2, disabled = setOf(4)))
     }
 
     @Test
     fun `right skips a fully disabled column`() {
-        // Столбец [Audio, Subtitle] целиком выключен: из транспорта входим и идём вправо мимо него.
         assertEquals(2, right(0, disabled = setOf(0, 1)))
-        // Из «Скорость» влево: столбец выключен — выходим к транспорту, а не застреваем.
         assertNull(left(2, disabled = setOf(0, 1)))
     }
 
     @Test
     fun `right into a short last column lands on its only tile`() {
-        // Сериал без следующей серии: [Audio, Subtitle] [Speed, Quality] [Episodes] — 5 плиток.
         val shortSize = 5
         assertEquals(4, SettingsGridNavigation.neighbourColumn(3, +1, shortSize, rows) { true })
         assertEquals(4, SettingsGridNavigation.neighbourColumn(2, +1, shortSize, rows) { true })

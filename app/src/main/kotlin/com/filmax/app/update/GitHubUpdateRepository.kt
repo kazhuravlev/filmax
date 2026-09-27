@@ -11,7 +11,6 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** Частичный DTO релиза GitHub — только поля, нужные для обновления. */
 @Serializable
 private data class ReleaseDto(
     @SerialName("tag_name") val tagName: String = "",
@@ -21,29 +20,16 @@ private data class ReleaseDto(
 @Serializable
 private data class AssetDto(
     @SerialName("name") val name: String = "",
-    /** API-URL ассета: с токеном отдаёт файл и из приватного репозитория. */
     @SerialName("url") val url: String = "",
     @SerialName("size") val size: Long = 0,
 )
 
-/**
- * Обновления приложения из GitHub Releases: релизный CI публикует `filmax-X.Y.Z.apk` на каждый
- * тег vX.Y.Z, здесь мы читаем `releases/latest`, сравниваем с установленной версией и качаем APK.
- *
- * HTTP — голый [HttpURLConnection], а не Ktor из core:network: тому нужен весь стек kino.watch
- * (авторизация, refresh-токены), а здесь два запроса к чужому хосту без общего состояния.
- *
- * Репозиторий приватный, поэтому запросы идут с токеном из `BuildConfig.UPDATE_GITHUB_TOKEN`
- * (fine-grained, только чтение contents). Без токена проверка тихо не находит обновлений.
- */
 class GitHubUpdateRepository(
     private val context: Context,
     private val ioDispatcher: CoroutineDispatcher,
 ) {
-
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** Свежий релиз, если он новее установленной версии; null — обновляться не на что. */
     suspend fun latestUpdate(): UpdateInfo? = withContext(ioDispatcher) {
         runCatching { fetchLatestRelease() }.getOrNull()?.let { release ->
             val version = release.tagName.removePrefix("v")
@@ -53,12 +39,6 @@ class GitHubUpdateRepository(
         }
     }
 
-    /**
-     * Качает APK релиза в кэш и возвращает файл. [onProgress] получает долю 0..1.
-     *
-     * Редирект на CDN обрабатываем вручную: `assets[].url` отвечает 302 на подписанный URL
-     * objects.githubusercontent.com, и туда токен передавать нельзя — CDN отвечает на него 400.
-     */
     suspend fun downloadApk(info: UpdateInfo, onProgress: suspend (Float) -> Unit): File =
         withContext(ioDispatcher) {
             val dir = File(context.cacheDir, UPDATES_DIR).apply { mkdirs() }
@@ -109,7 +89,6 @@ class GitHubUpdateRepository(
             connectTimeout = TIMEOUT_MS
             readTimeout = TIMEOUT_MS
             setRequestProperty("Accept", accept)
-            // GitHub API отклоняет запросы без User-Agent.
             setRequestProperty("User-Agent", "filmax-app")
             val token = BuildConfig.UPDATE_GITHUB_TOKEN
             if (authorized && token.isNotBlank()) {
@@ -127,10 +106,6 @@ class GitHubUpdateRepository(
     }
 }
 
-/**
- * Сравнение версий `X.Y.Z`: true, когда [candidate] новее [current]. Суффиксы сборок
- * (`-debug`, `-demo`) отбрасываются, недостающие компоненты считаются нулями.
- */
 internal fun isNewer(candidate: String, current: String): Boolean {
     val candidateParts = parseVersion(candidate)
     val currentParts = parseVersion(current)

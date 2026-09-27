@@ -8,13 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 private const val KEY_ENABLED = "enabled"
 
-/**
- * Персистентность на отдельном [Settings] (см. `BG_FETCH_SETTINGS` в DI) — свой файл, а не общий
- * с токенами/кэшем тайтлов/изображений: сброс любого из тех кэшей не должен заодно включать
- * фоновую загрузку обратно.
- */
 class BackgroundFetchSettingsImpl(private val settings: Settings) : BackgroundFetchSettings {
-
     private val enabledState = MutableStateFlow(settings.getBoolean(KEY_ENABLED, true))
     override val enabled: StateFlow<Boolean> = enabledState.asStateFlow()
 

@@ -12,17 +12,11 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 
-/** Готовые подборки `api/v1/items/{shortcut}` — единственные два, что есть у kino.watch. */
 internal enum class ItemsShortcut(val path: String) {
     Hot("hot"),
     New("new"),
 }
 
-/**
- * Параметры запроса витрины `api/v1/items`. Собраны в data-класс, потому что список аргументов
- * (тип, жанр, сортировка, страница, страна, качество, флаг завершённости, диапазоны) упёрся бы
- * в порог LongParameterList. [conditions] — уже готовые строки условий вида `year>=2020`.
- */
 internal data class ItemsQuery(
     val type: String,
     val sort: String,
@@ -35,7 +29,6 @@ internal data class ItemsQuery(
 )
 
 internal class CatalogApi(private val client: HttpClient) {
-
     suspend fun getItemDetails(id: Int, isBackground: Boolean = false): MovieInfoDto =
         client.get("api/v1/items/$id") {
             if (isBackground) markAsBackgroundNetworkRequest()
@@ -65,10 +58,6 @@ internal class CatalogApi(private val client: HttpClient) {
             query.countryId?.let { parameter("country", it) }
             query.quality?.let { parameter("quality", it) }
             query.finished?.let { parameter("finished", it) }
-            // conditions[] — повторяемый query-параметр. Ktor `parameter()` вызывает append(),
-            // который НЕ схлопывает одинаковые ключи, поэтому в URL реально уходит
-            // conditions[]=year>=2020&conditions[]=year<=2024 (скобки/операторы percent-энкодятся,
-            // PHP на стороне kino.watch декодирует `%5B%5D` обратно в массив).
             query.conditions.forEach { condition -> parameter("conditions[]", condition) }
         }.body()
 

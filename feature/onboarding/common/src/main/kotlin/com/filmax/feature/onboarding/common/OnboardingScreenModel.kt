@@ -13,7 +13,6 @@ class OnboardingScreenModel(
     private val auth: AuthRepository,
     private val user: UserRepository,
 ) : BaseScreenModel<OnboardingState, OnboardingSideEffect, OnboardingEvent>(OnboardingState()) {
-
     override fun dispatch(event: OnboardingEvent) {
         when (event) {
             OnboardingEvent.NextStep -> nextStep()
@@ -24,7 +23,6 @@ class OnboardingScreenModel(
         }
     }
 
-    /** Данные не грузятся при старте — код запрашивается при переходе на шаг авторизации. */
     override fun onFetchData() = Unit
 
     private fun nextStep() {
@@ -61,15 +59,12 @@ class OnboardingScreenModel(
         val timeoutMs = expiresIn * MILLIS_PER_SECOND
         while (System.currentTimeMillis() - startMs < timeoutMs) {
             delay(intervalSec * MILLIS_PER_SECOND)
-            // Success — авторизовались; Error — ещё не подтверждено, продолжаем поллинг.
             val result = auth.pollForToken(
                 code = code,
                 username = "",
                 timestamp = System.currentTimeMillis() / MILLIS_PER_SECOND,
             )
             if (result is RequestResult.Success) {
-                // Сообщаем бэку о клиенте (kino.watch device/notify) сразу после входа —
-                // best-effort: ошибка регистрации не должна мешать авторизации.
                 registerDevice()
                 updateState { it.copy(polling = false) }
                 postSideEffect(OnboardingSideEffect.Authenticated)

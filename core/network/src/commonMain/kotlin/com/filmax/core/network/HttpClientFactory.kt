@@ -39,12 +39,6 @@ val networkJson = Json {
     coerceInputValues = true
 }
 
-/**
- * Общий Ktor [HttpClient]. [engine] предоставляется платформой
- * (OkHttp на Android — с Chucker-перехватчиком, Darwin на iOS).
- */
-// Намеренно ловим Throwable в refreshTokens и «глотаем» его: любой транзиентный сбой обмена не
-// должен ронять клиент/сессию (как и граница ошибок в safeRequest). CancellationException — выше.
 @Suppress("TooGenericExceptionCaught", "SwallowedException")
 fun buildHttpClient(
     engine: HttpClientEngine,
@@ -69,25 +63,13 @@ fun buildHttpClient(
                     BearerTokens(token, tokenStorage.getRefreshToken().orEmpty())
                 }
             }
-            // Access протух → Ktor вызывает refreshTokens. Меняем refresh_token на новую пару
-            // токенов через OAuth-эндпоинт и повторяем исходный запрос с новым access — без
-            // форс-релогина. Запрос обновления идёт через переданный [client] (у него отключён
-            // повторный Auth), поэтому рекурсии на сам refresh-эндпоинт нет.
-            //
-            // Особый случай — свежий вход device-flow: кэш loadTokens на старте был пуст,
-            // первый запрос ушёл без заголовка и получил 401; тогда refresh_token в хранилище
-            // ещё «старый», обмен даст актуальные токены (или, если его нет, — logout).
             refreshTokens {
-                // Если в хранилище уже более свежий access, чем протухший (свежий device-логин —
-                // кэш loadTokens на старте был пуст; либо параллельный запрос уже обновил токены) —
-                // используем его без сетевого обмена (не тратим refresh_token зря).
                 val storedAccess = tokenStorage.getAccessToken()
                 if (!storedAccess.isNullOrBlank() && storedAccess != oldTokens?.accessToken) {
                     return@refreshTokens BearerTokens(storedAccess, tokenStorage.getRefreshToken().orEmpty())
                 }
                 val refresh = tokenStorage.getRefreshToken()
                 if (refresh.isNullOrBlank()) {
-                    // Нечем обновляться — единый сценарий logout, без цикла 401.
                     tokenStorage.clear()
                     return@refreshTokens null
                 }
@@ -103,12 +85,9 @@ fun buildHttpClient(
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (rejected: ClientRequestException) {
-                    // 4xx от OAuth (invalid_grant): refresh_token действительно невалиден → logout.
                     tokenStorage.clear()
                     null
                 } catch (transient: Throwable) {
-                    // Транзиентный сбой (offline/timeout/5xx): НЕ разлогиниваем — обновление не удалось,
-                    // исходный запрос вернёт 401, но сессия сохранится до восстановления сети.
                     null
                 }
             }
@@ -118,56 +97,17 @@ fun buildHttpClient(
 
     if (enableLogging) {
         install(Logging) {
-            // Logger.SIMPLE пишет через println — на Android это уходит в logcat (тег System.out).
-            // Дефолтный логгер на JVM идёт в SLF4J, провайдера в приложении нет, и логи молча
-            // терялись: в logcat было только «SLF4J(W): noProviders», а запросов — ни одного.
             logger = SecretMaskingLogger(Logger.SIMPLE)
             level = LogLevel.BODY
-            // Bearer-заголовок в логи не пишем. Токены в URL режет SecretMaskingLogger:
-            // sanitizeHeader на query-параметры не распространяется.
             sanitizeHeader { header -> header.equals(HttpHeaders.Authorization, ignoreCase = true) }
         }
     }
 
     defaultRequest {
-        // Читаем hostRepository.currentHost на каждый запрос (а не один раз при сборке клиента):
-        // блок defaultRequest выполняется заново для каждого исходящего запроса, поэтому смена
-        // хоста (ручная или через дискавери) подхватывается без пересоздания HttpClient.
-        // Хвостовой слеш — как у прежнего BASE_URL: относительные пути ("api/v1/...") иначе
-        // резолвятся без последнего сегмента хоста.
         url(hostRepository.currentHost.value + "/")
     }
 }
 
-/**
- * Таймауты + тихие ретраи основного API-клиента.
- *
- * Без [HttpTimeout] таймаут был бесконечным (OkHttp callTimeout не выставлен): подвисший на
- * приёме данных сервер вешал запрос навечно — пользователь видел вечный спиннер вместо ошибки,
- * по которой экран мог бы предложить Retry. requestTimeoutMillis можно смело выставлять
- * глобально: этот клиент не используется для больших закачек (обновление приложения качает APK
- * через голый HttpURLConnection в :app, см. GitHubUpdateRepository; картинки идут через отдельный
- * OkHttp в FilmaxImageLoaderFactory) — здесь только короткие JSON-ответы kino.watch.
- *
- * [HttpRequestRetry]: единичный сетевой «чих» (обрыв сокета, 502/503 от балансера) не должен
- * долетать до пользователя как ошибка экрана — до
- * [PerformanceTuning.NetworkClient.MAX_RETRIES] попыток он тихо повторяется сам.
- * Ретраим только идемпотентные GET/HEAD: повторный POST (история просмотра, закладки) на
- * транзиентной ошибке рискует продублировать действие, если сервер всё-таки применил первый
- * запрос. 401 сюда не попадает — retryIf смотрит только на 5xx, а обновление токена и повтор
- * запроса с новым access — забота плагина Auth выше по цепочке.
- */
-/** Любой НЕ фоновый запрос основного API-клиента — это «пользователь сейчас чем-то занят» для
- * фоновой закачки (см. [ImagePrefetchThrottle]): она ждёт 10 секунд после такой активности,
- * чтобы не отъедать канал у того, что реально нужно прямо сейчас. Запросы, помеченные через
- * [markAsBackgroundNetworkRequest], сами cooldown не продлевают: иначе очередь тайтлов после
- * каждого короткого JSON-ответа блокировала бы свой следующий элемент ещё на 10 секунд.
- *
- * Заодно копит приблизительный трафик API-клиента в [NetworkStats] — источник строки «сеть» в
- * оверлее «Показывать технические данные». Именно приблизительный: берём заявленный
- * `Content-Length` ответа, а не реально прочитанные байты (в отличие от `FilmaxImageLoaderFactory`,
- * где тело оборачивается явным `ForwardingSource`) — для короткого JSON этого API разница не имеет
- * значения, а оборачивать тело ради диагностической цифры здесь не стоит своей сложности. */
 private fun HttpClientConfig<*>.installActivityTracking() {
     install(
         createClientPlugin("ActivityTrackingPlugin") {
@@ -195,10 +135,6 @@ private fun HttpClientConfig<*>.installResilience() {
     }
 }
 
-/**
- * Ответ OAuth-эндпоинта при обмене refresh_token (те же поля, что и `TokenDto` в `:data:auth`;
- * дублируется локально, чтобы сетевой слой не зависел от `:data:auth`).
- */
 @Serializable
 private data class OAuthTokenResponse(
     @SerialName("access_token") val accessToken: String,
@@ -208,5 +144,4 @@ private data class OAuthTokenResponse(
 
 private const val HTTP_SERVER_ERROR = 500
 
-/** GET/HEAD безопасно повторять — они не меняют состояние на сервере. */
 private val IDEMPOTENT_METHODS = listOf(HttpMethod.Get, HttpMethod.Head)

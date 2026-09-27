@@ -15,7 +15,6 @@ object TvBookmarksRoute
 @Serializable
 object TvHistoryRoute
 
-/** Все карточки разделов ведут в карточку тайтла: там есть и продолжение, и выбор серий. */
 fun NavGraphBuilder.tvWatchingScreen(
     onOpenItem: (Int) -> Unit,
 ) {

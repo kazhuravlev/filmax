@@ -14,7 +14,6 @@ class CollectionDetailScreenModel(
 ) : BaseScreenModel<CollectionDetailState, CollectionDetailSideEffect, CollectionDetailEvent>(
     CollectionDetailState(),
 ) {
-
     private val route = savedStateHandle.toRoute<CollectionDetailRoute>()
 
     init {
@@ -27,14 +26,6 @@ class CollectionDetailScreenModel(
         }
     }
 
-    /**
-     * ScreenModel пересоздаётся на каждый заход в подборку (в отличие, например, от
-     * `LibraryScreenModel`), поэтому без [CollectionItemsCache] повторное открытие той же
-     * подборки всегда рисовало бы полноэкранный спиннер поверх того, что зритель только что видел.
-     * Кэш красит сетку мгновенно, а первая страница тут же тихо перечитывается с сервера —
-     * подборку могли изменить с другого экрана, и кэш лишь «быстрая картинка», а не повод
-     * пропустить запрос. Полноэкранный спиннер остаётся только когда кэша нет вовсе.
-     */
     override fun onFetchData() {
         val cached = CollectionItemsCache.get(route.collectionId)
         screenModelScope { _ ->
@@ -59,18 +50,10 @@ class CollectionDetailScreenModel(
                     showError(result)
                     showServerRetryNotice()
                 }
-                // cached != null: контент уже показан из кэша — тихий сбой ревалидации не должен
-                // ни стирать его, ни тревожить уведомлением; следующее открытие попробует снова.
             }
         }
     }
 
-    /**
-     * Догрузка следующей страницы — тот же приём, что и `LibraryScreenModel.loadMoreFolderItems`:
-     * идемпотентна (повторный вызов во время загрузки/после конца списка — no-op), дедуплицирует
-     * по id (страницы kino.watch могут пересечься — иначе дубль id уронил бы LazyGrid по key), а
-     * при сбое не двигает счётчик страницы, чтобы следующая попытка повторила тот же номер.
-     */
     private fun loadMore() {
         val current = state
         if (current.loading || current.loadingMore || current.endReached) return
@@ -93,7 +76,6 @@ class CollectionDetailScreenModel(
     }
 
     private companion object {
-        /** Первая страница подборки (нумерация kino.watch — с единицы). */
         const val FIRST_PAGE = 1
     }
 }

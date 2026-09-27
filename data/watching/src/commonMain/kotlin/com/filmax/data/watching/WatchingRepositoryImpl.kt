@@ -26,11 +26,8 @@ import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
 private fun HistoryEntryDto.toDomain(): WatchHistory {
-    // Длительность берём у самой серии; у фильма media.duration тоже заполнен, а item.duration —
-    // это средняя длительность по тайтлу, годная только как запасной вариант.
     val duration = media?.duration?.takeIf { it > 0 }
         ?: item.duration?.average?.takeIf { it > 0 }?.toInt()
-    // /history отдаёт тайтл без жанров/рейтинга/трейлера — докачиваем в фоне, см. ItemDiscovery.
     ItemDiscovery.discovered(item.id)
     return WatchHistory(
         itemId = item.id,
@@ -39,12 +36,9 @@ private fun HistoryEntryDto.toDomain(): WatchHistory {
         posterWide = item.posters?.wide,
         episodeThumbnail = media?.thumbnail,
         progress = WatchProgress(
-            // Запись в `/history` — по определению «в процессе»: досмотренное сервер оттуда убирает.
             status = WatchStatus.InProgress,
             timeSeconds = time,
             durationSeconds = duration,
-            // `number`, а не id: тем же числом kino.watch принимает прогресс в marktime и
-            // им же плеер выбирает дорожку.
             videoId = media?.number,
             season = media?.snumber?.takeIf { it > 0 },
         ),
@@ -52,7 +46,6 @@ private fun HistoryEntryDto.toDomain(): WatchHistory {
 }
 
 private fun WatchingItemDto.toDomain(isSeries: Boolean): WatchingItem {
-    // watching/{type} тоже без полных данных — тот же повод на фоновую докачку, что и в history.
     ItemDiscovery.discovered(id)
     return WatchingItem(
         itemId = id,
@@ -65,53 +58,18 @@ private fun WatchingItemDto.toDomain(isSeries: Boolean): WatchingItem {
     )
 }
 
-// Реализация всего контракта WatchingRepository плюс кэш истории при нём — дробить незачем.
 @Suppress("TooManyFunctions")
 internal class WatchingRepositoryImpl(
     private val api: WatchingApi,
 ) : WatchingRepository {
-
-    /**
-     * Последний успешный ответ [getHistory] и момент его получения (монотонные часы, как и в
-     * `CatalogRepositoryImpl.recentForceRefresh`). Историю читают ТРИ экрана подряд по одному и
-     * тому же пути пользователя: главная («Продолжить просмотр») → «Я смотрю» → детали тайтла
-     * (позиция для кнопки «Продолжить») — и каждый раньше ходил за ней в сеть заново. Между ними
-     * история не меняется (единственный её мутатор в процессе — сам плеер и очистка, см.
-     * [invalidateHistory]), поэтому повторные чтения в течение [HISTORY_TTL] отдаются из памяти
-     * мгновенно. [historyMutex] защищает пару кэш/in-flight, [inFlightHistory] схлопывает
-     * одновременные запросы (главная и прогрев/библиотека стартуют почти разом) в один поход в сеть.
-     */
     private var cachedHistory: CachedHistory? = null
     private var inFlightHistory: Deferred<RequestResult<List<WatchHistory>>>? = null
     private val historyMutex = Mutex()
 
-    /** Свой скоуп для общего in-flight запроса: он не должен отменяться вместе с тем экраном,
-     * который его запустил первым, пока второй читатель ещё ждёт результат. */
     private val historyScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private class CachedHistory(val history: List<WatchHistory>, val fetchedAt: TimeMark)
 
-    /**
-     * История с ТОЧНОЙ позицией — из `api/v1/history`, а не из `watching/{type}`.
-     *
-     * `watching/{type}` (см. [getWatchingTitles]) не отдаёт таймкод вовсе — годится для списка
-     * «в процессе», но не для точной позиции конкретного видео. `api/v1/history` отдаёт `time`
-     * по каждому видео, саму серию (`media`) с её кадром и длительностью — и уже отсортирован
-     * сервером по свежести. Источник для [com.filmax.core.domain.watching.model.Continuation].
-     *
-     * История ведётся ПО СЕРИЯМ: один сериал приходит несколькими записями (s1e1, s1e2, …),
-     * а зрителю нужен один тайтл — тот, на котором он остановился. Страница — это `perpage` СЫРЫХ
-     * записей серий, а не тайтлов. Раньше бралась ровно одна страница: марафон или массовая отметка
-     * серий одного сериала «просмотрено» кладёт десятки его записей подряд (все свежие) и вытесняет
-     * с первой страницы вообще все остальные тайтлы — «Я смотрю» схлопывался в один сериал, хотя
-     * пользователь смотрел кучу другого. Поэтому листаем страницы, пока не наберём разумное число
-     * РАЗНЫХ тайтлов или не упрёмся в потолок страниц (свой сериал-марафон не должен грузить сервер
-     * бесконечно).
-     *
-     * Дедупликация по первому вхождению обязательна: сервер отдаёт список от свежего к старому,
-     * поэтому первая запись тайтла и есть последняя серия. Без неё ряд получал дублирующиеся
-     * ключи и Compose падал с «Key … was already used».
-     */
     override suspend fun getHistory(forceRefresh: Boolean): RequestResult<List<WatchHistory>> {
         val job = historyMutex.withLock {
             if (!forceRefresh) {
@@ -151,22 +109,12 @@ internal class WatchingRepositoryImpl(
         return result
     }
 
-    /**
-     * Локальная мутация прогресса (marktime/toggle/очистка) — кэш истории протух: следующий
-     * [getHistory] обязан сходить в сеть, иначе «Продолжить» показал бы позицию до просмотра.
-     */
     private suspend fun invalidateHistory() {
         historyMutex.withLock { cachedHistory = null }
     }
 
-    /** `total` у kino.watch — число страниц, а не число элементов (как и в остальных списках). */
     private fun PaginationDto.hasNextPage(): Boolean = current < total
 
-    /**
-     * Тайтлы «в процессе» — одним запросом на [type], без обхода `/history` и без резолва
-     * каждого тайтла через `getItemDetails`. Точной позиции тут нет (см. [WatchingItem]) — она
-     * не нужна для списка, только при открытии конкретного тайтла.
-     */
     override suspend fun getWatchingTitles(
         type: WatchingListType,
         subscribed: Boolean,
@@ -226,24 +174,14 @@ internal class WatchingRepositoryImpl(
         safeRequest { api.markAllNotificationsRead() }
 
     private companion object {
-        // kino.watch отдаёт временные метки в секундах — переводим в миллисекунды.
         const val MILLIS_IN_SECOND = 1000
 
-        /** Сколько РАЗНЫХ тайтлов достаточно набрать в историю — столько же ждали от одной страницы. */
         const val HISTORY_TARGET_TITLES = 20
 
-        /**
-         * Размер страницы сырых записей (`perpage`). Раньше страница была серверной по умолчанию
-         * (20 записей), и марафон по одному сериалу заставлял листать до [HISTORY_MAX_PAGES] страниц
-         * ПОСЛЕДОВАТЕЛЬНО — «Я смотрю» и детали ждали этот хвост секундами. Сотня записей за раз
-         * почти всегда закрывает [HISTORY_TARGET_TITLES] тайтлов одним запросом.
-         */
         const val HISTORY_PER_PAGE = 100
 
-        /** Потолок страниц сырых записей серий — предохранитель от бесконечной пагинации марафона. */
         const val HISTORY_MAX_PAGES = 3
 
-        /** Сколько живёт кэш истории в памяти без локальных мутаций — см. [cachedHistory]. */
         val HISTORY_TTL = 5.minutes
     }
 }

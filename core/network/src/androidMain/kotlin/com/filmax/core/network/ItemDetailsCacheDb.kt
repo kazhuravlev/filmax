@@ -25,45 +25,9 @@ private const val TABLE_META = "meta"
 private const val META_KEY_TTL = "ttl"
 private const val MILLIS_PER_DAY = 24L * 60 * 60 * 1000
 
-/** Жёсткий потолок на количество строк — подстраховка на случай экстремального TTL/трафика:
- * TTL сам чистит устаревшее, но не ограничивает количество *свежих* записей. */
 private const val MAX_ENTRIES = 2000
 
-/**
- * Кэш статической информации о тайтлах (`items/{id}`) на Android поверх `SQLiteOpenHelper`,
- * пришедший на замену [ItemDetailsCacheImpl] (тот держался на `SharedPreferences`/`Settings`).
- *
- * Почему не `SharedPreferences`:
- * - файл `filmax_item_cache` не знал очистки — записи только протухали логически (TTL проверялся
- *   при чтении), а физически лежали в файле вечно, так что XML рос без ограничений;
- * - `SharedPreferences` целиком держит содержимое файла в памяти процесса — с тайтлами по
- *   несколько десятков КБ JSON на запись это быстро превращалось в мегабайты в RAM;
- * - каждая запись (`putString`/`putLong`) — это перезапись ВСЕГО XML-файла целиком, а не одной
- *   строки, поэтому стоимость записи росла вместе с размером кэша;
- * - `Settings`/`SharedPreferencesSettings` создавался с `createdAtStart = true` внутри `startKoin`
- *   на главном потоке, и самый первый `get()`/`getString` синхронно парсил многомегабайтный XML —
- *   это добавляло секунды к старту приложения.
- *
- * SQLite решает все четыре проблемы разом: строки физически удаляются (TTL при чтении + жёсткий
- * потолок [MAX_ENTRIES] при инициализации), в память ничего целиком не грузится, запись INSERT/
- * DELETE — точечная операция на диске, а сам файл БД не читается синхронно на главном потоке.
- *
- * Конструктор нарочно не трогает диск: `SQLiteOpenHelper` открывает/создаёт файл БД лениво, только
- * при первом вызове `getWritableDatabase()`/`getReadableDatabase()`, поэтому создание инстанса —
- * это просто сохранение ссылок, без I/O. Это важно, потому что кэш собирается с
- * `createdAtStart = true` внутри `startKoin` на главном потоке — там же, где раньше висел
- * синхронный парсинг XML. Провязка [ItemDetailsCacheAccess.cache] в [init] остаётся синхронной
- * (см. DI): `ItemDto.toDomain()` (`data:catalog`) кладёт тайтлы в кэш напрямую, без Koin, и должен
- * увидеть готовую реализацию с первого же тайтла — а вот открытие самой БД, чтение TTL из
- * `meta`, чистка протухших строк и подсчёт `count` уходят в фоновую корутину ([initDeferred]) на
- * единственном потоке записи ([writeDispatcher]), и suspend-методы просто дожидаются её.
- *
- * Миграции данных из старого `filmax_item_cache` (SharedPreferences) нет и не будет — старый файл
- * просто перестаёт использоваться и позже удаляется отдельной разовой очисткой (см. соответствующую
- * задачу), а не переносится: кэш восстанавливается сам по себе по мере обращений к API.
- */
 class ItemDetailsCacheDb(context: Context) : ItemDetailsCache {
-
     private val dbHelper = Helper(context.applicationContext)
 
     private val ttlState = MutableStateFlow(ItemCacheTtl.MONTH)
@@ -72,21 +36,12 @@ class ItemDetailsCacheDb(context: Context) : ItemDetailsCache {
     override val ttl: StateFlow<ItemCacheTtl> = ttlState.asStateFlow()
     override val count: StateFlow<Int> = countState.asStateFlow()
 
-    // Единственный поток на все записи/удаления — сериализует их между собой, чтобы не ловить
-    // гонки на `INSERT OR REPLACE` из маппера (сетевые потоки) и на удалении протухших строк
-    // из get() (произвольный вызывающий поток). Чтения (get/count) идут через обычный
-    // Dispatchers.IO — SQLiteDatabase сам потокобезопасен на чтение.
     private val writeDispatcher = Dispatchers.IO.limitedParallelism(1)
     private val scope = CoroutineScope(SupervisorJob() + writeDispatcher)
 
-    // Ленивая инициализация: открывает БД, подтягивает TTL из meta, чистит протухшие по текущему
-    // TTL строки и обрезает хранилище до MAX_ENTRIES — всё это происходит один раз в фоне, а не
-    // в конструкторе. suspend-методы дожидаются её через await(), remember() (не suspend) —
-    // через launch в writeScope.
     private val initDeferred: Deferred<Unit> = scope.async { performInit() }
 
     init {
-        // Синхронная провязка — до старта Koin и до открытия БД, см. doc-комментарий класса.
         ItemDetailsCacheAccess.cache = this
     }
 
@@ -110,8 +65,6 @@ class ItemDetailsCacheDb(context: Context) : ItemDetailsCache {
         } ?: ItemCacheTtl.MONTH
         ttlState.value = loadedTtl
 
-        // TTL == NEVER (days == null) — кэш выключен, но существующие строки не трогаем: если
-        // пользователь снова включит кэш, они ещё смогут пригодиться (или протухнут сами).
         val maxAgeDays = loadedTtl.days
         if (maxAgeDays != null) {
             val horizon = currentTimeMillis() - maxAgeDays * MILLIS_PER_DAY
@@ -241,8 +194,6 @@ class ItemDetailsCacheDb(context: Context) : ItemDetailsCache {
     }
 
     override suspend fun clear() {
-        // TTL — настройка из meta, не данные кэша: clear() чистит только entries, meta не трогаем,
-        // поэтому «Сбросить кэш» не откатывает TTL обратно к «Месяц» (как и в старой реализации).
         initDeferred.await()
         withContext(writeDispatcher) {
             dbHelper.writableDatabase.delete(TABLE_ENTRIES, null, null)

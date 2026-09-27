@@ -9,7 +9,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 object TvProfileRoute
 
-/** Push-экран «Настройки устройства» (открывается из TV-Профиля). */
 @Serializable
 object TvDeviceSettingsRoute
 

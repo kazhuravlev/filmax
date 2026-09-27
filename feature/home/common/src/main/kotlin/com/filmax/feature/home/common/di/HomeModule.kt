@@ -7,8 +7,6 @@ import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 
 val homeModule = module {
-    // Кэш последнего успешного снимка главной — single, чтобы переживать пересоздание
-    // ScreenModel (офлайн-устойчивость #42).
     single { LastValueCache<HomeSnapshot>() }
     viewModelOf(::HomeScreenModel)
 }

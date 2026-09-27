@@ -2,47 +2,31 @@ package com.filmax.app.update
 
 import java.io.File
 
-/** Свежий релиз из GitHub Releases, который новее установленной версии. */
 data class UpdateInfo(
-    /** Версия релиза без «v»: `1.4.0`. */
     val version: String,
-    /** API-URL APK-ассета (`assets[].url`) — работает и для приватного репозитория. */
     val assetUrl: String,
-    /** Размер APK в байтах — для прогресса скачивания. */
     val sizeBytes: Long,
 )
 
 data class AppUpdateState(
-    /** null — обновления нет (или проверка не прошла), диалог не показывается. */
     val update: UpdateInfo? = null,
-    /** Пользователь закрыл диалог «Позже» — до перезапуска приложения больше не предлагаем. */
     val dismissed: Boolean = false,
-    /** Идёт ручная проверка из Профиля — на экране диалог ожидания. */
     val checking: Boolean = false,
-    /** Ручная проверка закончилась и обновлять нечего: молчать в ответ на тап нельзя. */
     val upToDate: Boolean = false,
-    /**
-     * Можно ли поставить найденный APK поверх текущей сборки. false в debug/demo: у них свой
-     * applicationId, и релизный APK для них не обновление, а вторая установка рядом.
-     */
     val installable: Boolean = true,
     val downloading: Boolean = false,
-    /** Прогресс скачивания 0..1. */
     val progress: Float = 0f,
     val downloadedApk: File? = null,
-    /** Ошибка скачивания — показывается в диалоге с кнопкой «Повторить». */
     val downloadError: Boolean = false,
 )
 
 sealed interface AppUpdateEvent {
-    /** Проверить обновления по требованию — строка «Проверить обновления» в Профиле. */
     data object Check : AppUpdateEvent
 
     data object Download : AppUpdateEvent
 
     data object Install : AppUpdateEvent
 
-    /** «Позже» — спрятать диалог до следующего запуска. */
     data object Dismiss : AppUpdateEvent
 }
 

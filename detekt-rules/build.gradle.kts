@@ -1,7 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-// Кастомные detekt-правила Filmax. Чистый JVM-модуль: намеренно НЕ применяет filmax.detekt,
-// иначе возникла бы циклическая зависимость через detektPlugins(project(":detekt-rules")).
 plugins {
     alias(libs.plugins.kotlin.jvm)
 }

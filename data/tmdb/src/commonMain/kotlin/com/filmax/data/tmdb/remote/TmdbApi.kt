@@ -14,12 +14,6 @@ import io.ktor.client.request.url
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
-/**
- * Клиент TMDB. Отдельный от kino.watch: другой хост и свой api_key. Bearer-авторизации нет —
- * поэтому НЕ переиспользуем общий Ktor-клиент (у него плагин Auth с токеном kino.watch), а строим
- * свой поверх того же движка. Язык `ru-RU`: имена персонажей и актёров придут по-русски, где TMDB
- * их локализовал, иначе — на оригинале.
- */
 internal class TmdbApi(
     engine: HttpClientEngine,
     private val apiKey: String,
@@ -35,7 +29,6 @@ internal class TmdbApi(
         }
     }
 
-    /** api_key и язык — в каждый запрос: внутри defaultRequest `parameter` недоступен (другой receiver). */
     private fun HttpRequestBuilder.commonParams() {
         parameter("api_key", apiKey)
         parameter("language", "ru-RU")

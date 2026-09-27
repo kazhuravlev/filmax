@@ -13,17 +13,12 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 
-// Диспетчер IO раздаётся отсюда, а не берётся по месту использования: с инжектом его можно
-// подменить в тестах. DI-модуль — единственная легитимная точка прямого Dispatchers.IO,
-// но правило исключений не делает, поэтому Suppress именно здесь.
 @Suppress("InjectDispatcher")
 val appModule = module {
     factory { ContinuationResolver(catalog = get()) }
     viewModelOf(::RootScreenModel)
     single { GitHubUpdateRepository(androidContext(), Dispatchers.IO) }
     viewModel { AppUpdateScreenModel(get(), Dispatchers.IO) }
-    // single, а не factory: одноразовость прогрева за процесс держится и на внутреннем флаге
-    // AppWarmup, и на том, что это один и тот же инстанс на все вызовы get() из onCreate.
     single {
         AppWarmup(
             auth = get(),

@@ -31,8 +31,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 
-// Экран деталей сводит воспроизведение, избранное, загрузки и подборки в одной модели —
-// дробить её ради лимитов нельзя: состояние и обработчики читаются только вместе.
 @Suppress("LongParameterList", "TooManyFunctions")
 class DetailsScreenModel(
     savedStateHandle: SavedStateHandle,
@@ -44,23 +42,16 @@ class DetailsScreenModel(
     private val user: UserRepository,
     private val search: SearchRepository,
 ) : BaseScreenModel<DetailsState, DetailsSideEffect, DetailsEvent>(DetailsState()) {
-
     private val route = savedStateHandle.toRoute<DetailsRoute>()
 
-    /** Состояние строки «Буду смотреть» В ДИАЛОГЕ подборок — настоящая подборка
-     * [FavoritesRepository], отдельно от кнопки hero (см. [toggleWantToWatch]). */
     private var isInFavoritesFolder = false
 
-    /** Id обычных подборок (без «Буду смотреть»), в которых найден тайтл — см. [scanMemberships]. */
     private var scannedMemberships: Set<Int> = emptySet()
 
-    /** Не долбим сеть повторно, если фокус ещё раз вернётся на «Смотреть» — см. [prefetchPlayback]. */
     private var playbackPrefetched = false
 
-    /** Кадры серий прогреты — повторное открытие браузера серий их не переспрашивает. */
     private var episodeThumbnailsWarmed = false
 
-    /** Текущая загрузка continuation — см. doc [loadContinuation] и [awaitContinuation]. */
     private var continuationJob: Deferred<Continuation?>? = null
 
     init {
@@ -80,11 +71,6 @@ class DetailsScreenModel(
         }
     }
 
-    /**
-     * См. [DetailsEvent.PrefetchEpisodeThumbnails]. Порядок — как в плейлисте: браузер
-     * открывается на первом сезоне, его кадры и нужны первыми. Серии без кадра (у kino.watch
-     * thumbnail часто пустой) пропускаем — прогревать нечего.
-     */
     private fun prefetchEpisodeThumbnails() {
         if (episodeThumbnailsWarmed) return
         val item = state.item ?: return
@@ -95,11 +81,6 @@ class DetailsScreenModel(
         ImageDiscovery.warm(images)
     }
 
-    /**
-     * Спекулятивный прогрев воспроизведения — см. doc [DetailsEvent.PrefetchPlayback]. Чисто
-     * фоновая подсказка кэшу: результат никуда не пишем в state и ошибку не показываем — сбой
-     * просто оставит настоящий forceRefresh в плеере отрабатывать как обычно.
-     */
     private fun prefetchPlayback() {
         if (playbackPrefetched) return
         val item = state.item ?: return
@@ -107,24 +88,9 @@ class DetailsScreenModel(
         screenModelScope { _ -> catalog.getItemDetails(item.id, forceRefresh = true) }
     }
 
-    /**
-     * Сам тайтл — единственное, что держит спиннер: он же почти всегда кэш-хит
-     * (`CatalogRepositoryImpl.getItemDetails`), и экран должен открыться МОМЕНТАЛЬНО, если данные
-     * уже есть. «Похожее» и историю (для continuation) раньше ждали здесь же, в одном `Triple` —
-     * оба всегда идут в сеть по-настоящему (не кэшируются), и держали спиннер лишние 1-2 секунды
-     * даже когда сам тайтл уже был на экране готов. Теперь оба — независимые [screenModelScope],
-     * которые доливают своё поверх уже открытого экрана (см. [loadSimilar]/[loadContinuation]),
-     * не блокируя [DetailsState.loading].
-     */
     override fun onFetchData() {
-        // Подборки не зависят от самого тайтла (id известен из маршрута) — стартуют параллельно
-        // с ним, а не после: раньше кнопка «В подборках» ждала сначала тайтл, потом список папок,
-        // потом постраничный скан каждой папки, и на пульте это выглядело зависшим экраном.
         screenModelScope { _ -> reloadBookmarkFolders() }
         screenModelScope { _ ->
-            // Список, из которого открыли экран, уже положил почти всю карточку в кэш. Показываем
-            // её сразу; getItemDetails ниже отличает preview от полного ответа и в фоне дочитает
-            // videos/seasons и остальные detail-only поля, после чего бесшовно заменит затравку.
             catalog.getCachedItemDetails(route.itemId)?.let { preview ->
                 updateState {
                     it.copy(loading = false, item = preview, isWantToWatch = preview.inWatchlist)
@@ -134,13 +100,6 @@ class DetailsScreenModel(
                 is RequestResult.Success -> {
                     val item = itemResult.data
                     updateState { it.copy(loading = false, item = item, isWantToWatch = item.inWatchlist) }
-                    // Нативный watchlist («Хочу посмотреть») и подборка «Буду смотреть» — разные
-                    // вещи, и здесь они НЕ синхронизируются: раньше тайтл из watchlist при каждом
-                    // открытии карточки молча добавлялся в подборку, и пользователь находил в ней
-                    // то, чего туда не клал. В подборку — только явно, через диалог подборок.
-                    // Постеры (item/similar) уже ушли в фоновую закачку из ItemDto.toDomain() — тут
-                    // только фото актёров и режиссёра, угаданные из сырых строк cast/director: их
-                    // эта функция не знает, а строим мы их именно здесь (actorPhotoUrl).
                     prefetchCastPhotos(item.cast, item.director)
                     loadCast(item.imdbId)
                     loadDirectorFilms(item)
@@ -156,8 +115,6 @@ class DetailsScreenModel(
         }
     }
 
-    /** «Похожее» — отдельным запросом (всегда реальная сеть, не кэшируется), не блокируя показ
-     * самого тайтла. [DetailsState.similarLoading] держит скелетон ряда, пока не пришёл ответ. */
     private fun loadSimilar() {
         screenModelScope { _ ->
             updateState { it.copy(similarLoading = true) }
@@ -166,55 +123,21 @@ class DetailsScreenModel(
         }
     }
 
-    /**
-     * История (для continuation — «Продолжить с 40:05», у сериала ещё и `SxEy`, на кнопке hero) —
-     * отдельным запросом, не блокируя показ самого тайтла. До ответа кнопка играет разумный дефолт
-     * (первая дорожка фильма, первый недосмотренный эпизод сезона либо первый вовсе, см. `target`
-     * в TvDetailsScreen) и тихо обновляется, если найдётся реальный прогресс.
-     *
-     * ГОНКА: `state.continuation` до ответа этой корутины — `null`, а фокус пульта долетает до
-     * кнопки «Смотреть» почти мгновенно (экран стартует с фокусом именно на ней). Нажатие Play
-     * раньше, чем этот запрос ответит, раньше молча считало continuation отсутствующей и играло
-     * серию с нуля — реальный прогресс «терялся», хотя доехать ему было нужно ещё доли секунды.
-     * [continuationJob] — тот же запрос как `Deferred`, чтобы [awaitContinuation] мог его дождаться
-     * вместо того, чтобы полагаться на ещё не обновившийся `state.continuation`.
-     */
     private fun loadContinuation(item: Item) {
         continuationJob = screenModelScope.async {
-            // Мгновенная оценка по самому тайтлу: `items/{id}` уже несёт статус/позицию каждой
-            // дорожки (`watching.time/status`), и calculateContinuation умеет считать по ним без
-            // истории. Кнопка сразу показывает «Продолжить · SxEy», а не дефолт «первая серия» на
-            // время ответа /history; тот лишь уточнит позицию, когда придёт (обычно из кэша
-            // репозитория — мгновенно, см. WatchingRepository.getHistory).
             val fromItem = runCatching { calculateContinuation(item) }.getOrNull()
             updateState { it.copy(continuation = fromItem, continuationLoading = true) }
-            // runCatching, а не голый вызов: этот Deferred читает awaitContinuation() через
-            // .await(), и необработанное исключение всплыло бы там, в обработчике клика Play, а
-            // не осталось изолированным сбоем одной корутины, как у соседних screenModelScope{}.
             val continuation = runCatching { calculateContinuation(item, findHistoryEntry()) }.getOrNull()
             updateState { it.copy(continuation = continuation, continuationLoading = false) }
             continuation
         }
     }
 
-    /**
-     * Ждёт ответ [loadContinuation], если он ещё не пришёл (см. её doc про гонку) — иначе сразу
-     * отдаёт то, что уже в `state.continuation`. [CONTINUATION_AWAIT_TIMEOUT_MS] — подстраховка от
-     * медленного сервера: экран не обязан зависать в ожидании ответа истории ради одного нажатия
-     * Play, по истечении вызывающий получает то, что успело прийти (обычно `null`, поведение как
-     * раньше — серия играет с нуля), а не блокируется бесконечно.
-     */
     suspend fun awaitContinuation(): Continuation? {
         val pending = continuationJob ?: return state.continuation
         return withTimeoutOrNull(CONTINUATION_AWAIT_TIMEOUT_MS) { pending.await() } ?: state.continuation
     }
 
-    /**
-     * Угаданные фото актёров и режиссёра (см. [actorPhotoUrl]) ставим в фоновую очередь сразу по
-     * сырым строкам `cast`/`director` — не дожидаясь ответа TMDB ([loadCast]) и тем более того,
-     * что пользователь долистает до соответствующего ряда: к этому моменту угаданные картинки,
-     * скорее всего, уже в кэше.
-     */
     private fun prefetchCastPhotos(vararg rawNames: String) {
         val images = rawNames.asSequence()
             .flatMap { it.split(",").asSequence() }
@@ -225,10 +148,6 @@ class DetailsScreenModel(
         ImageDiscovery.discovered(images)
     }
 
-    /**
-     * Фото актёров грузим отдельным запросом ПОСЛЕ показа тайтла: экран уже виден со строкой имён,
-     * а фото «доезжают» без блокировки. Пустой ответ (нет ключа/совпадения) молча оставляет строку.
-     */
     private fun loadCast(imdbId: String?) {
         screenModelScope { _ ->
             val members = cast.getCast(imdbId)
@@ -238,12 +157,6 @@ class DetailsScreenModel(
         }
     }
 
-    /**
-     * «От режиссёра»: другие тайтлы того же человека, поиском по имени. Только ПЕРВОЕ имя из
-     * `item.director` — тот же приём, что и у клика по чипу режиссёра ([resolveDirectors]):
-     * kino.watch ищет по одному имени, а не по всей строке соавторов. Отдельным запросом ПОСЛЕ
-     * показа тайтла — как и [loadCast], это украшение, а не основа экрана.
-     */
     private fun loadDirectorFilms(item: Item) {
         val director = item.director.substringBefore(",").trim().takeIf { it.isNotBlank() } ?: return
         screenModelScope { _ ->
@@ -271,15 +184,9 @@ class DetailsScreenModel(
         }
     }
 
-    /** История ведётся по тайтлам (для сериала — с номером серии); достаём запись текущего. */
     private suspend fun findHistoryEntry() =
         watching.getHistory().getOrNull()?.firstOrNull { it.itemId == route.itemId }
 
-    /**
-     * «Буду смотреть» — кнопка hero-блока: нативный `watching/togglewatchlist`, без своей логики.
-     * Сердечко переключается оптимистично — пользователь должен увидеть результат сразу, сервер
-     * догоняет в фоне; сбой запроса тихо остаётся в оптимистичном состоянии, как и [FavoritesRepository].
-     */
     private fun toggleWantToWatch() {
         val item = state.item ?: return
         screenModelScope {
@@ -312,12 +219,6 @@ class DetailsScreenModel(
         }
     }
 
-    /**
-     * Добавляет или убирает тайтл из подборки — один и тот же диалог для «Буду смотреть» и для
-     * любой другой подборки. «Буду смотреть» распознаём по названию и делегируем в
-     * [toggleFavoritesFolder] — это НАСТОЯЩАЯ подборка [FavoritesRepository], не имеющая отношения
-     * к кнопке hero (см. [toggleWantToWatch]); остальные подборки — напрямую через [UserRepository].
-     */
     private fun toggleFolder(folder: BookmarkFolder) {
         val item = state.item ?: return
         if (folder.title == FAVORITES_FOLDER_TITLE) {
@@ -330,9 +231,6 @@ class DetailsScreenModel(
                 user.removeFromBookmark(item.id, folder.id)
                 scannedMemberships = scannedMemberships - folder.id
             } else {
-                // Свежая проверка по серверу, а не только по [scannedMemberships]: локальный скан
-                // мог устареть (другое устройство, прямой вызов API) — повторный addToBookmark на
-                // уже существующую связь и есть источник дублей в подборке.
                 if (!user.isItemInBookmark(item.id, folder.id)) {
                     user.addToBookmark(item.id, folder.id)
                 }
@@ -345,9 +243,6 @@ class DetailsScreenModel(
         }
     }
 
-    /** Строка «Буду смотреть» В ДИАЛОГЕ подборок — настоящая подборка [FavoritesRepository]:
-     * через её собственный `toggle()`, а не напрямую `user.addToBookmark`/`removeFromBookmark`,
-     * чтобы локальный кэш репозитория не разошёлся с реальностью. */
     private suspend fun toggleFavoritesFolder(item: Item) {
         favorites.toggle(item.toFavoriteItem())
         updateFolderMemberships()
@@ -356,13 +251,11 @@ class DetailsScreenModel(
         catalog.invalidateItemCache(item.id)
     }
 
-    /** Создаёт подборку и сразу заносит в неё текущий тайтл — одно действие в диалоге выбора. */
     private fun createFolderAndAdd(title: String) {
         val trimmed = title.trim()
         if (trimmed.isEmpty()) return
         val item = state.item ?: return
         screenModelScope {
-            // Свежесозданная подборка пуста — проверять уникальность здесь нечего.
             val created = user.createBookmarkFolder(trimmed).getOrNull() ?: return@screenModelScope
             user.addToBookmark(item.id, created.id)
             scannedMemberships = scannedMemberships + created.id
@@ -376,7 +269,6 @@ class DetailsScreenModel(
     private suspend fun folderContainsItem(folderId: Int, itemId: Int): Boolean =
         user.isItemInBookmark(itemId, folderId, FOLDER_SCAN_MAX_PAGES)
 
-    /** Список папок и принадлежность тайтла к ним — два независимых запроса, параллельно. */
     private suspend fun reloadBookmarkFolders() = coroutineScope {
         val membershipsDeferred = async { user.getItemBookmarkFolderIds(route.itemId).getOrNull() }
         val folders = user.getBookmarkFolders().getOrNull() ?: return@coroutineScope
@@ -384,12 +276,6 @@ class DetailsScreenModel(
         scanMemberships(folders, membershipsDeferred.await())
     }
 
-    /**
-     * Принадлежность «Буду смотреть» уже известна реактивно ([isInFavoritesFolder]) — учитываем
-     * только остальные подборки. [serverMemberships] — ответ `bookmarks/get-item-folders` одним
-     * запросом; постраничный обход каждой папки ([folderContainsItem]) остаётся лишь запасным
-     * путём на случай, если тот эндпоинт ответил ошибкой.
-     */
     private suspend fun scanMemberships(folders: List<BookmarkFolder>, serverMemberships: Set<Int>?) {
         val toScan = folders.filter { it.title != FAVORITES_FOLDER_TITLE }
         scannedMemberships = if (serverMemberships != null) {
@@ -410,13 +296,10 @@ class DetailsScreenModel(
     }
 
     private companion object {
-        /** Глубина сканирования подборки на дубликат перед добавлением — см. [folderContainsItem]. */
         const val FOLDER_SCAN_MAX_PAGES = 10
 
-        /** То же название, что и [FavoritesRepository] использует для поиска/создания своей подборки. */
         const val FAVORITES_FOLDER_TITLE = "Буду смотреть"
 
-        /** Таймаут [awaitContinuation] — см. её doc. */
         const val CONTINUATION_AWAIT_TIMEOUT_MS = 4_000L
     }
 }

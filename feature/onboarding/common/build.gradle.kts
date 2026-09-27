@@ -1,4 +1,3 @@
-// Логический слой фичи onboarding (без UI): ScreenModel + контракт + DI.
 plugins {
     id("filmax.android.library")
 }

@@ -9,20 +9,11 @@ plugins {
     id("filmax.detekt")
 }
 
-// Firebase (Crashlytics) включается только при наличии конфига: локальная сборка и PR-CI без
-// секретов не должны падать. Файл содержит ключи проекта Firebase — в публичном репо его не
-// держим (.gitignore); локально кладётся в app/, в CI декодируется из секрета
-// GOOGLE_SERVICES_JSON_BASE64. Без файла сборка проходит, репортинг остаётся no-op.
 val googleServicesConfig = file("google-services.json")
 if (googleServicesConfig.exists()) {
     apply(plugin = libs.plugins.google.services.get().pluginId)
     apply(plugin = libs.plugins.firebase.crashlytics.get().pluginId)
 
-    // google-services строго сверяет applicationId с client-списком json и роняет сборку
-    // вариантов, чьих пакетов там нет («No matching client found»). Пока в Firebase
-    // зарегистрирован только боевой com.filmax.app — для остальных вариантов выключаем
-    // задачи Firebase; их рантайм и так no-op (FirebaseApp.initializeApp вернёт null).
-    // Зарегистрируешь .debug/.demo и обновишь json — фильтр сам перестанет что-либо выключать.
     val registeredPackages = Regex("\"package_name\"\\s*:\\s*\"([^\"]+)\"")
         .findAll(googleServicesConfig.readText())
         .map { it.groupValues[1] }
@@ -39,8 +30,6 @@ if (googleServicesConfig.exists()) {
     }.configureEach { enabled = false }
 }
 
-// Секреты подписи release: локально из keystore.properties (в .gitignore),
-// в CI — из env-переменных (GitHub Secrets). env имеет приоритет над файлом.
 val keystorePropsFile = rootProject.file("keystore.properties")
 val keystoreProps = Properties().apply {
     if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use(::load)
@@ -48,24 +37,15 @@ val keystoreProps = Properties().apply {
 fun signingSecret(envName: String, propName: String): String? =
     System.getenv(envName) ?: keystoreProps.getProperty(propName)
 
-// Ключ TMDB (фото актёров): из local.properties (в .gitignore) либо env в CI. Пусто — фото
-// просто не загрузятся, приложение работает как обычно.
 val localProps = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) file.inputStream().use(::load)
 }
 val tmdbApiKey: String = (System.getenv("TMDB_API_KEY") ?: localProps.getProperty("tmdb.apiKey") ?: "").trim()
 
-// Токены для demo-сборки (ТОЛЬКО build type `demo`): из local.properties (в .gitignore). Зашиваются
-// в APK, чтобы demo-билд открывался авторизованным на любом устройстве без входа. В release/debug —
-// пусто, поэтому обычные сборки токен не несут.
 val demoAccessToken: String = (localProps.getProperty("demo.accessToken") ?: "").trim()
 val demoRefreshToken: String = (localProps.getProperty("demo.refreshToken") ?: "").trim()
 
-// In-app update читает GitHub Releases репозитория, из которого собран APK. В CI GitHub сам
-// задаёт GITHUB_REPOSITORY, локально берём remote.origin.url. Так форки и контрибьюторские
-// сборки не обращаются к исходному репозиторию. Если определить репозиторий нельзя, обновления
-// отключаются (пустое значение), а не перенаправляются в чужой репозиторий.
 fun githubRepository(): String {
     fun validSlug(value: String): String? =
         value.trim().takeIf { Regex("^[^/\\s]+/[^/\\s]+$").matches(it) }
@@ -82,15 +62,12 @@ fun githubRepository(): String {
 val updateGithubToken: String =
     (System.getenv("UPDATE_GITHUB_TOKEN") ?: localProps.getProperty("github.updateToken") ?: "").trim()
 
-// versionName ← последний git-тег vX.Y.Z (без «v») на ветке main; нет тегов → 1.0.0.
 fun gitVersionName(): String =
     providers.exec {
         commandLine("git", "describe", "--tags", "--abbrev=0", "origin/main")
         isIgnoreExitValue = true
     }.standardOutput.asText.get().trim().removePrefix("v").ifEmpty { "1.0.0" }
 
-// versionCode ← число коммитов в ветке main: монотонно растёт от релиза к релизу.
-// В CI требуется полная история (checkout fetch-depth: 0), иначе вернёт 1.
 fun gitCommitCount(): Int =
     providers.exec {
         commandLine("git", "rev-list", "--count", "origin/main")
@@ -108,10 +85,8 @@ android {
         versionCode   = gitCommitCount()
         versionName   = gitVersionName()
         buildConfigField("String", "TMDB_API_KEY", "\"$tmdbApiKey\"")
-        // По умолчанию токена нет — его несёт только build type `demo`.
         buildConfigField("String", "DEMO_ACCESS_TOKEN", "\"\"")
         buildConfigField("String", "DEMO_REFRESH_TOKEN", "\"\"")
-        // In-app update: репозиторий определяется из окружения/remote при сборке.
         buildConfigField("String", "UPDATE_GITHUB_REPO", "\"${githubRepository()}\"")
         buildConfigField("String", "UPDATE_GITHUB_TOKEN", "\"$updateGithubToken\"")
     }
@@ -134,16 +109,10 @@ android {
 
     buildTypes {
         debug {
-            // Debug ставится рядом с release, а не поверх: у них разные подписи, и установка
-            // «поверх» требовала бы удалить release вместе с авторизацией. Суффикс даёт
-            // отдельный пакет — обе сборки живут на устройстве одновременно.
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
         release {
-            // Подписываем release только когда ключ реально доступен (keystore.properties
-            // локально или env в CI). Без ключа оставляем неподписанным, чтобы сборка
-            // без секретов (например, PR-проверки) не падала.
             signingConfigs.getByName("release").takeIf { it.storeFile?.exists() == true }
                 ?.let { signingConfig = it }
             isMinifyEnabled = true
@@ -153,13 +122,10 @@ android {
                 "proguard-rules.pro",
             )
         }
-        // Demo-сборка: как release (R8 + подпись), но с зашитым токеном (стартует авторизованной
-        // на любом устройстве) и отдельным пакетом/меткой «Filmax Demo» — не путать с боевой.
         create("demo") {
             initWith(getByName("release"))
             applicationIdSuffix = ".demo"
             versionNameSuffix = "-demo"
-            // Библиотечные модули не знают build type `demo` — берём их release-вариант.
             matchingFallbacks += "release"
             signingConfigs.getByName("release").takeIf { it.storeFile?.exists() == true }
                 ?.let { signingConfig = it }
@@ -179,10 +145,6 @@ android {
     }
 
     lint {
-        // AGP 8.7.3 запускает lint-vital при release-сборке, но его детекторы падают
-        // на несовместимости Kotlin-анализатора (KaCallableMemberCall — известный баг
-        // lint) → assembleRelease рушится в тулинге, а не на коде. Гейт статического
-        // анализа в проекте — detekt (в CI), поэтому vital-lint на release отключаем.
         checkReleaseBuilds = false
     }
 }
@@ -224,24 +186,16 @@ dependencies {
     implementation(libs.bundles.compose)
     implementation(libs.activity.compose)
 
-    // Без этого ART после установки/обновления APK какое-то время выполняет уже готовые
-    // baseline-профили Compose/AndroidX интерпретируемым байткодом вместо AOT — profileinstaller
-    // сам ставит их системе при первом запуске (генерации профилей не требует).
     implementation(libs.profileinstaller)
 
     // Navigation
     implementation(libs.navigation.compose)
 
-    // Coil: только для настройки общего ImageLoader (FilmaxImageLoaderFactory) — сами картинки
-    // грузит core:ui/PosterImage через синглтон-загрузчик, без прямого обращения к Coil отсюда.
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 
-    // In-app update: разбор ответа GitHub Releases.
     implementation(libs.kotlinx.serialization.json)
 
-    // Crashlytics: SDK подключён всегда (код компилируется без google-services.json),
-    // но без конфига Firebase не инициализируется и репортинг остаётся no-op.
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.crashlytics)
 

@@ -14,14 +14,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
-/**
- * Бэкдроп прогревается точечно ТОЛЬКО для hero-тайтла и записей «Продолжить просмотр» (см.
- * `HomeScreenModel.onFetchData`) — эти тесты фиксируют, что ключ/url совпадают с тем, что реально
- * рисует `TvHomeScreen` (иначе прогрев впустую качал бы то, что экран потом попросит под другим
- * ключом), и что при отсутствии картинки функции честно возвращают null, а не мусорную запись.
- */
 class HomeBackdropPrefetchTest {
-
     @Test
     fun `hero backdrop prefers wide and keys it as WALL`() {
         val item = item(wide = "https://example.com/wide.jpg", big = "https://example.com/big.jpg")

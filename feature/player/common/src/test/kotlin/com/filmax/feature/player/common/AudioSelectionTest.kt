@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
 class AudioSelectionTest {
-
     private val original = AudioMatchCandidate(lang = null, label = "1. Оригинал")
     private val russianDub = AudioMatchCandidate(lang = "rus", label = "2. Русский · Дубляж")
     private val russianVoiceover = AudioMatchCandidate(lang = "rus", label = "3. Русский · Многоголосый · BaibaKo")
@@ -52,7 +51,6 @@ class AudioSelectionTest {
 
     @Test
     fun `language hidden inside another word never matches`() {
-        // «Беларуская» содержит «рус», «Bengali» — «eng»: язык ищется по началу слова, не по вхождению.
         val belarusian = listOf(AudioMatchCandidate(lang = "be", label = "1. Беларуская"))
         val bengali = listOf(AudioMatchCandidate(lang = "bn", label = "1. Bengali"))
         assertNull(resolveAudioGroupIndex(russian, belarusian))

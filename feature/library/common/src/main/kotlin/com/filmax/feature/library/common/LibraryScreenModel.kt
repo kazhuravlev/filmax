@@ -26,9 +26,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-// Общая модель двух разделов держит по одному короткому обработчику на каждое MVI-событие.
-// Дробить её на несколько классов ради лимита нельзя: логика закладок и истории связана общим
-// состоянием и читается только вместе — отсюда осознанный Suppress.
 @Suppress("TooManyFunctions")
 class LibraryScreenModel(
     private val watching: WatchingRepository,
@@ -37,7 +34,6 @@ class LibraryScreenModel(
     private val catalog: CatalogRepository,
     private val snapshotCache: LastValueCache<LibrarySnapshot>,
 ) : BaseScreenModel<LibraryState, LibrarySideEffect, LibraryEvent>(LibraryState()) {
-
     init {
         onFetchData()
         observeFavorites()
@@ -75,13 +71,6 @@ class LibraryScreenModel(
         }
     }
 
-    /**
-     * Возврат на экран: ScreenModel переживает уход в детали (стек навигации его не убивает),
-     * поэтому по умолчанию ничего не делаем — то, что уже показано, остаётся как есть, без
-     * спиннера и похода в сеть. Если же что-то в этом разделе поменяли на другом экране
-     * (добавили в подборку, отметили «Я смотрю», сохранили прогресс) — тихо обновляем данные
-     * в фоне и перерисовываем экран, когда они придут.
-     */
     private fun refreshIfDirty(section: LibrarySection) {
         when (section) {
             LibrarySection.WATCHING, LibrarySection.HISTORY ->
@@ -92,13 +81,10 @@ class LibraryScreenModel(
         }
     }
 
-    /** Как [refreshWatching], но без `loading` и без баннера при сбое — попытка невидима снаружи. */
     private fun refreshWatchingSilently() {
         screenModelScope {
             val titles = loadWatchingTitlesPhase()
             if (titles.error != null) {
-                // Не портим уже показанное сбойным пустым ответом и не теряем пометку:
-                // следующий возврат на экран попробует обновиться ещё раз.
                 DataInvalidation.markDirty(DataDomain.WATCHING)
                 return@screenModelScope
             }
@@ -113,7 +99,6 @@ class LibraryScreenModel(
         }
     }
 
-    /** Как [refreshBookmarks], но без `loading` и без баннера при сбое — попытка невидима снаружи. */
     private fun refreshBookmarksSilently() {
         screenModelScope {
             val folders = user.getBookmarkFolders().getOrNull()
@@ -132,7 +117,6 @@ class LibraryScreenModel(
         }
     }
 
-    /** Явное обновление по действию пользователя — историю читаем мимо кэша репозитория. */
     private fun refreshWatching() {
         screenModelScope {
             updateState { it.copy(loading = true, error = null) }
@@ -147,13 +131,6 @@ class LibraryScreenModel(
         }
     }
 
-    /**
-     * Первый такт «В процессе»: сам список тайтлов — и только он — снимает спиннер. Раньше экран
-     * ждал ещё историю (десяток последовательных страниц), обход всех страниц публичных подборок
-     * ради рейла «Буду смотреть» и догрузку деталей КАЖДОГО тайтла из сети — и «Я смотрю», самый
-     * посещаемый пункт меню, открывался секундами, хотя список приходит за два быстрых запроса.
-     * Всё остальное — [loadWatchingTailPhase], поверх уже показанного экрана.
-     */
     private suspend fun applyWatchingTitles(titles: WatchingResult) {
         updateState { current ->
             current.copy(
@@ -165,24 +142,12 @@ class LibraryScreenModel(
         }
     }
 
-    /**
-     * Тайтлы «в процессе» плюс то, что о них УЖЕ лежит в локальном кэше деталей (preview или полный
-     * ответ — для карточки хватает и preview: год/жанры/рейтинг). Локальное чтение — миллисекунды,
-     * поэтому карточки с первого же кадра выходят с метаданными, а не «голыми» до ответа сети.
-     */
     private suspend fun loadWatchingTitlesPhase(): WatchingResult {
         val titles = loadWatchingTitles()
         val cached = readCachedTitleDetails(titles.titles.map(WatchingItem::itemId))
         return titles.copy(titleDetails = cached)
     }
 
-    /**
-     * Второй такт «В процессе» — три независимые фоновые ветки поверх уже показанного списка:
-     * история (сегмент «История»), рейл «Буду смотреть» и сетевая догрузка деталей тех карточек,
-     * которых не оказалось в кэше. Каждая ветка красит своё в state сама, как только ответит.
-     * Возвращает ошибку истории (единственная из трёх, о которой стоит сообщить): детали и рейл —
-     * декоративные, их сбой карточку не ломает (см. doc [loadTitleDetails]).
-     */
     private suspend fun loadWatchingTailPhase(
         titles: List<WatchingItem>,
         forceRefreshHistory: Boolean = false,
@@ -201,32 +166,17 @@ class LibraryScreenModel(
             updateState { current ->
                 current.copy(history = history, titleDetails = current.titleDetails + cached)
             }
-            // Детали истории — после деталей «В процессе»: тот сегмент открыт по умолчанию.
             detailsJob.join()
             loadTitleDetails(historyIds)
         }
         firstErrorMessage(historyResult)
     }
 
-    /**
-     * Свимлейн «Буду смотреть» внизу «В процессе» — тайтлы одноимённой подборки за вычетом уже
-     * показанного в [LibraryState.watching]. Поиска подборки по имени в API нет, поэтому страницы
-     * [CatalogRepository.getCollections] перебираются вручную (конец — пустая страница, тот же
-     * приём, что в HomeScreenModel.loadMoreCollections); дальше грузим все страницы её содержимого.
-     * Любой сбой на этом пути — просто пустой рейл, а не баннер: раздел декоративный.
-     */
     private suspend fun loadWatchLaterCollectionItems(): List<Item> {
         val collectionId = resolveWatchLaterCollectionId() ?: return emptyList()
         return loadAllCollectionItems(collectionId)
     }
 
-    /**
-     * Id подборки «Буду смотреть» ищется по имени обходом страниц публичных подборок — дорого,
-     * поэтому результат (в т.ч. «такой подборки нет») запоминается на жизнь модели: каждое
-     * обновление раздела раньше повторяло весь обход заново. Сетевой сбой посреди обхода НЕ
-     * запоминаем — следующая попытка честно поищет ещё раз. Потолок страниц — предохранитель от
-     * бесконечного листания каталога подборок ради одного рейла.
-     */
     private suspend fun resolveWatchLaterCollectionId(): Int? {
         watchLaterLookup?.let { return it.collectionId }
         var found: Int? = null
@@ -246,7 +196,6 @@ class LibraryScreenModel(
 
     private class WatchLaterLookup(val collectionId: Int?)
 
-    /** Результат поиска подборки «Буду смотреть» — см. [resolveWatchLaterCollectionId]. */
     private var watchLaterLookup: WatchLaterLookup? = null
 
     private suspend fun loadAllCollectionItems(collectionId: Int): List<Item> {
@@ -261,7 +210,6 @@ class LibraryScreenModel(
         return items.distinctBy { it.id }
     }
 
-    /** Тайтлы «в процессе» — родной прогресс `watching/{movies|serials}?subscribed=1`, оба типа параллельно. */
     private suspend fun loadWatchingTitles(): WatchingResult = coroutineScope {
         val moviesDeferred = async { watching.getWatchingTitles(WatchingListType.Movies) }
         val serialsDeferred = async { watching.getWatchingTitles(WatchingListType.Serials) }
@@ -279,7 +227,6 @@ class LibraryScreenModel(
         val error: String?,
     )
 
-    /** Что о тайтлах уже знает локальный кэш деталей — без сети, параллельно, только промахи пропускаем. */
     private suspend fun readCachedTitleDetails(itemIds: List<Int>): Map<Int, Item> = coroutineScope {
         itemIds.distinct()
             .filter { it !in state.titleDetails }
@@ -289,18 +236,6 @@ class LibraryScreenModel(
             .associateBy(Item::id)
     }
 
-    /**
-     * Эндпоинты `watching` не отдают год, жанры и рейтинги. Детали подгружаются ограниченно
-     * параллельно: это сохраняет универсальную карточку, но не устраивает залп из десятков
-     * одновременных запросов к серверу. Каждый ответ красится в state сразу, не дожидаясь
-     * соседей — карточки дозаполняются по одной, а не все разом в конце. Тайтлы, чьи детали уже
-     * есть в state (из кэша или прошлого прохода), сеть не трогают.
-     *
-     * Сбой по отдельному тайтлу (например, он удалён/битый на сервере) не считаем ошибкой
-     * экрана: карточка просто останется без обогащения (жанр/год/рейтинг), а не покажет
-     * баннер [showServerRetryNotice] — сам сбой уже ушёл в телеметрию через `safeRequest`
-     * внутри `catalog.getItemDetails`.
-     */
     private suspend fun loadTitleDetails(itemIds: List<Int>) = coroutineScope {
         val limiter = Semaphore(PerformanceTuning.ForegroundDetailsConcurrency.LIBRARY_TITLE_DETAILS)
         itemIds.distinct()
@@ -373,20 +308,8 @@ class LibraryScreenModel(
         return error
     }
 
-    /**
-     * «В процессе» и «Подборки» — независимые источники: сбой подборок не должен подвешивать
-     * баннер над «В процессе» (и наоборот), поэтому в общий [error] попадает только ошибка
-     * [loadWatchingTitlesPhase]/истории — сбой подборок просто помечает раздел «грязным», следующий
-     * заход в «Подборки» тихо перечитает список (см. [refreshIfDirty]).
-     */
     override fun onFetchData() {
         screenModelScope {
-            // Первый вызов после (пере)создания модели — `watching`/`lists` ещё пусты (холодный
-            // старт либо повтор через retry() по пустому экрану). Берём то, что было при прошлом
-            // успешном проходе ИЛИ что фоновый прогрев AppWarmup уже успел подложить в кэш (см.
-            // LastValueCache.putIfAbsent) — так стартовый сегмент «В процессе» и список папок
-            // отрисуются сразу вместо скелетона. Обычный фетч ниже всё равно идёт следом и красит
-            // актуальные данные поверх, когда придут — затравка лишь мгновенная картинка на её время.
             val seed = if (state.watching.isEmpty() && state.lists.isEmpty()) snapshotCache.get() else null
             if (seed != null) {
                 updateState { it.copy(loading = false, watching = seed.watching, lists = seed.folders) }
@@ -398,9 +321,6 @@ class LibraryScreenModel(
                 val lists = listsDeferred.await()
                 updateState { current -> current.copy(lists = lists.getOrNull() ?: current.lists) }
                 if (lists is RequestResult.Error) DataInvalidation.markDirty(DataDomain.BOOKMARKS)
-                // Кэш обновляем только когда ОБА независимых источника (секция «В процессе» и
-                // список папок) реально ответили — частичный/ошибочный проход не должен затирать
-                // последний хороший снимок, на который рассчитывает следующий холодный старт/прогрев.
                 if (titles.error == null && lists !is RequestResult.Error) snapshotCache.put(state.asSnapshot())
                 val historyError = loadWatchingTailPhase(titles.titles)
                 val error = titles.error ?: historyError
@@ -436,20 +356,6 @@ class LibraryScreenModel(
         }
     }
 
-    /**
-     * Открывает подборку и грузит всё её содержимое разом.
-     *
-     * [UserRepository.getDedupedBookmarkItems] читает все страницы папки и чистит дубликаты
-     * СЕРВЕРНОЙ связи `(folderId, id)`, прежде чем что-либо показать — папки-закладки личные и
-     * небольшие, поэтому загрузка разом (а не по страницам, как раньше) — приемлемая цена за то,
-     * что счётчик и список больше не расходятся из-за копившихся дублей; поэтому же
-     * [loadMoreFolderItems] дальше не нужен ([OpenBookmarkFolder.endReached] сразу `true`).
-     *
-     * Кэшированное превью (если есть) используем только как мгновенную картинку вместо пустого
-     * экрана на время запроса — не как повод пропустить запрос вовсе. Подборку могли изменить
-     * с другого экрана (например, добавить тайтл из деталей), поэтому при каждом реальном
-     * открытии подборки список пересобираем с сервера заново.
-     */
     private fun openFolder(folder: BookmarkFolder) {
         val preview = state.folderPreviews[folder.id]
         val previewLoading = folder.id in state.loadingFolderPreviews
@@ -460,13 +366,11 @@ class LibraryScreenModel(
                     loadingFolderPreviews = current.loadingFolderPreviews + folder.id,
                 )
             }
-            // В полёте уже может быть тот же запрос — от видимой плитки. Ждём его, а не дублируем.
             if (previewLoading) return@screenModelScope
             val result = user.getDedupedBookmarkItems(folder.id)
             val items = result.getOrNull()
             updateState { current ->
                 val open = current.openFolder ?: return@updateState current
-                // Пока грузили, подборку могли закрыть или открыть другую — чужой ответ не применяем.
                 if (open.folder.id != folder.id) return@updateState current
                 current.copy(
                     openFolder = open.copy(
@@ -486,7 +390,6 @@ class LibraryScreenModel(
         }
     }
 
-    /** Загружает содержимое видимой подборки для плитки, не меняя экран на loader. */
     private fun loadFolderPreview(folder: BookmarkFolder) {
         if (folder.count == 0 ||
             folder.id in state.folderPreviews ||
@@ -509,8 +412,6 @@ class LibraryScreenModel(
                         current.folderPreviews + (folder.id to list.toFolderPreview())
                     } ?: current.folderPreviews,
                     loadingFolderPreviews = current.loadingFolderPreviews - folder.id,
-                    // Если подборку успели открыть, тот же ответ — её содержимое целиком.
-                    // Так обложки снаружи и тайтлы внутри имеют одинаковый серверный порядок.
                     openFolder = if (isOpenFolder && open.loading) {
                         items?.let { list -> list.toFolderPreview().toOpenFolder(folder) }
                             ?: open.copy(loading = false, error = firstErrorMessage(result))
@@ -527,12 +428,6 @@ class LibraryScreenModel(
         screenModelScope { _ -> updateState { it.copy(openFolder = null) } }
     }
 
-    /**
-     * Раньше догружала следующую страницу открытой папки. [openFolder] теперь читает подборку
-     * целиком (см. его doc), поэтому [OpenBookmarkFolder.endReached] уже `true` сразу после
-     * открытия и этот обработчик — no-op; оставлен, чтобы не трогать событие/UI, которое всё ещё
-     * вызывает его по прокрутке к концу списка.
-     */
     private fun loadMoreFolderItems() {
         val open = state.openFolder ?: return
         if (open.loading || open.loadingMore || open.endReached) return
@@ -546,11 +441,9 @@ class LibraryScreenModel(
                 if (loaded.folder.id != open.folder.id) return@updateState current
                 current.copy(
                     openFolder = loaded.copy(
-                        // Страницы kino.watch могут пересечься: дубликат id уронил бы LazyGrid по key.
                         items = (loaded.items + itemPage?.items.orEmpty()).distinctBy { it.id },
                         page = if (itemPage != null) nextPage else loaded.page,
                         loadingMore = false,
-                        // Сбой страницы — не конец списка: следующая попытка повторит тот же запрос.
                         endReached = itemPage?.pagination?.hasNextPage?.not() ?: loaded.endReached,
                         error = firstErrorMessage(result),
                     ),
@@ -560,10 +453,6 @@ class LibraryScreenModel(
         }
     }
 
-    /**
-     * Создаёт папку и перечитывает список. Оптимистично добавить нельзя: id и порядок задаёт
-     * сервер, а угаданный локально id сломал бы последующее открытие/удаление папки.
-     */
     private fun createFolder(title: String) {
         val trimmed = title.trim()
         if (trimmed.isEmpty()) return
@@ -573,17 +462,11 @@ class LibraryScreenModel(
         }
     }
 
-    /** Удаляет папку. Открытую — закрывает: содержимого у неё больше нет. */
     private fun deleteFolder(folderId: Int) {
         screenModelScope { _ ->
-            // Затронутые тайтлы — до оптимистичной очистки состояния ниже, иначе их id негде
-            // будет взять. Кэш детали каждого из них хранит принадлежность к этой папке
-            // (см. CatalogRepository.invalidateItemCache) — папки больше нет, кэш обязан узнать.
             val previewItems = state.folderPreviews[folderId]?.items.orEmpty()
             val openItems = state.openFolder?.takeIf { it.folder.id == folderId }?.items.orEmpty()
             val affectedItemIds = (previewItems + openItems).map { it.id }.toSet()
-            // Оптимистично убираем плитку и выходим из папки, если удаляли именно открытую;
-            // reloadFolders ниже сверит результат с сервером.
             updateState { current ->
                 current.copy(
                     lists = current.lists.filter { it.id != folderId },
@@ -598,11 +481,6 @@ class LibraryScreenModel(
         }
     }
 
-    /**
-     * Убирает тайтл из папки. Из открытой папки удаляем сразу (отклик мгновенный), затем
-     * перечитываем список папок ради актуального счётчика на плитке. Заново тянуть содержимое
-     * папки не станем: оно постраничное, и повторная загрузка первой страницы сбросила бы скролл.
-     */
     private fun removeItemFromFolder(itemId: Int, folderId: Int) {
         screenModelScope { _ ->
             updateState { current ->
@@ -625,7 +503,6 @@ class LibraryScreenModel(
         }
     }
 
-    /** Перечитывает список папок с сервера: id, счётчики и порядок — его зона ответственности. */
     private suspend fun reloadFolders() {
         val result = user.getBookmarkFolders()
         val folders = result.getOrNull()
@@ -643,7 +520,6 @@ class LibraryScreenModel(
         }
     }
 
-    /** [getDedupedBookmarkItems] уже вернул полный, дедуплицированный список — страниц больше нет. */
     private fun List<Item>.toFolderPreview(): BookmarkFolderPreview =
         BookmarkFolderPreview(items = this, endReached = true)
 
@@ -657,13 +533,10 @@ class LibraryScreenModel(
         )
 
     private companion object {
-        /** Первая страница содержимого папки (нумерация kino.watch — с единицы). */
         const val FIRST_PAGE = 1
 
-        /** Название подборки, чей свимлейн показывается внизу «В процессе». */
         const val WATCH_LATER_COLLECTION_TITLE = "Буду смотреть"
 
-        /** Потолок страниц публичных подборок при поиске [WATCH_LATER_COLLECTION_TITLE] по имени. */
         const val WATCH_LATER_MAX_COLLECTION_PAGES = 10
     }
 }
@@ -671,31 +544,12 @@ class LibraryScreenModel(
 private fun <T> List<T>.preserveEmpty(previous: List<T>, error: String?): List<T> =
     if (error != null && isEmpty()) previous else this
 
-/** Единственные два значения `type`, которые понимает `watching/{type}` — общие для
- * [LibraryScreenModel] и [fetchLibrarySnapshot] (прогрев), поэтому вынесены на файл. */
-
-/**
- * Тайтлы «в процессе» обоих типов параллельно — общая точка входа для [LibraryScreenModel] и
- * фонового прогрева [fetchLibrarySnapshot]: одинаковый вызов `watching/{movies|serials}`, чтобы
- * не разъезжаться при будущих правках API. private: используется только внутри этого файла —
- * наружу (в `AppWarmup` другого модуля) торчит только сам [fetchLibrarySnapshot].
- */
 private suspend fun fetchWatchingTitles(watching: WatchingRepository): List<WatchingItem> = coroutineScope {
     val moviesDeferred = async { watching.getWatchingTitles(WatchingListType.Movies) }
     val serialsDeferred = async { watching.getWatchingTitles(WatchingListType.Serials) }
     moviesDeferred.await().getOrNull().orEmpty() + serialsDeferred.await().getOrNull().orEmpty()
 }
 
-/**
- * Последний успешно загруженный лёгкий снимок раздела «Моё» — офлайн-устойчивость и, отдельно,
- * затравка для фонового прогрева `AppWarmup` (см. [com.filmax.core.domain.common.LastValueCache]).
- *
- * Специально НЕ полное [LibraryState]: только то, что красит стартовый сегмент «В процессе»
- * (TV открывает его первым по умолчанию) и список папок для сегмента «Подборки» — история,
- * детали тайтлов, рейл «Буду смотреть» и превью папок сюда намеренно не входят, чтобы снимок
- * оставался маленьким. Пишется только когда оба независимых источника ([LibraryScreenModel.onFetchData])
- * реально ответили; читается один раз, как затравка, при (пере)создании модели.
- */
 data class LibrarySnapshot(
     val watching: List<WatchingItem> = emptyList(),
     val folders: List<BookmarkFolder> = emptyList(),
@@ -703,16 +557,6 @@ data class LibrarySnapshot(
 
 private fun LibraryState.asSnapshot(): LibrarySnapshot = LibrarySnapshot(watching = watching, folders = lists)
 
-/**
- * Собирает [LibrarySnapshot] из сети напрямую — используется ТОЛЬКО фоновым прогревом `AppWarmup`
- * из модуля `:app` (см. `app/warmup/AppWarmup.kt`), который кладёт результат через `putIfAbsent`,
- * если экран ещё ни разу не открывался в этой сессии процесса — отсюда публичная видимость
- * (не `internal`: `:app` — отдельный Gradle-модуль, `internal` был бы ему не виден). Сам
- * [LibraryScreenModel] в кэш этим путём не ходит: он собирает снимок из уже загруженного
- * [LibraryState] после своего полного прохода ([LibraryScreenModel.onFetchData]) — здесь же те же
- * самые репозиторные вызовы (тайтлы «в процессе» + папки), но без остальной механики экрана
- * (истории, деталей, рейла).
- */
 suspend fun fetchLibrarySnapshot(
     watching: WatchingRepository,
     user: UserRepository,

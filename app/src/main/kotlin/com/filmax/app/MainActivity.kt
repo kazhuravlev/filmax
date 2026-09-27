@@ -22,7 +22,6 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
@@ -37,21 +36,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             val updateScreenModel: AppUpdateScreenModel = koinViewModel()
             val onCheckUpdates = { updateScreenModel.dispatch(AppUpdateEvent.Check) }
-            // Единственная подписка на ImageProxyRepository.enabled на всё приложение: без неё
-            // каждый PosterImage сам делал koinInject + collectAsState, и на экране с десятками
-            // постеров это означало десятки independent-коллекторов одного и того же флага.
             val proxyEnabled by koinInject<ImageProxyRepository>().enabled.collectAsState()
             CompositionLocalProvider(LocalImageProxyEnabled provides proxyEnabled) {
                 FilmaxTvTheme {
                     FilmaxTvNavGraph(
                         onCheckUpdates = onCheckUpdates,
-                        // На корневом экране TV не оставляем task в фоне: следующий запуск из
-                        // лаунчера создаст Activity заново, а не вернёт прежний экран.
                         onExit = { finishAndRemoveTask() },
                     )
                     AppUpdatePrompt(updateScreenModel)
-                    // Рисуется ПОСЛЕ nav-графа и апдейт-промпта — поверх всего остального контента
-                    // (см. doc TechOverlay). Композит буквально ничего, пока настройка выключена.
                     TechOverlay()
                 }
             }

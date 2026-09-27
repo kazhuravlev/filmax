@@ -22,28 +22,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-/**
- * Базовый MVI-ScreenModel проекта. Единственное место, где presentation-слой касается
- * `androidx.lifecycle.ViewModel` — фичи об этом не знают и наследуют только [BaseScreenModel].
- * Это снимает техдолг #9 (Android-only ViewModel в фичах) и держит фичи KMP-ready: при
- * переходе на commonMain/Decompose меняется только этот класс, а не каждая фича.
- *
- * Триада MVI:
- *  - [STATE] — единый неизменяемый снимок экрана (state down);
- *  - [EVENT] — намерения пользователя, приходят через [dispatch] (events up);
- *  - [SIDE_EFFECT] — одноразовые эффекты (навигация, snackbar, …), доставляются через [postSideEffect].
- *
- * Удержание экземпляра и автоотмена [screenModelScope] обеспечиваются механизмом ViewModel
- * (переживает поворот экрана, привязан к back stack-записи навигации).
- */
-// Базовый MVI-класс: перечисленные функции — это осознанный контракт фреймворка (dispatch,
-// updateState/postSideEffect, семейство showError, retry/dismissError, lifecycle). Дробить их по
-// связности незачем — набор методов и есть API базового ScreenModel.
 @Suppress("TooManyFunctions")
 abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
     initialState: STATE,
 ) : ViewModel() {
-
     private val sideEffectsQueue: MutableList<SIDE_EFFECT> = mutableListOf()
     private var sideEffectsSubscriber: ((SIDE_EFFECT) -> Unit)? = null
 
@@ -51,36 +33,25 @@ abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
 
     private val _state: MutableStateFlow<STATE> = MutableStateFlow(initialState)
 
-    /** Текущая ошибка для модального окна (null — модалки нет). */
     private val _error: MutableStateFlow<AppError?> = MutableStateFlow(null)
 
-    /** Показан ли ненавязчивый баннер «нет сети» (issue #42): контент из кэша при офлайне. */
     private val _offlineBanner: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
-    /** Нижнее TV-уведомление «сервер не отвечает» — само пропадает через 3 секунды. */
     private val _serverRetryNotice: MutableStateFlow<Boolean> = MutableStateFlow(false)
     private var serverRetryNoticeJob: Job? = null
 
-    /** Текущий снимок состояния. Доступен подклассам для чтения внутри корутин. */
     protected val state: STATE
         get() = _state.value
 
     private val updateStateLock = Mutex()
     private val sideEffectLock = Mutex()
 
-    /** Единая точка входа для пользовательских событий экрана. */
     abstract fun dispatch(event: EVENT)
 
-    /** Первичная загрузка данных экрана. Вызывается подклассом из его `init` после инициализации зависимостей. */
     protected abstract fun onFetchData()
 
-    /** Скоуп жизненного цикла ScreenModel (отменяется в [onCleared]). */
     protected val screenModelScope: CoroutineScope = viewModelScope
 
-    /**
-     * Запускает корутину в [screenModelScope] на [dispatcher], предоставляя актуальный снимок [STATE].
-     * Исключения внутри блока изолируются, чтобы один сбой не ронял ScreenModel.
-     */
     protected fun screenModelScope(
         dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
         call: suspend CoroutineScope.(STATE) -> Unit,
@@ -88,7 +59,6 @@ abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
         runCatching { call(state) }
     }
 
-    /** Отправляет одноразовый side-effect. Если подписчика ещё нет — эффект буферизуется до подписки. */
     protected suspend fun postSideEffect(effect: SIDE_EFFECT) {
         sideEffectLock.withLock {
             withContext(mainThreadDispatcher) {
@@ -97,7 +67,6 @@ abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
         }
     }
 
-    /** Атомарно обновляет состояние на main-потоке. */
     protected suspend fun updateState(call: (STATE) -> STATE) {
         updateStateLock.withLock {
             withContext(mainThreadDispatcher) {
@@ -106,17 +75,11 @@ abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
         }
     }
 
-    /** Подписка экрана на состояние как на Compose [State]. */
     @Composable
     fun collectAsState(): State<STATE> {
         return _state.collectAsState()
     }
 
-    /**
-     * Показывает модалку ошибки. Вызывается из ScreenModel в ветке [RequestResult.Error]:
-     * `showError(result)` — тип сбоя уже разрешён на границе ошибок ([RequestResult.Error.kind]),
-     * по тексту здесь ничего не угадывается.
-     */
     protected suspend fun showError(error: AppError) {
         withContext(mainThreadDispatcher) { _error.emit(error) }
     }
@@ -125,33 +88,24 @@ abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
         showError(error.kind)
     }
 
-    /** Показать баннер «нет сети» (контент отдан из кэша). */
     protected suspend fun showOfflineBanner() {
         withContext(mainThreadDispatcher) { _offlineBanner.emit(true) }
     }
 
-    /** Скрыть баннер «нет сети» (например, после успешного обновления). */
     fun dismissOfflineBanner() {
         _offlineBanner.value = false
     }
 
-    /** Подписка экрана на баннер «нет сети». */
     @Composable
     fun collectOfflineBannerAsState(): State<Boolean> {
         return _offlineBanner.collectAsState()
     }
 
-    /** Подписка TV-экрана на нижнее уведомление «сервер не отвечает». */
     @Composable
     fun collectServerRetryNoticeAsState(): State<Boolean> {
         return _serverRetryNotice.collectAsState()
     }
 
-    /**
-     * Показывает уведомление «Сервер не отвечает, попробуйте позже» на 3 секунды — само прячется
-     * по таймеру. Никакого автоматического повтора запроса: сбой одноразовый, повторный поход в
-     * сеть — только по явному действию пользователя ([retry]/`Refresh`).
-     */
     protected fun showServerRetryNotice() {
         serverRetryNoticeJob?.cancel()
         _serverRetryNotice.value = true
@@ -162,25 +116,21 @@ abstract class BaseScreenModel<STATE : Any, SIDE_EFFECT : Any, EVENT : Any>(
         }
     }
 
-    /** Закрывает модалку ошибки. Вызывается из UI. */
     fun dismissError() {
         _error.value = null
     }
 
-    /** Повторная загрузка данных — для кнопки «Повторить» в модалке ошибки или баннере «нет сети». */
     fun retry() {
         _error.value = null
         _offlineBanner.value = false
         onFetchData()
     }
 
-    /** Подписка экрана на текущую ошибку для показа [com.filmax.core.ui]-модалки. */
     @Composable
     fun collectErrorAsState(): State<AppError?> {
         return _error.collectAsState()
     }
 
-    /** Подписка экрана на side-effects. Буферизованные до подписки эффекты доставляются сразу. */
     @Composable
     fun collectSideEffect(key: Any? = Unit, onSideEffect: (SIDE_EFFECT) -> Unit) {
         val job = remember { mutableStateOf<Job?>(null) }

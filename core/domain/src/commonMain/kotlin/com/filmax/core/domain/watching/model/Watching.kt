@@ -7,16 +7,9 @@ data class WatchHistory(
     val title: String,
     val posterSmall: String?,
     val progress: WatchProgress?,
-    /** Широкий постер тайтла 16:9. */
     val posterWide: String? = null,
-    /** Кадр конкретной серии 16:9 — точнее постера: показывает, на чём человек остановился. */
     val episodeThumbnail: String? = null,
 ) {
-    /**
-     * Картинка для карточки 16:9, по убыванию точности: кадр серии → широкий постер → обложка.
-     * Вертикальная обложка 2:3 в широкой рамке обрезается по центру и превращается в кашу —
-     * но лучше кривой кроп, чем пустой прямоугольник.
-     */
     val wideOrPoster: String
         get() = episodeThumbnail?.takeIf { it.isNotBlank() }
             ?: posterWide?.takeIf { it.isNotBlank() }
@@ -38,17 +31,11 @@ data class WatchProgress(
         }
 }
 
-/**
- * Тайтл из списка «в процессе» (`watching/{type}`) — облегчённая карточка одним запросом на тип,
- * БЕЗ точной позиции: сервер тут отдаёт только счётчики серий, не таймкод. Для точной позиции
- * (например, при открытии тайтла) — отдельный запрос за самим тайтлом (`getItemDetails`).
- */
 data class WatchingItem(
     val itemId: Int,
     val title: String,
     val isSeries: Boolean,
     val posterUrl: String,
-    /** Счётчики серий — только у сериалов, сервер не считает их для фильмов. */
     val totalEpisodes: Int? = null,
     val watchedEpisodes: Int? = null,
     val newEpisodes: Int? = null,
@@ -63,10 +50,6 @@ data class Notification(
     val itemId: Int?,
 )
 
-/**
- * Тип списка `watching/{type}` kino.watch («в процессе»). Только эти два: `movies` включает и
- * аниме-фильмы, `serials` — все многосерийные типы, сервер сам раскладывает их по спискам.
- */
 enum class WatchingListType(val apiValue: String, val isSeries: Boolean) {
     Movies("movies", isSeries = false),
     Serials("serials", isSeries = true),

@@ -12,14 +12,9 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/**
- * Хранилище скачанных фильмов на multiplatform-settings (метаданные в JSON).
- * Реактивность — через [MutableStateFlow], сидируется из персистентного хранилища.
- */
 internal class DownloadsRepositoryImpl(
     private val settings: Settings,
 ) : DownloadsRepository {
-
     private val state = MutableStateFlow(load())
 
     override val downloads: Flow<List<DownloadedItem>> = state.asStateFlow()

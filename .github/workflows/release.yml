@@ -1,38 +1,19 @@
 name: Release
 
-# Триггер — пуш git-тега вида v1.2.3. Собирает ПОДПИСАННЫЙ release-APK
-# (R8 + shrinkResources) и публикует его в GitHub Release с авто-changelog.
-#
-# Требуемые секреты репозитория:
-#   KEYSTORE_BASE64   — release-keystore (.jks), закодированный base64
-#   KEYSTORE_PASSWORD — пароль keystore
-#   KEY_ALIAS         — алиас ключа
-#   KEY_PASSWORD      — пароль ключа
-#   GOOGLE_SERVICES_JSON_BASE64 — app/google-services.json (Firebase Crashlytics), base64;
-#                                 не задан — релиз собирается без крэш-репортинга
 on:
   push:
     tags: [ "v[0-9]+.[0-9]+.[0-9]+" ]
 
 permissions:
-  contents: write   # нужно для создания GitHub Release
-  actions: read     # «Ждём своей очереди» читает список запусков этого workflow
+  contents: write
+  actions: read
 
-# Сборки тегов идут СТРОГО по одной, в порядке запуска (см. шаг «Ждём своей очереди»).
-# Не `concurrency:` GitHub: тот держит в очереди только ОДИН ожидающий запуск и отменяет
-# остальные — пуш четырёх тегов подряд потерял бы два релиза.
 jobs:
   release:
     runs-on: ubuntu-latest
     env:
       TAG: ${{ github.ref_name }}
     steps:
-      # Параллельные сборки нескольких тегов финишировали в случайном порядке, и бейдж
-      # «Latest» (по нему приложение ищет обновление — `releases/latest`) доставался тому
-      # релизу, который создался ПОЗЖЕ, а не тому, чей тег больше. Ждём, пока все запуски этого
-      # workflow, стартовавшие раньше нашего (run id растёт монотонно), не завершатся.
-      # Верхняя граница ожидания — страховка от зависшего соседа: дальше собираемся как есть,
-      # бейдж «Latest» всё равно ставится по номеру тега (см. «Latest — только наибольший тег»).
       - name: Ждём своей очереди
         env:
           GH_TOKEN: ${{ github.token }}
@@ -65,7 +46,6 @@ jobs:
       - name: Checkout (полная история + теги)
         uses: actions/checkout@v4
         with:
-          # versionCode = число коммитов, versionName = из тега — нужна вся история.
           ref: ${{ github.ref_name }}
           fetch-depth: 0
 
@@ -81,7 +61,6 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      # Декодируем keystore из base64-секрета во временный файл раннера.
       - name: Decode release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -93,9 +72,6 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/filmax-release.jks"
           echo "KEYSTORE_FILE=$RUNNER_TEMP/filmax-release.jks" >> "$GITHUB_ENV"
 
-      # Crashlytics: конфиг Firebase из секрета. Файл в .gitignore (репо публичное), а его
-      # наличие включает плагины google-services/crashlytics в app/build.gradle.kts —
-      # вместе с ними в релиз уезжает и mapping-файл R8 для читаемых стектрейсов.
       - name: Decode google-services.json
         env:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
@@ -112,9 +88,6 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          # In-app update: fine-grained токен (только чтение contents этого репо) зашивается в
-          # APK, чтобы приложение читало Releases приватного репозитория. Не задан — сборка
-          # пройдёт, но проверка обновлений в приложении будет молча выключена.
           UPDATE_GITHUB_TOKEN: ${{ secrets.UPDATE_GITHUB_TOKEN }}
         run: ./gradlew :app:assembleRelease --stacktrace
 
@@ -145,8 +118,6 @@ jobs:
           sha256sum "$APK" "$APK_LATEST" > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      # Авто-changelog из коммитов между предыдущим и текущим тегом.
-      # Коммиты по Conventional Commits (feat/fix/perf/...), группируем по типам.
       - name: Generate changelog
         id: changelog
         run: |
@@ -172,7 +143,6 @@ jobs:
           emit "feat" "Новое"
           emit "fix"  "Исправления"
           emit "perf" "Производительность"
-          # Фолбэк, если по конвенции ничего не распозналось.
           if [ "$(wc -l < "$RUNNER_TEMP/changelog.md")" -le 2 ]; then
             echo "### Коммиты" >> "$RUNNER_TEMP/changelog.md"
             git log --no-merges --pretty='- %s' "$range" >> "$RUNNER_TEMP/changelog.md"
@@ -182,10 +152,6 @@ jobs:
           echo "Собрано из тега \`${TAG}\`." >> "$RUNNER_TEMP/changelog.md"
           cat "$RUNNER_TEMP/changelog.md"
 
-      # Бейдж «Latest» — по НОМЕРУ тега, а не по времени создания релиза (дефолт GitHub):
-      # приложение берёт обновление из `releases/latest`, и пересборка старого тега (или
-      # финиш отставшей параллельной сборки) не должна подменять свежую версию старой.
-      # Теги перечитываем прямо сейчас: пока ждали очередь и собирались, мог приехать новый.
       - name: Latest — только наибольший тег
         id: latest
         run: |
@@ -199,8 +165,6 @@ jobs:
             echo "$TAG не наибольший (есть $highest) — релиз публикуется без бейджа Latest."
           fi
 
-      # Идемпотентно: если Release уже есть (создан заранее через UI или прошлым прогоном) —
-      # докладываем APK и обновляем заметки; иначе создаём. Так шаг не падает на «tag already exists».
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

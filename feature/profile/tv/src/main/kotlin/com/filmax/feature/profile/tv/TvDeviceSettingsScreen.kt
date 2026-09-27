@@ -53,19 +53,11 @@ import com.filmax.feature.profile.common.DeviceSettingsSideEffect
 import com.filmax.feature.profile.common.DeviceSettingsState
 import org.koin.androidx.compose.koinViewModel
 
-/** Ширина колонки настроек: строку во весь экран с 3 метров читать невозможно. */
 private val ContentMaxWidth = 640.dp
 private val ContentTop = 96.dp
 private val RowHeight = 60.dp
 private val RowGap = 10.dp
 
-/**
- * TV-экран «Настройки устройства». Тумблеры (SSL/HEVC/HDR/4K/смешанный плейлист) переключаются
- * кликом, тип потока циклически меняется по кругу — как настройки воспроизведения в TV-Профиле.
- * Правки локальны, на сервер уходят по кнопке «Сохранить». После успеха экран закрывается.
- *
- * Сервер раздачи — справочная строка без выбора: список локаций API не отдаёт (см. serverLocationLabel).
- */
 @Composable
 fun TvDeviceSettingsScreen(
     onBack: () -> Unit,
@@ -94,8 +86,6 @@ fun TvDeviceSettingsScreen(
     )
 }
 
-// ── Контент ────────────────────────────────────────────────────────────────
-
 private data class DeviceToggles(
     val onSsl: (Boolean) -> Unit,
     val onHevc: (Boolean) -> Unit,
@@ -110,7 +100,6 @@ private data class DeviceActions(
     val onSave: () -> Unit,
 )
 
-/** Лямбды замыкают текущий [state], поэтому пересобираются вместе с ним — без remember. */
 private fun deviceActions(screenModel: DeviceSettingsScreenModel, state: DeviceSettingsState) = DeviceActions(
     toggles = DeviceToggles(
         onSsl = { screenModel.dispatch(DeviceSettingsEvent.SetSsl(it)) },
@@ -164,7 +153,6 @@ private fun DeviceSettingsContent(
         }
     }
 
-    // Стартовый фокус на первой строке: экран пушевой, таб-бар focus сюда не заводит.
     LaunchedEffect(Unit) { runCatching { firstRow.requestFocus() } }
 }
 
@@ -201,7 +189,6 @@ private fun ToggleRows(settings: DeviceSettings, toggles: DeviceToggles, firstRo
 private fun StreamRows(settings: DeviceSettings, onCycleStreaming: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(RowGap)) {
         SettingRow("Тип потока", streamingTypeLabel(settings.streamingType), onCycleStreaming)
-        // Сервер раздачи — справочная строка: список локаций API не отдаёт, менять не из чего.
         SettingRow("Сервер раздачи", serverLocationLabel(settings.serverLocation), null)
     }
 }
@@ -220,13 +207,6 @@ private fun SaveRow(saving: Boolean, error: String?, onSave: () -> Unit) {
     }
 }
 
-// ── Строка настройки ─────────────────────────────────────────────────────────
-
-/**
- * Строка настройки: слева ярлык, справа значение. Фокус рисуем вручную (рамка + подъём фона),
- * а не через `TvFocusCard`: `verticalScroll` клипает контент по горизонтали, и масштаб 1.08 на
- * строке 640dp вылезал бы за края — та же причина, что и в [TvProfileScreen].
- */
 @Composable
 private fun SettingRow(
     label: String,
@@ -264,8 +244,6 @@ private fun SettingRow(
         Text(value, style = MaterialTheme.typography.bodyLarge, color = TvOnSurfaceVariant, maxLines = 1)
     }
 }
-
-// ── Вспомогательное ──────────────────────────────────────────────────────────
 
 private fun onOff(enabled: Boolean): String = if (enabled) "Вкл" else "Выкл"
 

@@ -6,19 +6,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 
 class ImageCacheKeysTest {
-
     @Test
     fun `poster key has stable entityType colon entityId colon size shape`() {
         assertEquals("movie:123:poster_medium", ImageCacheKeys.poster(ItemType.MOVIE, 123, PosterSize.Medium))
         assertEquals("serial:7:wall", ImageCacheKeys.poster(ItemType.SERIES, 7, PosterSize.Wall))
     }
 
-    /**
-     * Постер и бэкдроп одного тайтла должны жить в кэше как РАЗНЫЕ записи — иначе прогрев одного
-     * вытеснит/подменит другой. Это ровно то различие, на котором держится разделение
-     * `CatalogMapper.posterPrefetchImages` (только Medium) и `HomeScreenModel`'s точечный
-     * прогрев бэкдропа (Wall/Big) для одного и того же тайтла.
-     */
     @Test
     fun `different sizes of the same item produce different keys`() {
         val keys = PosterSize.entries.map { size -> ImageCacheKeys.poster(ItemType.MOVIE, 42, size) }

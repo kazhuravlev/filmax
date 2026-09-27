@@ -14,17 +14,13 @@ import com.filmax.data.catalog.mapper.toDomain
 import com.filmax.data.user.remote.UpdateDeviceSettingsParams
 import com.filmax.data.user.remote.UserApi
 
-// Реализация всего контракта UserRepository — столько же методов, дробить незачем.
 @Suppress("TooManyFunctions")
 internal class UserRepositoryImpl(
     private val api: UserApi,
 ) : UserRepository {
-
     override suspend fun getProfile(): RequestResult<UserProfile> = safeRequest {
         val dto = api.getAccountInfo()
         val user = requireNotNull(dto.user)
-        // Подписка может прийти вложенной в `user` (актуальный ответ kino.watch)
-        // или на верхнем уровне — берём то, что есть.
         val subscriptionDto = user.subscription ?: dto.subscription
         UserProfile(
             id = user.id ?: 0,
@@ -40,7 +36,6 @@ internal class UserRepositoryImpl(
             },
         )
     }
-        // Профиль — единственное место, где известен username: привязываем к нему телеметрию.
         .onSuccess { profile -> ErrorReporting.reporter.setUser(profile.username) }
 
     override suspend fun getDeviceSettings(): RequestResult<DeviceSettings> = safeRequest {
@@ -107,7 +102,6 @@ internal class UserRepositoryImpl(
         safeRequest { api.removeBookmarkItem(itemId, folderId) }
 
     private companion object {
-        // kino.watch отдаёт временные метки в секундах — переводим в миллисекунды.
         const val MILLIS_IN_SECOND = 1000
     }
 }

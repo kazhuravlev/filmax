@@ -12,7 +12,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/** Нефокусируемое нижнее уведомление: не перехватывает управление пультом у контента. */
 @Composable
 fun TvBottomNotification(
     text: String,
@@ -31,7 +30,6 @@ fun TvBottomNotification(
     }
 }
 
-/** Уведомление о серверной ошибке с общей для всех экранов формулировкой и анимацией. */
 @Composable
 fun TvServerRetryNotification(
     visible: Boolean,

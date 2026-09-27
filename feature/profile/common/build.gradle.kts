@@ -1,4 +1,3 @@
-// Логический слой фичи profile (без UI): ScreenModel + контракт + DI.
 plugins {
     id("filmax.android.library")
 }

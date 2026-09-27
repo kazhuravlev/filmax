@@ -23,27 +23,11 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/**
- * «Буду смотреть» на сервере — поверх папки-закладки kino.watch, а не в SharedPreferences.
- *
- * Раньше список жил только локально: не переживал переустановку и не синхронизировался между
- * устройствами (сервер отдаёт лишь тоггл `togglewatchlist` и флаг `in_watchlist`, но НЕ список).
- * У закладок список есть (`bookmarks/{id}`), поэтому «Буду смотреть» держим в выделенной папке
- * [FOLDER_TITLE]: `getBookmarkFolders` → найти/создать, `addToBookmark`/`removeFromBookmark` для
- * тоггла, `getBookmarkItems` для чтения. Итог: список общий между телефоном и ТВ и переживает
- * переустановку.
- *
- * Локальный кэш ([CACHE_KEY]) — зеркало для мгновенного показа и работы офлайн; источник правды
- * всё равно сервер, кэш обновляется после каждого сетевого ответа.
- */
-// Репозиторий: реализация интерфейса + связные приватные помощники (папка, кэш, миграция).
-// Дробить на классы значило бы размазать одну ответственность — «Буду смотреть на сервере».
 @Suppress("TooManyFunctions")
 internal class FavoritesRepositoryImpl(
     private val userRepository: UserRepository,
     private val settings: Settings,
 ) : FavoritesRepository {
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val folderMutex = Mutex()
     private val state = MutableStateFlow(loadCache())
@@ -71,13 +55,8 @@ internal class FavoritesRepositoryImpl(
         }
 
     override suspend fun add(item: FavoriteItem) {
-        // Оптимистично: сердечко/список реагируют мгновенно, сервер догоняет. Расхождение
-        // при сбое выправит следующий refresh (источник правды — сервер).
         updateState(state.value.filterNot { it.id == item.id } + item)
         val folderId = ensureFolderId() ?: return
-        // Проверка по серверу, а не только по локальному [state]: он мог отстать от реальности
-        // (переустановка, другое устройство, ручной вызов API) — иначе повторный addToBookmark на
-        // уже существующую связь и есть источник дублей в папке.
         if (!userRepository.isItemInBookmark(item.id, folderId)) {
             userRepository.addToBookmark(item.id, folderId)
         }
@@ -89,23 +68,12 @@ internal class FavoritesRepositoryImpl(
         userRepository.removeFromBookmark(id, folderId)
     }
 
-    /**
-     * Перечитывает папку с сервера в кэш. Тихо выходит, если папки/сети нет.
-     *
-     * [UserRepository.getDedupedBookmarkItems] чистит дубликаты СЕРВЕРНОЙ связи `(folderId, id)`
-     * до того, как список попадёт в кэш/на экран — иначе накопленные дубли пережили бы любое
-     * количество перезапусков и `distinctBy` в [updateState] прятал бы их только визуально.
-     */
     private suspend fun refresh() {
         val folderId = ensureFolderId() ?: return
         val items = userRepository.getDedupedBookmarkItems(folderId, MAX_PAGES).getOrNull() ?: return
         updateState(items.map { it.toFavoriteItem() })
     }
 
-    /**
-     * Id папки «Буду смотреть»: из кэша, иначе найти по имени, иначе создать. Под мьютексом —
-     * иначе два параллельных `add` создали бы две одноимённые папки.
-     */
     private suspend fun ensureFolderId(): Int? = folderMutex.withLock {
         settings.getIntOrNull(FOLDER_ID_KEY)?.let { return it }
         val folders = userRepository.getBookmarkFolders().getOrNull() ?: return null
@@ -117,15 +85,11 @@ internal class FavoritesRepositoryImpl(
         folderId
     }
 
-    /** Одноразовый перенос старого локального списка на сервер. */
     private suspend fun migrateLegacyIfNeeded() {
         if (settings.getBoolean(MIGRATED_KEY, false)) return
         val legacy = settings.getStringOrNull(LEGACY_KEY)
             ?.let { runCatching { json.decodeFromString<List<Stored>>(it) }.getOrNull() }
             .orEmpty()
-        // Пустой список — переносить нечего, помечаем готовым. Иначе шлём на сервер, но только
-        // если папка доступна: нет сети (folderId == null) — не помечаем, попробуем при следующем
-        // запуске.
         val migrated = if (legacy.isEmpty()) {
             true
         } else {
@@ -136,21 +100,12 @@ internal class FavoritesRepositoryImpl(
         if (migrated) settings.putBoolean(MIGRATED_KEY, true)
     }
 
-    /**
-     * Единственная точка записи списка — и единственное место, где он дедуплицируется.
-     *
-     * Страницы `bookmarks/{id}` у kino.watch пересекаются (тайтл приходит и на первой, и на
-     * второй), а список уходит в LazyGrid с `key = id` — дубликат роняет экран «Моё» на
-     * `IllegalArgumentException: Key … was already used`. Так же лечится содержимое обычных
-     * папок в LibraryScreenModel и выдача каталога/поиска.
-     */
     private fun updateState(list: List<FavoriteItem>) {
         val unique = list.distinctBy { it.id }
         settings.putString(CACHE_KEY, json.encodeToString(unique.map { it.toStored() }))
         state.value = unique
     }
 
-    /** Дедуп и на чтении: в кэше уже мог осесть список с дублями, записанный до этой правки. */
     private fun loadCache(): List<FavoriteItem> =
         settings.getStringOrNull(CACHE_KEY)
             ?.let { runCatching { json.decodeFromString<List<Stored>>(it) }.getOrNull() }

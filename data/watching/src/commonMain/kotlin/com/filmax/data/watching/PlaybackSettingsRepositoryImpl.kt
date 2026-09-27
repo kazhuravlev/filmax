@@ -13,11 +13,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** Настройки воспроизведения на multiplatform-settings; реактивность — через [MutableStateFlow]. */
 internal class PlaybackSettingsRepositoryImpl(
     private val storage: Settings,
 ) : PlaybackSettingsRepository {
-
     private val state = MutableStateFlow(load())
 
     override val settings: Flow<PlaybackSettings> = state.asStateFlow()
@@ -28,12 +26,6 @@ internal class PlaybackSettingsRepositoryImpl(
 
     override suspend fun setPlayerUi(ui: PlayerUi) = update { it.copy(playerUi = ui) }
 
-    // Память тайтла — точечные ключи мимо state: это не глобальная настройка, а «что выбрали в
-    // этом сериале», и подписки на неё не нужны. Пресет и ручной выбор — взаимоисключающие
-    // ключи: запись одного стирает другой, чтобы чтение было однозначным.
-    //
-    // Ручной выбор хранится в тех же двух ключах (озвучка и субтитры), что были до появления
-    // пресетов, — старые записи читаются как [TitleTracks.Custom] без миграции.
     override suspend fun titleTracksFor(itemId: Int): TitleTracks? {
         val preset = storage.getStringOrNull(KEY_TITLE_PRESET_PREFIX + itemId)
         val voice = storage.getStringOrNull(KEY_VOICE_PREFIX + itemId)
@@ -81,13 +73,11 @@ internal class PlaybackSettingsRepositoryImpl(
     }
 
     private fun load(): PlaybackSettings {
-        // Глобальные «язык аудио»/«субтитры» заменены пресетом — их ключи больше не читаем.
         storage.remove(KEY_LEGACY_AUDIO)
         storage.remove(KEY_LEGACY_SUBTITLES)
         return PlaybackSettings(
             quality = storage.getStringOrNull(KEY_QUALITY)?.toQuality() ?: QualityPreference.Auto,
             preset = storage.getStringOrNull(KEY_PRESET)?.toPreset(),
-            // Неизвестное имя (интерфейс убрали) — дефолтный, а не падение при загрузке.
             playerUi = storage.getStringOrNull(KEY_PLAYER_UI)
                 ?.let { raw -> PlayerUi.entries.firstOrNull { it.name == raw } }
                 ?: PlayerUi.Default,
@@ -109,7 +99,6 @@ internal class PlaybackSettingsRepositoryImpl(
 
 private const val PRESET_AUTO = "auto"
 
-/** Так «Авто» писалось до типизации качества — старые записи читаем как [QualityPreference.Auto]. */
 private const val LEGACY_QUALITY_AUTO = "Авто"
 
 private fun TrackPreset?.toRaw(): String = this?.name ?: PRESET_AUTO
@@ -122,5 +111,4 @@ private fun QualityPreference.toRaw(): String = when (this) {
 private fun String.toQuality(): QualityPreference =
     if (this == LEGACY_QUALITY_AUTO) QualityPreference.Auto else QualityPreference.Fixed(this)
 
-/** Неизвестное имя (пресет переименовали/удалили) читается как «Авто», а не роняет загрузку. */
 private fun String.toPreset(): TrackPreset? = TrackPreset.entries.firstOrNull { it.name == this }

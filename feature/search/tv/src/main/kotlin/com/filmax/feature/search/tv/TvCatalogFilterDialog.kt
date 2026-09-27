@@ -42,14 +42,6 @@ import com.filmax.core.tv.designsystem.TvOnSurface
 import com.filmax.core.tv.designsystem.TvOverline
 import com.filmax.core.tv.designsystem.TvSurfaceContainer
 
-/**
- * Оверлей-панель расширенных фильтров каталога для пульта. Год, рейтинги, страна и тумблеры —
- * всё чипами: на D-pad слайдер неуправляем, а перебор чипов OK'ом естественен. Правки копятся в
- * черновике и уходят в ScreenModel только по «Применить» — иначе сеть дёргалась бы на каждый чип.
- *
- * Диалог создаёт своё окно, поэтому пульт не проваливается на каталог под панелью; ширину окна
- * снимаем ([DialogProperties.usePlatformDefaultWidth] = false), чтобы панель заняла долю экрана.
- */
 @Composable
 fun TvCatalogFilterDialog(
     current: CatalogFilters,
@@ -59,8 +51,6 @@ fun TvCatalogFilterDialog(
 ) {
     var draft by remember { mutableStateOf(current) }
     val firstChipFocus = remember { FocusRequester() }
-    // Стартовый фокус обязан попасть внутрь панели, иначе окно диалога не примет нажатия пульта.
-    // Первый чип, а не кнопка снизу: фокус на кнопке прокрутил бы панель сразу к низу.
     LaunchedEffect(Unit) { runCatching { firstChipFocus.requestFocus() } }
 
     Dialog(
@@ -83,7 +73,6 @@ fun TvCatalogFilterDialog(
     }
 }
 
-/** Действия нижних кнопок панели — группой (detekt LongParameterList). */
 private data class FilterDialogActions(
     val onApply: () -> Unit,
     val onReset: () -> Unit,
@@ -131,7 +120,6 @@ private fun FilterPanel(
     }
 }
 
-/** Заголовок секции ([TvOverline]) над рядом чипов — единый отступ для всех секций панели. */
 @Composable
 private fun FilterSection(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(SectionTitleGap)) {
@@ -140,7 +128,6 @@ private fun FilterSection(title: String, content: @Composable () -> Unit) {
     }
 }
 
-/** Перенос чипов на новую строку вместо горизонтального скролла: с пультом искать скрытые чипы неудобно. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChipFlowRow(content: @Composable () -> Unit) {
@@ -163,7 +150,6 @@ private fun YearSection(
                     label = bucket.label,
                     selected = bucket.matches(draft),
                     onClick = { onDraft(draft.copy(yearFrom = bucket.yearFrom, yearTo = bucket.yearTo)) },
-                    // Первый чип — точка входа фокуса в диалог (см. TvCatalogFilterDialog).
                     modifier = if (index == 0) Modifier.focusRequester(firstChipFocus) else Modifier,
                 )
             }
@@ -186,10 +172,7 @@ private fun RatingSection(title: String, selected: Int?, onSelect: (Int?) -> Uni
 @Composable
 private fun CountrySection(countries: List<Country>, selectedId: Int?, onSelect: (Int?) -> Unit) {
     FilterSection(title = "Страна") {
-        // Первый вход фокуса — на «Любая», а не на пространственно-ближайший чип в середине.
         val firstCountryFocus = remember { FocusRequester() }
-        // Стран десятки — горизонтальный список с focusRestorer, как ряд жанров в каталоге. Сдвиг
-        // на FocusInset возвращает первый чип на линию секции, отдав рамке фокуса запас.
         LazyRow(
             modifier = Modifier.focusRestorer(firstCountryFocus).offset(x = -TvMetrics.FocusInset),
             contentPadding = PaddingValues(horizontal = TvMetrics.FocusInset),
@@ -224,8 +207,6 @@ private fun QualitySection(only4k: Boolean, onToggle: () -> Unit) {
 @Composable
 private fun StatusSection(onlyFinished: Boolean?, onToggle: (Boolean?) -> Unit) {
     FilterSection(title = "Статус") {
-        // Тумблер бинарный: включён — только завершённые, выключен — любые (null). Значение false
-        // (только продолжающиеся) домен допускает, но на пульте его не выставляем.
         TvChip(
             label = "Только завершённые",
             selected = onlyFinished == true,
@@ -245,9 +226,7 @@ private fun FilterDialogButtons(actions: FilterDialogActions) {
     }
 }
 
-/** Десятилетие как границы года. Пустая граница — «не ограничивать» с этой стороны. */
 private data class YearBucket(val label: String, val yearFrom: Int?, val yearTo: Int?) {
-    /** Выбран тот чип, чьи границы совпадают с текущим черновиком, — иначе выбор не читался бы. */
     fun matches(filters: CatalogFilters): Boolean =
         filters.yearFrom == yearFrom && filters.yearTo == yearTo
 }
@@ -262,7 +241,6 @@ private val YearBuckets = listOf(
     YearBucket(label = "до 1980", yearFrom = null, yearTo = 1979),
 )
 
-/** Пороги внешних оценок (kino.watch 0–10). «Любой» — без нижней границы. */
 private val RatingThresholds: List<Pair<String, Int?>> = listOf(
     "Любой" to null,
     "5+" to 5,
@@ -272,7 +250,6 @@ private val RatingThresholds: List<Pair<String, Int?>> = listOf(
     "9+" to 9,
 )
 
-/** Доля ширины экрана под панель — как в макете фильтров TV. */
 private const val PANEL_WIDTH_FRACTION = 0.7f
 
 private val PanelMaxWidth = 900.dp

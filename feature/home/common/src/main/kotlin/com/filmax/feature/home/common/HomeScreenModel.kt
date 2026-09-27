@@ -24,9 +24,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 
-// Экран главной параллелит все свои источники (hero, продолжение просмотра, ряды каталога,
-// подборки) и красит каждый по готовности — один короткий обработчик на источник, дробить их по
-// классам ради лимита незачем.
 @Suppress("TooManyFunctions")
 class HomeScreenModel(
     private val catalog: CatalogRepository,
@@ -35,7 +32,6 @@ class HomeScreenModel(
     private val snapshotCache: LastValueCache<HomeSnapshot>,
     private val user: UserRepository,
 ) : BaseScreenModel<HomeState, HomeSideEffect, HomeEvent>(HomeState()) {
-
     init {
         onFetchData()
         fetchUserInitials()
@@ -48,25 +44,8 @@ class HomeScreenModel(
         }
     }
 
-    /**
-     * Все источники стартуют одним `async` каждый и параллельно; каждый красит СВОЙ кусок
-     * состояния сразу по готовности (не дожидаясь остальных) — экран поэтому и может показать
-     * ряды по одному, а не всё разом. Итоговые `await()` в конце нужны только чтобы:
-     *  а) знать, что относящийся к источнику `updateState` уже применился (иначе финальная
-     *     проверка `state.isEmpty`/`allSucceeded` читала бы состояние до того, как оно обновилось —
-     *     `updateState` внутри того же `async` гарантирует порядок);
-     *  б) посчитать общую ошибку/оффлайн-баннер/кэш снапшота уже после того, как всё осело.
-     */
     override fun onFetchData() {
         screenModelScope { _ ->
-            // Первый вызов после (пере)создания модели — состояние ещё пустое, берём то, что было
-            // при прошлом успешном проходе, из DI-кэша. Повторный вызов (HomeEvent.Load) — на
-            // экране уже что-то есть, используем это как затравку: экран (см. TvHomeScreen.tvRails)
-            // держит эти карточки на месте, пока грузится свежий ответ, вместо того чтобы мигать
-            // скелетоном поверх уже показанного контента.
-            // Повторный проход (ряды уже есть) — явное обновление по действию пользователя: историю
-            // для «Продолжить просмотр» читаем мимо кэша репозитория, иначе он отдал бы ту же
-            // картину, что и минуту назад (см. WatchingRepository.getHistory).
             val isRefresh = state.rows.isNotEmpty()
             val seed = if (state.hero == null && state.rows.isEmpty()) snapshotCache.get() else state.asSnapshot()
             updateState { it.copy(loading = false, heroLoading = true, hero = seed?.hero, rows = initialRows(seed)) }
@@ -115,9 +94,7 @@ class HomeScreenModel(
             if (allSucceeded) snapshotCache.put(state.asSnapshot())
             if (error != null) showServerRetryNotice()
             when {
-                // Пусто + ошибка — блокирующая модалка.
                 state.isEmpty && error != null -> showError(error)
-                // Что-то не обновилось свежим (сеть/сбой) — контент из кэша/затравки, баннер «нет сети».
                 !allSucceeded -> showOfflineBanner()
                 else -> {
                     dismissOfflineBanner()
@@ -127,21 +104,6 @@ class HomeScreenModel(
         }
     }
 
-    /**
-     * Тайтлы, которые сервер сам считает «в процессе». Эталонный алгоритм kino.watch (веб-клиент,
-     * getAwaitItems): «Продолжить просмотр» строится ПЕРЕСЕЧЕНИЕМ `/history` (точная позиция) с
-     * `/watching/{type}` (родной список сервера). Наша локальная эвристика `isActualContinuation`
-     * (watchStatus/остаток по треклисту) не всегда совпадает с тем, что сервер уже отметил
-     * завершённым — просмотренные до конца тайтлы всё ещё остаются в истории с позицией.
-     * `/watching/{type}` — источник истины: досмотренный тайтл сервер сам убирает оттуда, поэтому
-     * пересечение отфильтровывает такие карточки надёжнее. Сериалы опрашиваются оба раза:
-     * `subscribed` у них не игнорируется сервером (как у movies) и делит список на
-     * подписанные/неподписанные на новые серии, а не на «досмотрено/нет» — без объединения обоих
-     * ответов часть сериалов «в процессе» потерялась бы.
-     *
-     * null — ни один из запросов не ответил: доверять пустому пересечению нельзя, иначе временный
-     * сбой сети стёр бы весь ряд, и вызывающий откатывается к одной локальной эвристике.
-     */
     private suspend fun inProgressTitleIds(): Set<Int>? = coroutineScope {
         val results = listOf(
             async { watching.getWatchingTitles(WatchingListType.Movies) },
@@ -154,9 +116,6 @@ class HomeScreenModel(
             ?.mapTo(mutableSetOf()) { it.itemId }
     }
 
-    /** Один ряд каталога: 1 тип почти всегда, 2 (movie+serial) только у «Аниме» — жанр общий
-     * на оба (см. [HOME_CATALOG_ROWS]). Частичный успех (один тип ответил, другой упал) всё
-     * равно считается успехом ряда — лучше неполный ряд, чем пустой из-за одного сбоя. */
     private suspend fun fetchRow(spec: HomeCatalogRowSpec): RequestResult<List<Item>> = coroutineScope {
         val perType = spec.types.map { type ->
             async {
@@ -172,7 +131,6 @@ class HomeScreenModel(
         if (items.isEmpty() && error != null) error else RequestResult.Success(items)
     }
 
-    /** Инициалы для аватара в шапке — best-effort, ошибки не мешают ленте. */
     private fun fetchUserInitials() {
         screenModelScope {
             (user.getProfile() as? RequestResult.Success)?.let { result ->
@@ -183,16 +141,12 @@ class HomeScreenModel(
 
     private fun loadMoreRow(id: String) {
         when (val row = state.rows.firstOrNull { it.id == id }) {
-            // История приходит из фида целиком — листать нечего.
             is HomeRow.Continue, null -> Unit
             is HomeRow.Titles -> loadMoreTitles(row)
             is HomeRow.Collections -> loadMoreCollections(row)
         }
     }
 
-    /** Догрузка для 1 или 2 типов (см. [HomeRow.Titles.types]): страница у каждого типа своя,
-     * но общий номер страницы один на ряд — источник, который уже исчерпался, просто продолжит
-     * отдавать пустые страницы (безвредно для [RowPaging.append]), пока не исчерпаются оба. */
     private fun loadMoreTitles(row: HomeRow.Titles) {
         if (!row.paging.canLoadMore) return
         val nextPage = row.paging.page + 1
@@ -222,10 +176,6 @@ class HomeScreenModel(
         }
     }
 
-    /**
-     * Догрузка «Подборок» отдельно от [loadMoreTitles]: другой источник, и репозиторий отдаёт
-     * список без пагинации — конец определяется пустой страницей.
-     */
     private fun loadMoreCollections(row: HomeRow.Collections) {
         if (!row.paging.canLoadMore) return
         val nextPage = row.paging.page + 1
@@ -261,11 +211,6 @@ class HomeScreenModel(
     }
 }
 
-/** Один настраиваемый ряд каталога на главной — зеркалит `home_blocks` реального конфига сервера
- * kino.watch (kpapp.link/config.json, сортировка везде «новое»). Берём только то, что `ItemType`
- * уже умеет: Detail/Player экраны никогда не проверялись на «concert»/«documovie»/«tvshow»/«3d» —
- * раздувать домен ради непроверенного риска не стоит, эти строки конфига просто нет смысла
- * заводить. «Аниме» — 2 типа (movie+serial) с одним общим жанром 25, как и в конфиге сервера. */
 private data class HomeCatalogRowSpec(
     val id: String,
     val title: String,
@@ -283,13 +228,6 @@ private val HOME_CATALOG_ROWS = listOf(
     HomeCatalogRowSpec("standup", "Стендапы", listOf(ItemType.MOVIE), genreId = 101),
 )
 
-/**
- * Последний успешно загруженный целиком снимок главной — офлайн-устойчивость (issue #42) в
- * новой, параллельной модели загрузки: вместо одного атомарного фида кэшируем то же самое, но
- * ключуя ряды каталога по id, а не именованными полями. Пишется только когда абсолютно все
- * источники прохода отработали успешно (см. [HomeScreenModel.onFetchData]); читается как затравка
- * для скелетонов на первом проходе после (пере)создания модели.
- */
 data class HomeSnapshot(
     val hero: Item? = null,
     val continueWatching: List<Continuation> = emptyList(),
@@ -304,10 +242,6 @@ private fun HomeState.asSnapshot(): HomeSnapshot = HomeSnapshot(
     catalogRows = rows.filterIsInstance<HomeRow.Titles>().associate { it.id to it.paging.items },
 )
 
-/** Начальные ряды на входе в [HomeScreenModel.onFetchData]: `loading = true` для всех, но экран
- * смотрит не на этот флаг, а на наличие карточек (см. [HomeRow.loading]) — содержимое здесь из
- * затравки, если есть (см. [HomeSnapshot]), и остаётся на экране без скелетона до свежего ответа;
- * для ряда без затравки (холодный старт) карточек нет, и скелетон покажется как обычно. */
 private fun initialRows(seed: HomeSnapshot?): List<HomeRow> = buildList {
     add(HomeRow.Continue(entries = seed?.continueWatching.orEmpty(), loading = true))
     HOME_CATALOG_ROWS.forEach { spec ->
@@ -325,39 +259,20 @@ private fun initialRows(seed: HomeSnapshot?): List<HomeRow> = buildList {
     add(HomeRow.Collections(paging = RowPaging(items = seed?.collections.orEmpty()), loading = true))
 }
 
-/** Заменяет содержимое на свежее, если оно пришло; иначе оставляет прежнее (затравку/предыдущий
- * успешный ответ) — так ошибка одного источника не стирает то, что уже было показано. */
 private fun <T> RowPaging<T>.seededWith(fresh: List<T>?): RowPaging<T> =
     if (fresh != null) RowPaging(items = fresh) else this
 
-/**
- * Потолок карточек в одном ряду: бесконечный ряд на пульте — сотни нажатий вправо, а каждая
- * сотня карточек ещё и держит в памяти постеры. Дальше пусть зовёт Каталог.
- */
 private const val HOME_ROW_MAX = 100
 
-/** Сколько последних тайтлов показать в блоке «Продолжить просмотр». */
 private const val CONTINUE_WATCHING_LIMIT = 5
 
-/** Сколько подборок показать в горизонтальном ряду. */
 private const val COLLECTIONS_LIMIT = 5
 
-/** Сколько тайтлов показать в горизонтальных рядах каталога на старте. */
 private const val ROW_LIMIT = 10
 
-/** Ряд можно листать дальше: не занят, не кончился, не упёрся в потолок и вообще не пуст. */
 private val RowPaging<*>.canLoadMore: Boolean
     get() = !loadingMore && !endReached && items.isNotEmpty() && items.size < HOME_ROW_MAX
 
-/**
- * Фон-бэкдроп прогреваем ТОЛЬКО для этих двух маленьких наборов, а не для каждого тайтла везде
- * (см. `CatalogMapper.posterPrefetchImages` — там теперь только маленький постер): именно здесь,
- * в hero и «Продолжить просмотр», бэкдроп реально показывается (см. `TvHero`/`TvContinueCard` в
- * `feature:home:tv`) — ключ и источник url должны буква в букву совпадать с тем, что рисует экран,
- * иначе прогрев зря скачал бы то, что экран потом всё равно попросит под другим ключом.
- */
-// internal, а не private: только чтобы юнит-тесты (HomeBackdropPrefetchTest) могли проверить
-// ключ/url напрямую, как чистые функции — логика и видимость снаружи модуля не меняются.
 internal fun Item.heroBackdropPrefetch(): PrefetchImage? {
     val url = posters.wide ?: posters.big.takeIf { it.isNotBlank() } ?: return null
     val size = if (posters.wide != null) PosterSize.Wall else PosterSize.Big
@@ -369,10 +284,6 @@ internal fun Continuation.backdropPrefetch(): PrefetchImage? {
     return PrefetchImage(ImageCacheKeys.poster(item.type, itemId, PosterSize.Wall), url)
 }
 
-/**
- * Приклеивает страницу к ряду: дедуп по id (страницы kino.watch пересекаются) и потолок ряда.
- * Пустая страница, отсутствие следующей или упёршийся потолок означают конец.
- */
 private fun <T> RowPaging<T>.append(page: List<T>, key: (T) -> Int, hasNextPage: Boolean): RowPaging<T> {
     val seen = items.mapTo(HashSet(), key)
     val merged = (items + page.filterNot { key(it) in seen }).take(HOME_ROW_MAX)

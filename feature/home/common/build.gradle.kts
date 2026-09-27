@@ -1,5 +1,3 @@
-// Логический слой фичи Home (без UI): HomeScreenModel + контракт + DI.
-// UI живёт в :feature:home:mobile и :feature:home:tv.
 plugins {
     id("filmax.android.library")
 }

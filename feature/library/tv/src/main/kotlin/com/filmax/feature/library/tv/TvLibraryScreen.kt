@@ -97,11 +97,6 @@ import com.filmax.feature.library.common.LibraryState
 import com.filmax.feature.library.common.OpenBookmarkFolder
 import org.koin.androidx.compose.koinViewModel
 
-/**
- * Содержимое сетки раздела. Раньше «Я смотрю» переключался чипами между «В процессе» и
- * «Историей»; теперь у каждого раздела верхнего меню ровно один сегмент, а история — своя
- * вкладка. Список сегментов остался, чтобы шапка и сетка не знали о разделах напрямую.
- */
 private enum class LibrarySegment { WATCHING, HISTORY, BOOKMARKS }
 
 private val LibrarySection.segments: List<LibrarySegment>
@@ -114,7 +109,6 @@ private val LibrarySection.segments: List<LibrarySegment>
 private val LibrarySection.initialSegment: LibrarySegment
     get() = if (this == LibrarySection.BOOKMARKS) LibrarySegment.BOOKMARKS else segments.first()
 
-/** Действия раздела одним объектом — как TvHomeActions на главной. */
 private data class TvLibraryActions(
     val onOpenItem: (Int) -> Unit,
     val onOpenFolder: (BookmarkFolder) -> Unit,
@@ -122,25 +116,15 @@ private data class TvLibraryActions(
     val onLoadMoreFolderItems: () -> Unit,
 )
 
-/**
- * UI-состояние закладок на TV: активный диалог и «режим удаления» открытой подборки. Пульт не знает
- * ни долгих нажатий, ни свайпов, поэтому и создание, и удаление вынесены в явные фокусируемые
- * элементы; это состояние их связывает. Живёт в [TvLibraryScreen], меняется плитками и диалогами.
- */
 @Stable
 private class TvBookmarkUi {
     var creating by mutableStateOf(false)
     var folderToDelete by mutableStateOf<BookmarkFolder?>(null)
     var itemToRemove by mutableStateOf<Item?>(null)
 
-    /** В режиме удаления клик по карточке убирает тайтл из подборки, а не открывает его. */
     var removeMode by mutableStateOf(false)
 }
 
-/**
- * Один из личных экранов поверх общего [LibraryScreenModel]. Верхний таб-бар рисует TV-скаффолд
- * в `:app`, фокус и скролл — нативные.
- */
 @Composable
 fun TvLibraryScreen(
     section: LibrarySection,
@@ -151,17 +135,12 @@ fun TvLibraryScreen(
     val state by screenModel.collectAsState()
     val retryNotice by screenModel.collectServerRetryNoticeAsState()
     RefreshOnTopNavReselect { screenModel.dispatch(LibraryEvent.Refresh(section)) }
-    // ViewModel живёт дольше экрана: возврат из деталей — не повод перезагружать всё заново.
-    // Показываем то, что уже загружено, и тихо обновляем в фоне, только если данные раздела
-    // реально могли устареть (см. DataInvalidation) — без спиннера и лишнего похода в сеть.
     LaunchedEffect(section) { screenModel.dispatch(LibraryEvent.RefreshIfDirty(section)) }
     val segment = section.initialSegment
     val ui = remember { TvBookmarkUi() }
 
-    // Смена или закрытие подборки сбрасывает режим удаления: он относится к конкретной открытой подборке.
     LaunchedEffect(state.openFolder?.folder?.id) { ui.removeMode = false }
 
-    // Внутри подборки «Назад» возвращает к списку подборок, а не выкидывает из раздела.
     BackHandler(enabled = section == LibrarySection.BOOKMARKS && state.openFolder != null) {
         screenModel.dispatch(LibraryEvent.CloseFolder)
     }
@@ -212,12 +191,6 @@ private fun BoxScope.TvLibraryRetryNotification(visible: Boolean) {
     )
 }
 
-/**
- * Шапка раздела. В «Подборках» — панель открытой подборки; в «Я смотрю» и «Истории» шапки как
- * таковой нет: раздел уже назван вкладкой таб-бара, а разделительная линия под пустой шапкой
- * читалась как случайная полоска над сеткой. Отступ сверху нужен всегда — иначе сетка заезжает
- * под верхний таб-бар: тот рисуется отдельным оверлеем и своё место в раскладке не резервирует.
- */
 @Composable
 private fun MineHeader(section: LibrarySection, state: LibraryState, ui: TvBookmarkUi) {
     Column(
@@ -235,11 +208,6 @@ private fun MineHeader(section: LibrarySection, state: LibraryState, ui: TvBookm
     }
 }
 
-/**
- * Панель открытой подборки: заголовок и действия над ней. Оба действия — фокусируемые кнопки, а
- * не жесты: пультом до них доезжают вверх от сетки. «Убрать тайтлы» переводит подборку в режим
- * удаления (клик по карточке убирает её), «Удалить подборку» просит подтверждение. «Назад» — к списку.
- */
 @Composable
 private fun OpenFolderBar(folder: BookmarkFolder, ui: TvBookmarkUi) {
     Row(
@@ -280,8 +248,6 @@ private fun MineGrid(
     val focus = rememberTvScreenFocus()
     val openFolder = state.openFolder
 
-    // Догрузка следующей страницы подборки: страниц у kino.watch может быть много, а счётчик на
-    // плитке обещает всё содержимое — значит, до конца должно доскроллиться.
     val loadMore by remember {
         derivedStateOf {
             val info = gridState.layoutInfo
@@ -293,8 +259,6 @@ private fun MineGrid(
         if (loadMore && openFolder != null) actions.onLoadMoreFolderItems()
     }
 
-    // Сегмент и открытая подборка меняют содержимое сетки целиком: плитка, на которой стоял
-    // фокус, уходит из композиции, и без сброса фокус повис бы — пульт перестал бы отвечать.
     LaunchedEffect(segment, openFolder?.folder?.id) { focus.focusOn() }
 
     if (openFolder != null) {
@@ -330,10 +294,6 @@ private fun MineGrid(
     }
 }
 
-/**
- * «Я смотрю» — тайтлы «в процессе», одним запросом на тип (см. [LibraryState.watching]).
- * Ведёт в карточку тайтла: там и «продолжить», и контекст.
- */
 private fun LazyGridScope.watchingSegment(
     watching: List<WatchingItem>,
     titleDetails: Map<Int, Item>,
@@ -358,8 +318,6 @@ private fun LazyGridScope.watchingSegment(
             onOpenItem = onOpenItem,
         )
     }
-    // Подборка «Буду смотреть» уже отфильтрована от «В процессе» в ScreenModel — пусто здесь
-    // значит подборки нет либо в ней не осталось ничего нового, и рейл вместе с заголовком не рисуем.
     if (watchLaterRail.isNotEmpty()) {
         item(key = "watch_later_rail", span = { GridItemSpan(maxLineSpan) }) {
             TvRail(title = "Буду смотреть") {
@@ -375,7 +333,6 @@ private fun LazyGridScope.watchingSegment(
     }
 }
 
-/** Карточка тайтла из свимлейна «Буду смотреть» — та же адаптированная карточка, что и у «В процессе». */
 @Composable
 private fun WatchLaterCard(item: Item, modifier: Modifier, onOpenItem: (Int) -> Unit) {
     LibraryTitleCard(
@@ -389,7 +346,6 @@ private fun WatchLaterCard(item: Item, modifier: Modifier, onOpenItem: (Int) -> 
     )
 }
 
-/** «История» — последние просмотренные тайтлы из отдельного endpoint `/history`. */
 private fun LazyGridScope.historySegment(
     history: List<WatchHistory>,
     titleDetails: Map<Int, Item>,
@@ -414,7 +370,6 @@ private fun LazyGridScope.historySegment(
     }
 }
 
-/** «Подборки» — серверные подборки: список подборок либо содержимое открытой. */
 private fun LazyGridScope.bookmarksSegment(
     state: LibraryState,
     ui: TvBookmarkUi,
@@ -443,14 +398,11 @@ private fun LazyGridScope.folderTiles(
     onNewFolder: () -> Unit,
 ) {
     if (folders.isEmpty()) {
-        // Пусто — сразу зовём создать: единственное осмысленное действие, и кнопка сама берёт фокус.
         item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { BookmarksEmpty(onNewFolder) }
         return
     }
     items(folders, key = { it.id }) { folder ->
         val preview = previews[folder.id]
-        // LazyGrid создаёт плитки только вблизи экрана, поэтому не делаем запросы за все
-        // подборки сразу. Первая страница сохраняется и используется при входе в подборку.
         LaunchedEffect(folder.id) {
             if (preview == null) onLoadPreview(folder)
         }
@@ -469,7 +421,6 @@ private fun LazyGridScope.folderItems(
         openFolder.loading ->
             item(key = "folder_loading", span = { GridItemSpan(maxLineSpan) }) { LoadingBox() }
 
-        // Ошибку от пустой папки отличаем: «пусто» и «не загрузилось» требуют разных действий.
         openFolder.items.isEmpty() && openFolder.error != null -> emptyItem(
             icon = Icons.Filled.CloudOff,
             title = "Подборка не открылась",
@@ -497,7 +448,6 @@ private fun LazyGridScope.folderPosters(
             title = item.title,
             meta = gridPosterMeta(year = item.year, genre = item.genres.firstOrNull()?.title),
             posterUrl = item.posters.medium.ifBlank { item.posters.small },
-            // В режиме удаления карточка убирает тайтл (по подтверждению), иначе открывает детали.
             onClick = {
                 if (ui.removeMode) {
                     ui.itemToRemove = item
@@ -554,7 +504,6 @@ private fun MineEmpty(icon: ImageVector, title: String, hint: String) {
     }
 }
 
-/** «В процессе» расширяет универсальную карточку только счётчиком непросмотренных серий. */
 @Composable
 private fun WatchingCard(
     item: WatchingItem,
@@ -597,7 +546,6 @@ private data class LibraryCardContent(
     val unwatchedEpisodes: Int? = null,
 )
 
-/** Единый адаптер библиотечных данных к той же карточке, что используют каталог и подборки. */
 @Composable
 private fun LibraryTitleCard(
     content: LibraryCardContent,
@@ -635,7 +583,6 @@ private fun LibraryTitleCard(
     )
 }
 
-/** Плитка подборки с первыми 14 обложками в серверном порядке. */
 @Composable
 private fun FolderTile(
     folder: BookmarkFolder,
@@ -661,8 +608,6 @@ private fun FolderTile(
                 .background(TvSurfaceContainer),
         ) {
             FolderPreviewGrid(items = preview?.items.orEmpty(), modifier = Modifier.fillMaxSize())
-            // Низ затемнён сильнее: название читается на любой обложке, сетка при этом остаётся
-            // фоном, а не интерактивным набором мелких карточек.
             Box(
                 Modifier
                     .fillMaxSize()
@@ -695,11 +640,6 @@ private fun FolderTile(
     }
 }
 
-/**
- * Фон плитки всегда состоит из 2×7 одинаковых ячеек. Если тайтлов меньше, свободные ячейки
- * остаются нейтральными; лишние не рисуем. Порядок списка не меняем — это первые позиции той
- * же страницы, которая становится началом открытой подборки.
- */
 @Composable
 private fun FolderPreviewGrid(items: List<Item>, modifier: Modifier = Modifier) {
     Column(
@@ -736,7 +676,6 @@ private fun FolderPreviewGrid(items: List<Item>, modifier: Modifier = Modifier) 
     }
 }
 
-/** Плитка «＋ Новая подборка» — первая ячейка сетки, вход в диалог создания. */
 @Composable
 private fun NewFolderTile(onClick: () -> Unit) {
     TvFocusCard(
@@ -765,7 +704,6 @@ private fun NewFolderTile(onClick: () -> Unit) {
     }
 }
 
-/** Пустое состояние закладок: подсказка и фокусируемая кнопка создания подборки. */
 @Composable
 private fun BookmarksEmpty(onNewFolder: () -> Unit) {
     val createFocus = remember { FocusRequester() }
@@ -798,7 +736,6 @@ private fun BookmarksEmpty(onNewFolder: () -> Unit) {
     }
 }
 
-/** Постер тайтла в подборке. В режиме удаления поверх — крестик: маркер, что клик уберёт тайтл. */
 @Composable
 private fun FolderPoster(
     url: String,
@@ -815,7 +752,6 @@ private fun FolderPoster(
     }
 }
 
-/** Круглый крестик поверх постера — маркер режима удаления (слева, чтобы не спорить с рейтингом). */
 @Composable
 private fun RemoveBadgeTv(modifier: Modifier = Modifier) {
     Box(
@@ -834,7 +770,6 @@ private fun RemoveBadgeTv(modifier: Modifier = Modifier) {
     }
 }
 
-/** Постер для слота карточек дизайн-системы: монохромный плейсхолдер вместо розового по умолчанию. */
 @Composable
 private fun TvPoster(url: String, title: String, modifier: Modifier, shape: Shape, cacheKey: String? = null) {
     PosterImage(
@@ -847,9 +782,6 @@ private fun TvPoster(url: String, title: String, modifier: Modifier, shape: Shap
     )
 }
 
-// ── Диалоги закладок ──────────────────────────────────────────────────────
-
-/** Рисует активный диалог закладок и переводит подтверждение в события [LibraryScreenModel]. */
 @Composable
 private fun TvBookmarkDialogHost(
     ui: TvBookmarkUi,
@@ -883,7 +815,6 @@ private fun TvBookmarkDialogHost(
             message = "«${item.title}» исчезнет из подборки, но останется в каталоге.",
             confirmLabel = "Убрать",
             onConfirm = {
-                // openFolderId непустой, пока папка открыта; без него событие не шлём.
                 openFolderId?.let { folderId ->
                     dispatch(LibraryEvent.RemoveItemFromFolder(item.id, folderId))
                 }
@@ -894,10 +825,6 @@ private fun TvBookmarkDialogHost(
     }
 }
 
-/**
- * Диалог создания подборки. Поле берёт фокус сразу — по нажатию OK открывается системная экранная
- * клавиатура телевизора (ввод пультом). Пустое имя модель игнорирует, поэтому кнопку не блокируем.
- */
 @Composable
 private fun TvCreateFolderDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
@@ -929,7 +856,6 @@ private fun TvCreateFolderDialog(onConfirm: (String) -> Unit, onDismiss: () -> U
     }
 }
 
-/** Поле имени подборки: тёмная плашка с [BasicTextField] и плейсхолдером; системный IME вводит текст. */
 @Composable
 private fun TvFolderNameField(
     value: String,
@@ -963,7 +889,6 @@ private fun TvFolderNameField(
     }
 }
 
-/** Диалог подтверждения деструктива (удалить папку / убрать тайтл). Фокус — на действии. */
 @Composable
 private fun TvConfirmDialog(
     title: String,
@@ -1006,17 +931,11 @@ private fun LoadingBox(modifier: Modifier = Modifier) {
     }
 }
 
-/** Колонки не открытых подборок: компактные постеры — впятеро, папки — втроём. */
 private fun columnsFor(segment: LibrarySegment): Int = when (segment) {
     LibrarySegment.WATCHING, LibrarySegment.HISTORY -> LIBRARY_POSTER_COLUMNS
     LibrarySegment.BOOKMARKS -> FOLDER_COLUMNS
 }
 
-/**
- * Отступы сетки. Боковые поля живут только здесь: на родителе они срезали бы рамку фокуса
- * (карточка при фокусе растёт), а contentPadding сетка не клипает. Сверху и снизу — запас
- * ровно под это увеличение.
- */
 private val GridPadding = PaddingValues(
     start = TvMetrics.SafeHorizontal,
     end = TvMetrics.SafeHorizontal,
@@ -1030,11 +949,9 @@ private val FolderPreviewGap = 3.dp
 private const val FOLDER_PREVIEW_ROWS = 2
 private const val FOLDER_PREVIEW_COLUMNS = 7
 
-/** Ширина диалогов закладок: у́же экрана, чтобы читаться с дивана и не растягивать кнопки. */
 private val DialogMaxWidth = 420.dp
 
 private const val LIBRARY_POSTER_COLUMNS = 5
 private const val FOLDER_COLUMNS = 3
 
-/** За сколько карточек до конца сетки просить следующую страницу папки (примерно ряд). */
 private const val LOAD_MORE_TAIL = 4

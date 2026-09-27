@@ -36,37 +36,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
-/**
- * Размер карточки 16:9. Оба варианта — одна и та же карточка, разной ширины: «продолжить»
- * на главной крупнее, эпизод в ряду серий компактнее.
- */
 enum class TvCardSize(val width: Dp, val height: Dp) {
     Continue(TvMetrics.ContinueWidth, TvMetrics.ContinueHeight),
     Episode(TvMetrics.EpisodeWidth, TvMetrics.EpisodeHeight),
 }
 
-/**
- * Карточка-постер 2:3 — один из двух типов медиа-карточек на всё приложение. Используется
- * и в рядах, и в сетках каталога: один размер везде.
- *
- * Подпись живёт ПОД постером, а не поверх него: в монохроме постер — единственный источник
- * цвета, и накрывать его градиентом-скримом с текстом значит гасить единственное, что
- * держит экран. Заодно уходит риск бандинга на сером градиенте.
- *
- * [imdbRating]/[kinopoiskRating] — уже отформатированные строки (например «8.3»), каждая своя
- * пилюля с лого источника; null — эта пилюля не рисуется. Обе null — бейджа нет вовсе.
- *
- * [badgeContent] — расширяемый слот рядом с рейтингами: например, «В процессе» выводит в нём
- * число непросмотренных серий, не меняя устройство самой карточки.
- *
- * [advert] — в видео тайтла есть реклама (kino.watch `advert`): рисуем маленький бейдж-предупреждение
- * в противоположном от рейтинга углу (TopStart), чтобы они никогда не накладывались друг на друга.
- *
- * [quality] — максимальное доступное качество (см. [qualityLabel]): нижний правый угол, свободный
- * и от рейтинга (TopEnd), и от рекламы (TopStart) — единственный незанятый угол карточки.
- */
-// Компонент дизайн-системы: параметры — его публичный API (Compose-конвенция: modifier прямым
-// параметром, хвост — опции с дефолтами). Обёртка в data-класс сломала бы «минимальный API».
 @Suppress("LongParameterList")
 @Composable
 fun TvPosterCard(
@@ -92,9 +66,6 @@ fun TvPosterCard(
         modifier = modifier
             .width(width)
             .onFocusChanged { focused = it.hasFocus }
-            // Читаем dim.value в drawing-фазе (graphicsLayer), а не в composition (alpha()):
-            // иначе каждый кадр анимации затухания рекомпозирует всю карточку с AsyncImage
-            // постера — тот же приём, что и с рамкой фокуса в TvFocusCard.
             .graphicsLayer { alpha = dim.value },
     ) {
         TvFocusCard(
@@ -131,15 +102,6 @@ fun TvPosterCard(
     }
 }
 
-/**
- * Карточка 16:9 с полосой прогресса — второй и последний тип медиа-карточки. «Продолжить
- * смотреть», история, эпизоды сериала.
- *
- * [progress] — доля 0..1. [meta] несёт то, ради чего карточка существует: «S2 · осталось 18 мин».
- * [size] — карточка эпизода уже, чем карточка продолжения ([TvCardSize.Episode] против
- * [TvCardSize.Continue]): в ряд эпизодов их помещается больше, а пропорция 16:9 та же.
- */
-// Компонент дизайн-системы: параметры — его публичный API (см. TvPosterCard).
 @Suppress("LongParameterList")
 @Composable
 fun TvProgressCard(
@@ -160,7 +122,6 @@ fun TvProgressCard(
         modifier = modifier
             .width(size.width)
             .onFocusChanged { focused = it.hasFocus }
-            // См. комментарий в TvPosterCard выше: alpha читается в drawing-фазе, не в composition.
             .graphicsLayer { alpha = dim.value },
     ) {
         TvFocusCard(
@@ -198,12 +159,6 @@ fun TvProgressBar(progress: Float, modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * Пилюля рейтинга поверх постера: IMDb и Кинопоиск раздельно, каждый со своим лого — источник
- * должен быть понятен без подписи текстом, а не только числом. Полупрозрачная тёмная подложка
- * вместо цветной: в монохроме сам рейтинг не кодируем цветом, число говорит само. Источник без
- * оценки (null) просто не рисуется; если оба null — пилюли нет вовсе.
- */
 @Composable
 fun TvRatingPill(imdbRating: String?, kinopoiskRating: String?, modifier: Modifier = Modifier) {
     if (imdbRating == null && kinopoiskRating == null) return
@@ -240,11 +195,6 @@ private fun TvRatingSource(icon: ImageVector, value: String) {
     }
 }
 
-/**
- * Бейдж «в видео есть реклама» (kino.watch `advert`) — тот же визуальный язык, что у
- * [TvRatingPill] (полупрозрачная тёмная подложка, форма постера), но без иконки источника:
- * здесь важен сам факт, а не число. Маленькая пилюля, а не баннер — карточка узкая (2:3).
- */
 @Composable
 fun TvAdvertBadge(modifier: Modifier = Modifier) {
     Text(
@@ -258,12 +208,6 @@ fun TvAdvertBadge(modifier: Modifier = Modifier) {
     )
 }
 
-/**
- * Бейдж максимального доступного качества (SD/HD/FHD/4K, см. [qualityLabel]) — нижний правый
- * угол карточки-постера, единственный, свободный от рейтинга ([TvRatingPill], TopEnd) и
- * предупреждения о рекламе ([TvAdvertBadge], TopStart). Тот же визуальный язык — полупрозрачная
- * тёмная подложка формы постера.
- */
 @Composable
 fun TvQualityBadge(quality: String, modifier: Modifier = Modifier) {
     Text(
@@ -278,14 +222,6 @@ fun TvQualityBadge(quality: String, modifier: Modifier = Modifier) {
     )
 }
 
-/**
- * Круглый бейдж-счётчик поверх постера — количество непросмотренных серий. Единственное
- * цветное пятно интерфейса, наравне с ошибками ([TvError]): число, которое должно бросаться
- * в глаза раньше, чем зритель успеет прочитать постер.
- *
- * Ставится в дополнительный слот [TvPosterCard] под [TvRatingPill], а не поверх неё — иначе
- * рейтинг и счётчик серий накладываются друг на друга и оба становятся нечитаемыми.
- */
 @Composable
 fun TvCountBadge(count: Int, modifier: Modifier = Modifier) {
     Box(
@@ -305,19 +241,8 @@ fun TvCountBadge(count: Int, modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * Отступ подписи от постера. Рамка фокуса рисуется поверх увеличенной (scale 1.08) карточки
- * и опускается ниже её исходной границы на ~11dp у постера 2:3 — при меньшем отступе белая
- * рамка ложится прямо на текст.
- */
 private val CaptionTopGap = 16.dp
 
-/**
- * Подпись под карточкой: название (16sp) + мета (13sp). Мельче на TV не опускаемся.
- *
- * Длинное название не переносится и не обрезается многоточием навсегда: строка одна, а при
- * фокусе на карточке запускается бегущая строка — так виден весь заголовок без роста карточки.
- */
 @Composable
 private fun TvCardCaption(title: String, meta: String?, focused: Boolean) {
     Text(
@@ -343,7 +268,6 @@ private fun TvCardCaption(title: String, meta: String?, focused: Boolean) {
     }
 }
 
-/** Собирает мету постера `тип · год`, пропуская пустые части. */
 fun posterMeta(type: String?, year: Int): String? {
     val parts = buildList {
         if (!type.isNullOrBlank()) add(type)
@@ -352,10 +276,6 @@ fun posterMeta(type: String?, year: Int): String? {
     return parts.joinToString(" · ").ifBlank { null }
 }
 
-/**
- * Мета единой сетки тайтлов (каталог, подборка, «Продолжить», «История») — `год · жанр`,
- * пропуская пустые части. Порядок обратный [posterMeta]: в этой сетке год важнее типа.
- */
 fun gridPosterMeta(year: Int, genre: String?): String? {
     val parts = buildList {
         if (year > 0) add(year.toString())
@@ -364,25 +284,12 @@ fun gridPosterMeta(year: Int, genre: String?): String? {
     return parts.joinToString(" · ").ifBlank { null }
 }
 
-/**
- * Оценка для пилюли и меты: в домене это строка вида «8.312», на экране нужен один знак.
- *
- * Ноль — это «оценки нет», а не «ноль баллов»: kino.watch отдаёт `0` для тайтлов без рейтинга,
- * и печатать «0.0 КП» под постером — врать зрителю. Такие карточки остаются без пилюли.
- */
 fun ratingLabel(raw: String?): String? = ratingLabel(raw?.toDoubleOrNull())
 
-/** То же для уже разобранной оценки (`rating.external` — усреднённая IMDb+КП). */
 fun ratingLabel(value: Double?): String? =
     value?.takeIf { it > 0 }
         ?.let { String.format(Locale.US, "%.1f", it) }
 
-/**
- * Лейбл максимального доступного качества (`Item.quality` — высота кадра в пикселях) для
- * [TvQualityBadge]. Bucketed на границах и лейблах из конфига kino.watch (`quality_list`):
- * 2160+ → 4K, 1080+ → FHD, 720+ → HD, иначе SD. 0 (сервер не прислал/тайтл без видео) — null,
- * бейджа нет вовсе — как и с [ratingLabel], ноль здесь не «худшее качество», а «нет данных».
- */
 fun qualityLabel(heightPx: Int): String? = when {
     heightPx <= 0 -> null
     heightPx >= QUALITY_4K_HEIGHT -> "4K"

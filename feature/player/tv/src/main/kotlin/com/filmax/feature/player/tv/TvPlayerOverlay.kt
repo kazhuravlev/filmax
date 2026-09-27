@@ -70,20 +70,11 @@ import com.filmax.feature.player.common.NO_VALUE_CAPTION
 import com.filmax.feature.player.common.formatPlayerTime
 import kotlin.math.roundToInt
 
-/**
- * Единый стиль плавающих панелей плеера (поповер, панель серий, плашки): полупрозрачная
- * подложка — кадр просвечивает, но текст остаётся читаемым.
- */
 internal fun Modifier.playerPanel(): Modifier = this
     .clip(TvMetrics.PanelShape)
     .background(PlayerControlBackground)
     .border(1.dp, TvSurfaceContainerHighest.copy(alpha = PANEL_ALPHA), TvMetrics.PanelShape)
 
-/**
- * Круг с содержимым по центру — из таких слоёв собраны кнопка паузы и thumb скраббера.
- * `requiredSize`, а не `size`: обычный `size` уступает ограничениям родителя, и круг шире
- * контейнера по одной оси сжимался в овал (так кольцо фокуса thumb'а становилось 44×38).
- */
 @Composable
 internal fun CircleBox(
     size: Dp,
@@ -100,7 +91,6 @@ internal fun CircleBox(
     ) { content() }
 }
 
-/** Слои оверлея: затемнение, шапка, индикатор шага, транспорт снизу и поповер выбора. */
 @Composable
 internal fun PlayerOverlay(
     ui: TvPlayerUiState,
@@ -113,7 +103,6 @@ internal fun PlayerOverlay(
         modifier
             .fillMaxSize()
             .background(
-                // Затемнение только там, где лежит текст: сверху под шапкой и снизу под транспортом.
                 Brush.verticalGradient(
                     0f to TvSurface.copy(alpha = 0.45f),
                     0.45f to TvSurface.copy(alpha = 0f),
@@ -128,7 +117,6 @@ internal fun PlayerOverlay(
             Text(
                 label,
                 style = MaterialTheme.typography.headlineMedium.copy(
-                    // Тень — единственное, что держит белую подпись на светлом кадре.
                     shadow = Shadow(color = TvFocusHalo, offset = Offset(0f, 2f), blurRadius = 20f),
                 ),
                 color = TvAccent,
@@ -138,7 +126,6 @@ internal fun PlayerOverlay(
 
         PlayerTransport(ui = ui, menu = menu, modifier = Modifier.align(Alignment.BottomCenter))
 
-        // Поповер выбора — по центру кадра: у края он терялся, взгляд при выборе смотрит в центр.
         ui.submenu?.let { category ->
             SettingsPopover(
                 action = category,
@@ -148,7 +135,6 @@ internal fun PlayerOverlay(
             )
         }
 
-        // Панель серий — ровно по центру экрана, как и поповеры: у края она терялась.
         if (ui.episodesOpen) {
             menu.episodes?.let { panel ->
                 EpisodesPanel(
@@ -164,7 +150,6 @@ internal fun PlayerOverlay(
     }
 }
 
-/** Плашка «Дальше: серия N» с отсчётом. OK — сразу, «Назад» — отмена (см. onKey/back). */
 @Composable
 internal fun AutoNextCard(label: String, seconds: Int, modifier: Modifier = Modifier) {
     Column(
@@ -189,7 +174,6 @@ internal fun AutoNextCard(label: String, seconds: Int, modifier: Modifier = Modi
     }
 }
 
-/** Плашка «нужна подписка»: без неё kino.watch не отдаст поток, и экран остался бы просто чёрным. */
 @Composable
 internal fun SubscriptionCard(modifier: Modifier = Modifier) {
     Column(
@@ -239,11 +223,6 @@ private fun PlayerTopBar(title: String, subtitle: String, modifier: Modifier = M
     }
 }
 
-/**
- * Нижний блок — две строки: полоса прокрутки и ряд кнопок. Ряд кнопок — две колонки: слева
- * Play со стрелками серий под ним, справа сетка настроек. Раскладка пульта повторяет эту
- * геометрию, см. [TvPlayerUiState.onKey].
- */
 @Composable
 private fun PlayerTransport(ui: TvPlayerUiState, menu: PlayerActions, modifier: Modifier = Modifier) {
     Column(
@@ -264,12 +243,10 @@ private fun PlayerTransport(ui: TvPlayerUiState, menu: PlayerActions, modifier: 
                 .fillMaxWidth()
                 .padding(top = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(24.dp),
-            // По верху: Play стоит на одной линии с верхним рядом сетки — «влево» из него ведёт на Play.
             verticalAlignment = Alignment.Top,
         ) {
             TransportHints(
                 isPlaying = ui.isPlaying,
-                // Виртуальный фокус транспорта: кнопка Play/Pause активна до перехода на прогресс-бар.
                 focused = ui.mode == PlayerMode.Transport,
                 episodeNav = if (menu.hasPreviousEpisode || menu.hasNextEpisode) {
                     EpisodeNavHints(
@@ -287,7 +264,6 @@ private fun PlayerTransport(ui: TvPlayerUiState, menu: PlayerActions, modifier: 
     }
 }
 
-/** Полоса с временем: слева — текущее, справа — длительность; обе цифры табличные, чтобы не дёргались. */
 @Composable
 private fun Scrubber(positionMs: Long, durationMs: Long, active: Boolean, modifier: Modifier = Modifier) {
     val timeStyle = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum")
@@ -316,17 +292,11 @@ private fun Scrubber(positionMs: Long, durationMs: Long, active: Boolean, modifi
     }
 }
 
-/**
- * Трек, заливка и thumb. Ширина известна только на месте — от неё считается позиция thumb.
- * При скраббинге ([active]) полоса и thumb заметно вырастают: видно, что перемотка «взята в руки».
- */
 @Composable
 private fun RowScope.ScrubTrack(fraction: Float, active: Boolean) {
     val trackHeight by animateDpAsState(if (active) ScrubTrackHeightActive else ScrubTrackHeight, label = "scrubTrack")
     val thumbSize by animateDpAsState(if (active) ScrubThumbActive else ScrubThumb, label = "scrubThumb")
     val haloSize by animateDpAsState(if (active) ScrubThumbHaloActive else ScrubThumbHalo, label = "scrubHalo")
-    // Высота — по самому большому слою thumb'а (кольцо фокуса при перемотке), иначе кольцо
-    // не помещалось по вертикали.
     BoxWithConstraints(
         Modifier
             .weight(1f)
@@ -351,8 +321,6 @@ private fun RowScope.ScrubTrack(fraction: Float, active: Boolean) {
                 .clip(CircleShape)
                 .background(TvAccent),
         )
-        // Кольцо фокуса при перемотке, тёмный ореол и сам thumb — тремя концентрическими кругами:
-        // белая точка на светлом кадре без ореола теряется.
         val ringSize = haloSize + ScrubFocusRingExtra
         val ringPx = with(density) { ringSize.toPx() }
         CircleBox(
@@ -369,11 +337,6 @@ private fun RowScope.ScrubTrack(fraction: Float, active: Boolean) {
     }
 }
 
-/**
- * Данные стрелок соседних серий под Play. [active] — сейчас ли D-pad на них (см. [PlayerMode.EpisodeNav]),
- * [selected] — какая из двух выбрана; недоступная серия (нет предыдущей/следующей) стрелку не убирает,
- * а лишь гасит — так видно, что переключение вообще есть, даже когда одна из сторон недоступна.
- */
 internal data class EpisodeNavHints(
     val hasPrevious: Boolean,
     val hasNext: Boolean,
@@ -381,12 +344,6 @@ internal data class EpisodeNavHints(
     val selected: EpisodeNavArrow,
 )
 
-/**
- * Подсказки транспорта. Это именно подсказки, а не кнопки: перемотку и паузу ведёт D-pad,
- * фокусу тут ходить не по чему. [focused] — виртуальный фокус транспорта на кнопке OK:
- * белое кольцо с тёмным зазором (белая рамка на белой кнопке иначе не видна, как у TvButton).
- * [episodeNav] == null — соседних серий нет вовсе, ряд стрелок под Play не рисуем.
- */
 @Composable
 private fun TransportHints(
     isPlaying: Boolean,
@@ -437,7 +394,6 @@ private fun TransportHints(
     }
 }
 
-/** Одна стрелка ряда переключения серий — тот же приём кольца виртуального фокуса, что у Play/Pause. */
 @Composable
 private fun EpisodeNavButton(
     icon: ImageVector,
@@ -451,7 +407,6 @@ private fun EpisodeNavButton(
         modifier = Modifier.alpha(if (enabled) 1f else 0.4f),
     ) {
         CircleBox(size = EpisodeNavFocusInner, color = if (focused) TvFocusHalo else TvFocusHalo.copy(alpha = 0f)) {
-            // Та же подложка, что у плиток настроек: весь нижний ряд в одном материале.
             CircleBox(size = EpisodeNavButtonSize, color = PlayerControlBackground) {
                 Icon(
                     icon,
@@ -464,13 +419,6 @@ private fun EpisodeNavButton(
     }
 }
 
-/**
- * Управляющая сетка справа от Play. Порядок хранится в [PlayerActions.items]: по две плитки в
- * столбце, поэтому первыми всегда остаются аудио и субтитры, а действия эпизодов не уходят за экран.
- *
- * Плитки намеренно не фокусируемые: в плеере курсор ведёт обработчик клавиш. Текущий выбор виден
- * прямо на плитке; длинная подпись не раздвигает сетку, а обрезается с многоточием.
- */
 @Composable
 private fun SettingsGrid(ui: TvPlayerUiState, menu: PlayerActions, modifier: Modifier = Modifier) {
     Row(
@@ -511,17 +459,10 @@ private fun SettingsButton(
         shape = TvMetrics.ChipShape,
         modifier = Modifier
             .width(SettingsButtonWidth)
-            // Минимум, а не фиксированная высота: при увеличенном системном шрифте плитка чуть
-            // подрастёт вместе с текстом, а не обрежет его.
             .heightIn(min = SettingsButtonHeight)
             .alpha(if (enabled) 1f else 0.45f)
             .focusProperties { canFocus = false },
     ) {
-        // Две строки текста ровно по своим lineHeight (16 + 18 sp) плюс вертикальные отступы — это
-        // и есть высота плитки: ничего не режется и не вылезает; длинная подпись обрезается
-        // многоточием, а не переносится.
-        // Только ширина на всю плитку: fillMaxSize здесь нельзя — у карточки задан лишь минимум
-        // высоты, максимум приходит от экрана, и колонка растянулась бы на весь кадр.
         Column(
             Modifier
                 .fillMaxWidth()
@@ -552,10 +493,6 @@ private fun SettingsButton(
     }
 }
 
-/**
- * Значение на плитке: у дорожек — короткий код языка капителью (оставляет место в узкой плитке),
- * у остальных — полная подпись. Ничего не разбирается из текста: код уже посчитан моделью.
- */
 private fun SettingsAction.buttonValue(menu: PlayerActions): String = when (this) {
     SettingsAction.Audio, SettingsAction.Subtitle ->
         menu.selected(this)?.shortValue?.uppercase() ?: NO_VALUE_CAPTION
@@ -565,14 +502,6 @@ private fun SettingsAction.buttonValue(menu: PlayerActions): String = when (this
     SettingsAction.NextEpisode -> "Далее"
 }
 
-/**
- * Поповер выбора: галочка стоит у текущего значения, подсветка — у курсора, и курсор при открытии
- * встаёт на текущее значение (см. [TvPlayerUiState.activate]).
- *
- * Ширина — четверть экрана, высота — не больше [POPOVER_MAX_HEIGHT_FRACTION] экрана: длинный список
- * (десяток озвучек) прокручивается, а не уходит за кадр, и курсор всегда в видимой части —
- * см. [keepCursorVisible].
- */
 @Composable
 internal fun SettingsPopover(
     action: SettingsAction,
@@ -602,12 +531,6 @@ internal fun SettingsPopover(
     }
 }
 
-/**
- * Докручивает список так, чтобы строка курсора была видна целиком: снизу — прижимая её к
- * нижнему краю, сверху — к верхнему. Если строка и так на экране, ничего не трогает: список не
- * должен «ездить» при каждом шаге курсора. До первой раскладки видимых строк ещё нет — тогда
- * просто ставим курсор в начало окна без анимации (открытие поповера на текущем значении).
- */
 private suspend fun LazyListState.keepCursorVisible(cursor: Int, rowHeightPx: Int) {
     val info = layoutInfo
     if (info.visibleItemsInfo.isEmpty()) {
@@ -625,10 +548,6 @@ private suspend fun LazyListState.keepCursorVisible(cursor: Int, rowHeightPx: In
     }
 }
 
-/**
- * [highlighted] — под курсором, [current] — выбранное сейчас значение. Это разные вещи.
- * Подпись всегда в одну строку: длинная под курсором бежит, без курсора — обрезается многоточием.
- */
 @Composable
 private fun SettingsRow(label: String, highlighted: Boolean, current: Boolean) {
     Row(
@@ -636,8 +555,6 @@ private fun SettingsRow(label: String, highlighted: Boolean, current: Boolean) {
             .fillMaxWidth()
             .height(PopoverRowHeight)
             .clip(MaterialTheme.shapes.small)
-            // Курсор — сплошная белая заливка (акцент), а не еле заметный серый: сразу видно, на чём
-            // стоишь. Выбранное сейчас значение помечает галочка независимо от положения курсора.
             .background(if (highlighted) TvAccent else TvSurface.copy(alpha = 0f))
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -666,13 +583,10 @@ private fun SettingsRow(label: String, highlighted: Boolean, current: Boolean) {
     }
 }
 
-/** Прозрачность рамки плавающих панелей. */
 private const val PANEL_ALPHA = 0.85f
 
-/** Подложка кнопок транспорта и панелей: чёрная полупрозрачная — кадр просвечивает, текст читается. */
 private val PlayerControlBackground = Color(0xA6000000)
 
-/** Поповер выбора — четверть ширины экрана и не выше 60% его высоты; дальше список прокручивается. */
 private const val POPOVER_WIDTH_FRACTION = 0.25f
 private const val POPOVER_MAX_HEIGHT_FRACTION = 0.6f
 private val PopoverRowHeight = 40.dp
@@ -686,20 +600,13 @@ private val ScrubThumbActive = 24.dp
 private val ScrubThumbHalo = 24.dp
 private val ScrubThumbHaloActive = 38.dp
 
-/** Насколько кольцо фокуса при перемотке шире тёмного ореола thumb. */
 private val ScrubFocusRingExtra = 6.dp
 
-/**
- * Кнопка OK и кольца её виртуального фокуса: белое снаружи и тёмный зазор вокруг круга кнопки.
- * Весь нижний ряд ужат в полтора раза относительно первой версии (58dp-плитки): Play со
- * стрелками под ним укладывается в высоту двухрядной сетки (2 × 38 + 6 = 82dp).
- */
 private val PauseButtonSize = 34.dp
 private val PauseFocusOuter = 42.dp
 private val PauseFocusInner = 38.dp
 private val PauseIconSize = 16.dp
 
-/** Стрелки серий под Play — заметно мельче самой кнопки, это второстепенное управление. */
 private val EpisodeNavButtonSize = 24.dp
 private val EpisodeNavFocusOuter = 30.dp
 private val EpisodeNavFocusInner = 27.dp
@@ -710,6 +617,5 @@ private val EpisodeNavGap = 8.dp
 private val SettingsGridGap = 6.dp
 private val SettingsButtonWidth = 136.dp
 
-/** Высота плитки: две строки текста по lineHeight (16 + 18 sp ≈ 34dp) плюс отступы по 2dp. */
 private val SettingsButtonHeight = 38.dp
 private val SettingsButtonVerticalPadding = 2.dp

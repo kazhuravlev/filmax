@@ -14,21 +14,7 @@ private const val PREFIX_JSON = "item_cache_json:"
 private const val PREFIX_TIMESTAMP = "item_cache_ts:"
 private const val MILLIS_PER_DAY = 24L * 60 * 60 * 1000
 
-/**
- * На Android больше не используется — заменён на `ItemDetailsCacheDb` (SQLite, см. androidMain):
- * `Settings`/`SharedPreferences` не умел физически удалять протухшие записи, целиком грузил файл
- * в память и синхронно парсил его на главном потоке при первом обращении. Класс остаётся как
- * реализация для apple-таргетов (iOS/tvOS сейчас не используются реальным приложением, но должны
- * собираться), см. `appleMain/PlatformNetworkModule`.
- *
- * Персистентный кэш статической информации о тайтлах (`items/{id}`) — на отдельном [Settings]
- * (см. `ITEM_CACHE_SETTINGS` в DI), не на общем с [TokenStorage]: кэш может разрастись до сотен
- * записей, и `clear()` в [clear] не должен разлогинивать пользователя заодно. [count] не
- * пересчитывается сканированием ключей — растёт на единицу в [remember] только для
- * по-настоящему нового id, что и даёт «не онлайн» счётчик для кнопки «Сбросить кэш» в настройках.
- */
 class ItemDetailsCacheImpl(private val settings: Settings) : ItemDetailsCache {
-
     private val ttlState = MutableStateFlow(
         settings.getStringOrNull(KEY_TTL)?.let { name ->
             runCatching { ItemCacheTtl.valueOf(name) }.getOrNull()
@@ -93,9 +79,6 @@ class ItemDetailsCacheImpl(private val settings: Settings) : ItemDetailsCache {
     }
 
     override suspend fun clear() {
-        // settings — отдельный файл (ITEM_CACHE_SETTINGS), только под этот кэш: clear() не задевает
-        // токены/остальные настройки. TTL — настройка, а не данные кэша, поэтому переписываем её
-        // обратно сразу после очистки: «Сбросить кэш» не должно тихо возвращать TTL к «Месяц».
         val currentTtl = ttlState.value
         settings.clear()
         settings.putString(KEY_TTL, currentTtl.name)

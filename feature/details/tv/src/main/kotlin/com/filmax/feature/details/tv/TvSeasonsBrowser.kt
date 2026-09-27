@@ -1,7 +1,3 @@
-// Полноэкранный браузер «Сезоны и серии» сериала — отдельный диалог поверх Деталей. Свой файл,
-// а не часть TvDetailsScreen.kt: это самостоятельный экран со своей раскладкой и фокусом (как
-// TvCatalogFilterDialog у поиска), а не ещё одна секция полотна деталей.
-// basicMarquee — бегущая строка названия серии.
 @file:OptIn(ExperimentalFoundationApi::class)
 
 package com.filmax.feature.details.tv
@@ -68,75 +64,35 @@ import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.tv.designsystem.tvFocusGroup
 import com.filmax.core.ui.components.PosterImage
 
-/**
- * Промежуток между колонками: сезоны · серии · превью. Небольшой: у каждой колонки ещё по
- * [TvMetrics.FocusInset] с обеих сторон под рамку фокуса, так что видимый зазор вдвое больше.
- */
 private val ColumnGap = 8.dp
 
-/**
- * Левое поле браузера — меньше [TvMetrics.SafeHorizontal]: колонки сезонов и серий узкие, и
- * с полным полем слева оставалась пустая полоса. Первая строка начинается на 40 + 12dp
- * (FocusInset) = 52dp от края — не ближе минимума Google в 48dp для оверскана.
- */
 private val BrowserStart = 40.dp
 
-/**
- * Колонка серий вдвое шире, чем нужно подписи «Серия 24»: названию серии второй строкой
- * так хватает места, и строка под курсором не выглядит обрезком.
- */
 private const val EPISODE_COLUMN_WIDTH_FACTOR = 2f
 
-/** Вертикальный шаг строк в колонках — плотнее рядов карточек: строки текстовые. */
 private val RowGap = 8.dp
 
-/** Внутренние поля строки колонки. Ширина колонки = самая широкая подпись + эти поля. */
 private val RowHorizontalPadding = 16.dp
 private val RowVerticalPadding = 10.dp
 
-/** Высота полоски прогресса под серией: досмотрена — полная, в процессе — доля. */
 private val ProgressBarHeight = 2.dp
 
-/**
- * Кадр серии в превью не на весь остаток экрана: 16:9 на всю ширину правой колонки не оставил
- * бы места под название и мету, а 480dp даёт ровно 270dp высоты — половину ТВ-полотна.
- */
 private val PreviewMaxWidth = 480.dp
 
 private const val PREVIEW_ASPECT_RATIO = 16f / 9f
 
-/** Непрозрачность подписи серии на выбранной (белой) строке — иерархия «номер → название». */
 private const val SELECTED_SUBTITLE_ALPHA = 0.7f
 
 private const val SECONDS_IN_MINUTE = 60
 
-/**
- * Данные браузера — группой (detekt LongParameterList). [seasons] — как в
- * `SeriesData.seasons`: пары «номер сезона → серии по порядку».
- */
 @Stable
 internal data class SeasonsBrowserContent(
-    /** Название сериала — надзаголовок правой колонки. */
     val title: String,
     val seasons: List<Pair<Int, List<MediaTrack>>>,
-    /** id серии «продолжить» — только для актуального continuation (см. `SeriesData.resume`). */
     val resumeId: Int?,
-    /** Сохранённая позиция серии «продолжить»; 0 — с начала. */
     val resumePositionSeconds: Int,
 )
 
-/**
- * Полноэкранный выбор серии: слева сезоны (только если их больше одного), в середине серии
- * выбранного сезона, справа кадр и подпись серии под фокусом. Сезон выбирается НАВЕДЕНИЕМ
- * фокуса, а не кликом: перебор сезонов вверх/вниз сразу показывает их серии. Клик по сезону
- * уводит фокус в колонку серий — как «вправо», для тех, кто жмёт OK.
- *
- * Своё окно (Dialog): пульт не проваливается на полотно деталей под браузером, а «Назад»
- * закрывает окно штатно. Ширина окна снята, чтобы занять экран целиком.
- *
- * Колонки ровно по ширине подписи: «Сезон 12» и «Серия 24» — измерены [rememberColumnWidth],
- * а не «на глаз». Название серии — второй строкой в той же ширине, бегущей строкой в фокусе.
- */
 @Composable
 internal fun TvSeasonsBrowserDialog(
     content: SeasonsBrowserContent,
@@ -161,16 +117,11 @@ internal fun TvSeasonsBrowserDialog(
 private fun SeasonsBrowser(content: SeasonsBrowserContent, onPlay: (MediaTrack) -> Unit) {
     val seasons = content.seasons
     val multiSeason = seasons.size > 1
-    // rememberSaveable: уход в плеер и обратно пересоздаёт композицию, а браузер должен открыться
-    // на том же сезоне и той же серии — чтобы «следующая» была на одно нажатие «вниз».
     var seasonIndex by rememberSaveable { mutableIntStateOf(0) }
     var previewId by rememberSaveable { mutableStateOf<Int?>(null) }
     val episodes = seasons.getOrNull(seasonIndex)?.second.orEmpty()
-    // Пока фокус в сезонах (серия не наведена) или сезон сменился — превью первой серии сезона.
     val preview = episodes.firstOrNull { it.id == previewId } ?: episodes.firstOrNull()
 
-    // Тот же механизм, что у экранов: стартовая цель — первый сезон (или первая серия у
-    // односезонного), возврат из плеера — на серию, с которой ушли.
     val startAt = if (multiSeason) {
         seasonKey(seasons.first().first)
     } else {
@@ -225,8 +176,6 @@ private fun SeasonsBrowser(content: SeasonsBrowserContent, onPlay: (MediaTrack) 
     }
 }
 
-// ─────────────────────────────── Колонки ───────────────────────────────
-
 @Suppress("LongParameterList")
 @Composable
 private fun SeasonsColumn(
@@ -254,20 +203,13 @@ private fun SeasonsColumn(
     }
 }
 
-/** Данные колонки серий — группой (detekt LongParameterList). */
 private data class EpisodesColumnSpec(
     val episodes: List<MediaTrack>,
-    /** Индекс сезона — ключ пересоздания списка, см. [EpisodesColumn]. */
     val seasonIndex: Int,
     val width: Dp,
     val resumeId: Int?,
 )
 
-/**
- * Колонка серий. Список ПЕРЕСОЗДАЁТСЯ на каждый сезон (`key`), а не переиспользует один
- * LazyListState — та же причина, что у ряда серий в TvDetailsScreen (см. `EpisodesRow`):
- * общий стейт тащил в другой сезон удержанный фокусом элемент и ронял Compose при размещении.
- */
 @Composable
 private fun EpisodesColumn(
     spec: EpisodesColumnSpec,
@@ -281,8 +223,6 @@ private fun EpisodesColumn(
             modifier = Modifier
                 .width(spec.width)
                 .fillMaxHeight()
-                // requester ДО группы: клик по сезону просит фокус у группы, а restorer группы
-                // отдаёт его первой (или последней выбранной) серии.
                 .focusRequester(columnRequester)
                 .tvFocusGroup(),
             contentPadding = PaddingValues(TvMetrics.FocusInset),
@@ -306,23 +246,13 @@ private fun EpisodesColumn(
     }
 }
 
-/** Вид строки колонки — группой (detekt LongParameterList). */
 private data class RowLook(
     val label: String,
-    /** Название серии второй строкой, мельче; null — строки нет (сезон, серия без названия). */
     val subtitle: String? = null,
-    /** Белая заливка: выбранный сезон / серия «продолжить» — читается и когда фокус в другой колонке. */
     val selected: Boolean = false,
-    /** 0 — полоски нет; 1 — досмотрена. */
     val progress: Float = 0f,
 )
 
-/**
- * Строка колонки: номер жирным, под ним (если есть) название мельче. Название не влезает в
- * ширину «Серия 24» почти всегда — в фокусе оно едет бегущей строкой, без фокуса обрезано
- * многоточием. Marquee только у сфокусированной строки: десятки одновременных анимаций на ТВ
- * роняют FPS (см. обоснование shimmer в PosterImage.kt).
- */
 @Composable
 private fun BrowserRow(look: RowLook, onClick: () -> Unit, modifier: Modifier = Modifier) {
     var focused by remember { mutableStateOf(false) }
@@ -384,13 +314,6 @@ private fun BrowserRow(look: RowLook, onClick: () -> Unit, modifier: Modifier = 
     }
 }
 
-// ─────────────────────────────── Превью ───────────────────────────────
-
-/**
- * Правая колонка: название сериала надзаголовком, кадр серии 16:9 (только если он есть — у
- * kino.watch thumbnail часто пустой), под ним «Сезон N · Серия M», название и мета. Ничего не
- * фокусируется: это подпись к серии под фокусом, а не ещё одна колонка навигации.
- */
 @Composable
 private fun PreviewPane(seriesTitle: String, episode: MediaTrack?, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxHeight().padding(vertical = TvMetrics.FocusInset)) {
@@ -437,34 +360,22 @@ private fun PreviewPane(seriesTitle: String, episode: MediaTrack?, modifier: Mod
     }
 }
 
-// ─────────────────────────── Ширина колонок ───────────────────────────
-
-/** Стиль номера в строке — им же измеряется ширина колонки, см. [rememberColumnWidth]. */
 @Composable
 private fun rowLabelStyle(): TextStyle = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
 
-/**
- * Ширина колонки ровно под самую широкую подпись («Сезон 12», «Серия 24») плюс поля строки и
- * запас под рамку фокуса. Измеряем текст, а не считаем по числу знаков: пропорциональный шрифт.
- * LazyColumn не умеет intrinsic-ширину, поэтому измерение — заранее, TextMeasurer'ом.
- */
 @Composable
 private fun rememberColumnWidth(labels: List<String>, style: TextStyle): Dp {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     return remember(labels, style, density) {
         val widestPx = labels.maxOfOrNull { measurer.measure(it, style, softWrap = false).size.width } ?: 0
-        // +1dp: округление px → dp вниз давало бы перенос последнего символа.
         with(density) { widestPx.toDp() } + 1.dp + RowHorizontalPadding * 2 + TvMetrics.FocusInset * 2
     }
 }
 
-// ─────────────────────────────── Подписи ───────────────────────────────
-
 private fun seasonKey(number: Int) = "season:$number"
 private fun episodeKey(id: Int) = "episode:$id"
 
-/** «Сезон 3»; «Серии» — kino.watch отдаёт сезон 0 у сериалов без деления на сезоны. */
 private fun seasonLabel(number: Int): String = if (number > 0) "Сезон $number" else "Серии"
 
 private fun episodeLabel(number: Int): String = "Серия $number"
@@ -481,7 +392,6 @@ private fun episodeProgress(episode: MediaTrack): Float = when {
     else -> 0f
 }
 
-/** «45 мин · Досмотрена» / «45 мин · Остановились на 12:40» / «45 мин». */
 private fun previewMeta(episode: MediaTrack): String? = buildList {
     episode.durationSeconds.takeIf { it > 0 }?.let { add("${it / SECONDS_IN_MINUTE} мин") }
     when {

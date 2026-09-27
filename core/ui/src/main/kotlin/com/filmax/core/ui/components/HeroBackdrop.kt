@@ -12,19 +12,6 @@ import com.filmax.core.domain.cache.ImageCacheKeys
 import com.filmax.core.domain.cache.PosterSize
 import com.filmax.core.domain.catalog.model.Item
 
-/**
- * Общий бэкдроп героя деталей: постер на всю область + слои градиентов [scrims] поверх него.
- *
- * Намеренно «тонкий» и платформо-нейтральный — содержит ТОЛЬКО реально дублировавшуюся часть
- * (постер + базовые градиенты затемнения). Платформенные надстройки остаются на местах вызова:
- * mobile поверх кладёт collapse-скрим и info-оверлей и оборачивает в parallax-`graphicsLayer`,
- * tv — свой layout-контент. Слои рисуются в порядке: постер, затем [scrims] в порядке списка.
- *
- * URL постера передаётся явно ([posterUrl]), т.к. экраны выбирают разный кадр: mobile — `big`,
- * tv — широкий `wide` с откатом на `big`.
- *
- * Акцент постера-заглушки по умолчанию — [HeroBackdropAccent].
- */
 @Composable
 fun HeroBackdrop(
     item: Item,
@@ -49,5 +36,4 @@ fun HeroBackdrop(
     }
 }
 
-/** Акцент постера-заглушки бэкдропа по умолчанию; TV-экраны обычно передают нейтральную поверхность. */
 val HeroBackdropAccent: Color = Color(0xFFB4305A)

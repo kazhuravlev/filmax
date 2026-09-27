@@ -19,16 +19,6 @@ import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
-/**
- * Экран целиком не загрузился: заголовок, пояснение и «Повторить».
- *
- * Тексты приходят готовыми ([com.filmax.core.ui.components.appErrorText] у вызывающего) —
- * дизайн-система про домен не знает. [onRetry] == null убирает кнопку: бывают ошибки, из
- * которых повтор не выводит (нет подписки, контент снят с каталога).
- *
- * Кнопка сама забирает фокус: на пульте состояние без единого focusable — это тупик, из
- * которого не выйти ничем, кроме «Назад».
- */
 @Composable
 fun TvErrorState(
     title: String,
@@ -37,8 +27,6 @@ fun TvErrorState(
     onRetry: (() -> Unit)? = null,
 ) {
     val retryFocus = remember { FocusRequester() }
-    // Фокус просим в onPlaced: до раскладки кнопка ещё не привязала FocusRequester, а лэйаут
-    // сам сообщает, когда она готова — ждать кадры наугад не нужно.
     var focusRequested by remember { mutableStateOf(false) }
 
     Column(
@@ -81,5 +69,4 @@ fun TvErrorState(
     }
 }
 
-/** Длинная строка на трёх метрах не читается — держим пояснение в колонке. */
 private val MessageMaxWidth = 620.dp

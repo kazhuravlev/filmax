@@ -54,17 +54,8 @@ import org.koin.androidx.compose.koinViewModel
 
 private const val DEFAULT_VERIFICATION_URI = "kinopub.me/device"
 
-/** Ширина текстового блока. Строка длиннее ~460dp заставляет глаз искать начало следующей. */
 private val TextMaxWidth = 460.dp
 
-/**
- * TV-экран входа. Центрированная колонка поверх общего [OnboardingScreenModel]: шаг приветствия
- * с одной фокус-кнопкой «Войти», затем экран активации с device-кодом. Поллинг и регистрация
- * устройства живут в общей модели — здесь только вёрстка под пульт.
- *
- * На экране нет ни одной картинки: с 3 метров работает только типографика, а системный
- * emoji-шрифт в крупном кегле на TV-боксах растрируется в кашу.
- */
 @Composable
 fun TvOnboardingScreen(
     onAuthenticated: () -> Unit,
@@ -79,7 +70,6 @@ fun TvOnboardingScreen(
         }
     }
 
-    // На TV пропускаем промежуточный шаг «фичи» (1) мобильного флоу — сразу к активации.
     LaunchedEffect(state.step) {
         if (state.step == 1) screenModel.dispatch(OnboardingEvent.NextStep)
     }
@@ -106,8 +96,6 @@ fun TvOnboardingScreen(
         }
     }
 }
-
-// ── Step 0: приветствие ───────────────────────────────────────────────────────
 
 @Composable
 private fun TvWelcomeStep(onLogin: () -> Unit) {
@@ -141,14 +129,11 @@ private fun TvWelcomeStep(onLogin: () -> Unit) {
     }
 }
 
-// ── Step 2: активация устройства ─────────────────────────────────────────────
-
 @Composable
 private fun TvAuthStep(state: OnboardingState, onRetry: () -> Unit) {
     CenteredStep {
         Wordmark()
         Spacer(Modifier.height(26.dp))
-        // Локальные копии: smart-cast по полям из другого модуля невозможен.
         val error = state.error
         val userCode = state.userCode
         when {
@@ -173,8 +158,6 @@ private fun AuthCode(userCode: String, verificationUri: String) {
             .border(1.dp, TvSurfaceContainerHigh, TvMetrics.PanelShape)
             .padding(horizontal = 40.dp, vertical = 22.dp),
     ) {
-        // Кегль и моноширинный шрифт — не украшение: код диктуют голосом или переписывают
-        // на телефон, поэтому важнее всего различить 0/O и 1/I с дивана.
         Text(
             userCode,
             fontSize = 72.sp,
@@ -188,7 +171,6 @@ private fun AuthCode(userCode: String, verificationUri: String) {
     PollingStatus()
 }
 
-/** Подсказка со ссылкой. Адрес поднят до [TvOnSurface] — в монохроме вес и яркость вместо цвета. */
 @Composable
 private fun ActivationHint(verificationUri: String) {
     val hint = buildAnnotatedString {
@@ -258,9 +240,6 @@ private fun AuthError(error: String, onRetry: () -> Unit) {
     )
 }
 
-// ── Общее ────────────────────────────────────────────────────────────────────
-
-/** Колонка по центру экрана — единственная раскладка онбординга на обоих шагах. */
 @Composable
 private fun CenteredStep(content: @Composable () -> Unit) {
     Column(

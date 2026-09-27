@@ -3,7 +3,6 @@ package com.filmax.core.domain.downloads
 import com.filmax.core.domain.downloads.model.DownloadedItem
 import kotlinx.coroutines.flow.Flow
 
-/** Хранилище скачанных фильмов (метаданные сохраняются локально). */
 interface DownloadsRepository {
     val downloads: Flow<List<DownloadedItem>>
 

@@ -16,7 +16,6 @@ internal class AuthRepositoryImpl(
     private val api: AuthApi,
     private val tokenStorage: TokenStorage,
 ) : AuthRepository {
-
     override val isAuthenticated: Flow<Boolean> =
         tokenStorage.accessToken.map { it != null }
 
@@ -31,10 +30,6 @@ internal class AuthRepositoryImpl(
         )
     }
 
-    // Не safeRequest: опрос device-кода отвечает 400 authorization_pending каждые ~5 секунд,
-    // пока пользователь не подтвердил код — это штатное ожидание, а не сбой, и через safeRequest
-    // каждый опрос уезжал бы в телеметрию non-fatal событием. Настоящий исход опроса разбирает
-    // вызывающий по RequestResult; отмена корутины пробрасывается, как и в safeRequest.
     @Suppress("TooGenericExceptionCaught")
     override suspend fun pollForToken(code: String, username: String, timestamp: Long): RequestResult<Token> =
         try {
@@ -55,7 +50,6 @@ internal class AuthRepositoryImpl(
 
     override suspend fun logout(): RequestResult<Unit> = safeRequest {
         tokenStorage.clear()
-        // Дальше устройством может пользоваться другой аккаунт — отвязываем телеметрию.
         ErrorReporting.reporter.setUser(null)
     }
 }

@@ -38,17 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 
-/**
- * Голосовой ввод БЕЗ стороннего экрана: слушаем микрофон через [SpeechRecognizer] прямо в
- * приложении, состояние (идёт слушание + частичный текст) отдаём Compose-стейтом —
- * его рисует [VoiceListeningDialog]. Финальная фраза уходит в onResult.
- *
- * Порядок запуска в [start]: нет разрешения на микрофон → системный запрос (после согласия
- * слушание стартует само); сервис распознавания недоступен → фолбэк на внешний
- * RecognizerIntent — хуже, но лучше, чем молчащая кнопка.
- */
-// Набор методов диктует интерфейс RecognitionListener (8 обязательных колбэков) — дробить
-// контроллер из-за пустых заглушек незачем.
 @Suppress("TooManyFunctions")
 @Stable
 class VoiceSearchController internal constructor(
@@ -57,18 +46,14 @@ class VoiceSearchController internal constructor(
     private val requestPermission: () -> Unit,
     private val fallback: () -> Unit,
 ) : RecognitionListener {
-
-    /** Идёт ли слушание — на нём держится [VoiceListeningDialog]. */
     var listening by mutableStateOf(false)
         private set
 
-    /** Частичный распознанный текст — «эхо» того, что уже услышано. */
     var partialText by mutableStateOf("")
         private set
 
     private var recognizer: SpeechRecognizer? = null
 
-    /** Точка входа кнопки «Голос». */
     fun start() {
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
@@ -79,7 +64,6 @@ class VoiceSearchController internal constructor(
         }
     }
 
-    /** Останов без результата (закрытие диалога, «Назад»). */
     fun cancel() {
         listening = false
         recognizer?.cancel()
@@ -110,8 +94,6 @@ class VoiceSearchController internal constructor(
     }
 
     override fun onError(error: Int) {
-        // Любая ошибка (тишина, таймаут, сеть) просто закрывает слушание — без модалок:
-        // пользователь видит, что плашка исчезла, и может нажать «Голос» ещё раз.
         listening = false
     }
 
@@ -126,15 +108,12 @@ class VoiceSearchController internal constructor(
         bundle?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
 }
 
-/** Создаёт контроллер голосового ввода; жизненный цикл распознавателя привязан к композиции. */
 @Composable
 fun rememberInAppVoiceSearch(onResult: (String) -> Unit): VoiceSearchController {
     val context = LocalContext.current
     val currentOnResult by rememberUpdatedState(onResult)
     val fallback = rememberExternalVoiceSearch { spoken -> currentOnResult(spoken) }
 
-    // Держатель нужен, чтобы колбэк разрешения мог дотянуться до контроллера, который
-    // создаётся строкой ниже и сам ссылается на launcher.
     val holder = remember { mutableStateOf<VoiceSearchController?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -156,11 +135,6 @@ fun rememberInAppVoiceSearch(onResult: (String) -> Unit): VoiceSearchController 
     return controller
 }
 
-/**
- * Плашка слушания по центру экрана: микрофон, «Говорите…» и частичный текст. Рисуется через
- * [Dialog] — всплывает над всем окном из любого места дерева, а «Назад»/тап мимо отменяют
- * слушание. Ставится рядом с местом использования контроллера.
- */
 @Composable
 fun VoiceListeningDialog(controller: VoiceSearchController) {
     if (!controller.listening) return
@@ -196,10 +170,6 @@ fun VoiceListeningDialog(controller: VoiceSearchController) {
     }
 }
 
-/**
- * Фолбэк: системный распознаватель отдельным экраном (RecognizerIntent). Используется только
- * когда [SpeechRecognizer] на устройстве недоступен.
- */
 @Composable
 private fun rememberExternalVoiceSearch(onResult: (String) -> Unit): () -> Unit {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->

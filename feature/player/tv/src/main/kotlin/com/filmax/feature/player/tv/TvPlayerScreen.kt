@@ -12,14 +12,6 @@ import com.filmax.feature.player.common.PlayerScreenModel
 import com.filmax.feature.player.common.PlayerState
 import org.koin.androidx.compose.koinViewModel
 
-/**
- * TV-экран тайтла: собирает [TvPlayerSession] из [PlayerScreenModel] и отдаёт её абстрактному
- * плееру [TvPlayer], который рисует выбранный в настройках интерфейс.
- *
- * [onPlayEpisode] задаёт граф навигации: другая серия — это новый экран плеера с новым
- * [PlayerScreenModel], а не подмена MediaItem (иначе прогресс писался бы в предыдущую серию).
- * null — панели серий и «Следующей серии» не будет.
- */
 @Composable
 fun TvPlayerScreen(
     onBack: () -> Unit,
@@ -30,7 +22,6 @@ fun TvPlayerScreen(
     val state by screenModel.collectAsState()
     val appError by screenModel.collectErrorAsState()
 
-    // Панель серий есть только у сериала и только когда граф дал навигацию по сериям.
     val episodesPanel = remember(state.item, state.track, onPlayEpisode) {
         episodesPanelData(state.item?.tracklist.orEmpty(), state.track, onPlayEpisode)
     }
@@ -57,17 +48,12 @@ fun TvPlayerScreen(
     TvPlayer(session = session, modifier = modifier)
 }
 
-/** Сигналы интерфейса — в события модели: прогресс на сервер, отметка «досмотрено», прогрев серии. */
 private fun PlaybackSignal.toEvent(): PlayerEvent = when (this) {
     is PlaybackSignal.Progress -> PlayerEvent.SaveProgress(positionMs, durationMs)
     PlaybackSignal.Ended -> PlayerEvent.MarkWatched
     PlaybackSignal.AutoNextShown -> PlayerEvent.PrefetchNextEpisode
 }
 
-/**
- * Порядок плиток справа от Play: пресет первым (слева сверху), под ним аудио, дальше субтитры и
- * скорость, следующая серия/качество, серии.
- */
 private fun playerMenu(
     state: PlayerState,
     episodesPanel: EpisodesPanelData?,
@@ -105,10 +91,6 @@ private fun playerMenu(
     },
 )
 
-/**
- * Данные панели серий из плейлиста: сезоны отсортированы, стартовый курсор — играющая серия.
- * null — фильм (один трек) или граф не дал [onPlayEpisode].
- */
 private fun episodesPanelData(
     tracks: List<MediaTrack>,
     track: MediaTrack?,
@@ -132,10 +114,6 @@ private fun episodesPanelData(
     )
 }
 
-/**
- * Подстрока шапки: «Сезон 2 · Серия 5 · Название серии» у сериала (название — если оно не
- * дублирует номер), «год · качество» у фильма.
- */
 private fun playerSubtitle(state: PlayerState): String {
     val track = state.track ?: return ""
     val episodeTitle = track.title.takeIf { it.isNotBlank() && it != "Серия ${track.number}" }
@@ -149,7 +127,6 @@ private fun playerSubtitle(state: PlayerState): String {
     }
 }
 
-/** Варианты поповера категории — в том же порядке, что и источники в [toEvent]. */
 private fun SettingsAction.options(state: PlayerState): List<PlayerChoice> = when (this) {
     SettingsAction.Quality -> state.qualities.map { it.toChoice() }
     SettingsAction.Preset -> PlaybackSettings.presetOptions.map { it.toChoice() }
@@ -161,8 +138,6 @@ private fun SettingsAction.options(state: PlayerState): List<PlayerChoice> = whe
 
 private fun SettingsAction.selected(state: PlayerState): PlayerChoice? = when (this) {
     SettingsAction.Quality -> state.currentQuality?.toChoice()
-    // «Свой» в списке поповера отсутствует — курсор встанет на «Авто», это ожидаемо: пресет
-    // сейчас не выбран.
     SettingsAction.Preset -> state.currentPreset.toChoice()
     SettingsAction.Audio -> state.currentAudio?.toChoice()
     SettingsAction.Subtitle -> state.currentSubtitle.toChoice()
@@ -170,11 +145,9 @@ private fun SettingsAction.selected(state: PlayerState): PlayerChoice? = when (t
     SettingsAction.Episodes, SettingsAction.NextEpisode -> null
 }
 
-/** getOrNull не годится: нулевой элемент («Авто») — сам null, и его нельзя отличить от «нет такого». */
 private fun presetEvent(index: Int): PlayerEvent? =
     PlaybackSettings.presetOptions.takeIf { index in it.indices }?.let { PlayerEvent.SelectPreset(it[index]) }
 
-/** Событие по индексу варианта из [options]; индекс вне списка — null (поповер устарел). */
 private fun SettingsAction.toEvent(state: PlayerState, index: Int): PlayerEvent? = when (this) {
     SettingsAction.Quality -> state.qualities.getOrNull(index)?.let(PlayerEvent::SelectQuality)
     SettingsAction.Preset -> presetEvent(index)

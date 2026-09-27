@@ -1,4 +1,3 @@
-// Логический слой Player (без UI): PlayerScreenModel (ExoPlayer) + контракт + DI + маршрут.
 plugins {
     id("filmax.android.library")
     alias(libs.plugins.kotlin.serialization)
@@ -14,7 +13,6 @@ dependencies {
     implementation(libs.koin.android)
     implementation(libs.navigation.compose)
 
-    // ExoPlayer живёт в ScreenModel
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
 

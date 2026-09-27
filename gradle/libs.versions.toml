@@ -17,7 +17,6 @@ profileinstaller = "1.4.1"
 tv-material = "1.0.0"
 chucker = "4.0.0"
 detekt = "1.23.8"
-# Firebase (Crashlytics: крэши + non-fatal телеметрия)
 google-services = "4.4.2"
 firebase-crashlytics-plugin = "3.0.2"
 firebase-bom = "33.7.0"
@@ -36,15 +35,11 @@ kotlin-gradle-plugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-p
 compose-gradle-plugin = { group = "org.jetbrains.kotlin", name = "compose-compiler-gradle-plugin", version.ref = "kotlin" }
 detekt-gradle-plugin = { group = "io.gitlab.arturbosch.detekt", name = "detekt-gradle-plugin", version.ref = "detekt" }
 
-# Detekt formatting ruleset (обёртка над ktlint, стиль official) — для detektPlugins
 detekt-formatting = { group = "io.gitlab.arturbosch.detekt", name = "detekt-formatting", version.ref = "detekt" }
-# Detekt API + тест-харнесс — для кастомного модуля правил :detekt-rules
 detekt-api = { group = "io.gitlab.arturbosch.detekt", name = "detekt-api", version.ref = "detekt" }
 detekt-test = { group = "io.gitlab.arturbosch.detekt", name = "detekt-test", version.ref = "detekt" }
 junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version.ref = "junit" }
 junit-platform-launcher = { group = "org.junit.platform", name = "junit-platform-launcher", version.ref = "junit-platform" }
-# Только для ImageCacheRepositoryImplTest — единственный тест в проекте, которому нужен фейковый
-# android.content.Context (Coil-обвязка требует его в конструкторе, но сам он в тесте не вызывается).
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 
 # Kotlin
@@ -96,7 +91,6 @@ compose-material-icons = { group = "androidx.compose.material", name = "material
 # Navigation
 navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation-compose" }
 
-# Android TV (Material3 for TV — нативный D-pad фокус из коробки)
 tv-material = { group = "androidx.tv", name = "tv-material", version.ref = "tv-material" }
 
 # Lifecycle
@@ -106,14 +100,12 @@ lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-ru
 # Activity
 activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activity-compose" }
 
-# Устанавливает baseline-профили, уже собранные внутри AndroidX/Compose AAR, при инсталляции APK
 profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "profileinstaller" }
 
 # Images
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
 
-# Firebase (версии дорожек задаёт BoM)
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebase-bom" }
 firebase-crashlytics = { group = "com.google.firebase", name = "firebase-crashlytics" }
 
@@ -123,7 +115,6 @@ media3-exoplayer-hls = { group = "androidx.media3", name = "media3-exoplayer-hls
 media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 
 [bundles]
-# Ktor common deps (engine добавляется в platform source set отдельно)
 ktor-common = [
     "ktor-client-core",
     "ktor-client-content-negotiation",

@@ -9,21 +9,6 @@ import androidx.compose.material3.MaterialTheme as ComposeMaterialTheme
 import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import androidx.tv.material3.darkColorScheme as tvDarkColorScheme
 
-/**
- * TV-тема Filmax. Строгий монохром: единственный цвет на экране — постер.
- *
- * Оборачивает контент в ДВЕ темы:
- *  - `androidx.tv.material3.MaterialTheme` — для TV-компонентов (Surface/Button/Text)
- *    с нативным D-pad фокусом из коробки;
- *  - `androidx.compose.material3.MaterialTheme` — для компонентов, которых нет в tv-material3
- *    (например, `CircularProgressIndicator`), чтобы и они брали токены темы.
- *
- * Схема своя, а не производная от мобильной: у телефона и телевизора разные поверхности
- * (TV темнее) и разный вторичный текст (TV светлее — дистанция 3 метра съедает контраст).
- *
- * `primary` = [TvAccent] (белый): в монохроме роль «главного действия» несёт белая заливка.
- * `border` = [TvFocus], поэтому стандартная обводка фокуса у TV-Surface — белая.
- */
 @Composable
 fun FilmaxTvTheme(content: @Composable () -> Unit) {
     val composeScheme = darkColorScheme(

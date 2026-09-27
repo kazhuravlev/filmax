@@ -20,18 +20,6 @@ import androidx.compose.ui.unit.dp
 import com.filmax.app.BuildConfig
 import org.koin.androidx.compose.koinViewModel
 
-/**
- * Диалог обновления приложения поверх любого графа (телефон и TV): «Доступна версия X.Y.Z» →
- * скачивание с прогрессом → системный установщик. Появляется, когда GitHub Releases отдал релиз
- * новее установленного, «Позже» прячет его до следующего запуска.
- *
- * Он же отчитывается о ручной проверке из Профиля ([AppUpdateEvent.Check]): ожидание и «версия
- * последняя» — это ответ на явный тап, поэтому показываются, а фоновая проверка при старте
- * по-прежнему молчит.
- *
- * Компоненты material3 намеренно: диалог общий для двух дизайн-систем, а фокус на кнопках
- * диалога пульт получает штатно — Dialog перехватывает весь ввод.
- */
 @Composable
 fun AppUpdatePrompt(screenModel: AppUpdateScreenModel = koinViewModel()) {
     val state by screenModel.collectAsState()
@@ -64,7 +52,6 @@ private fun UpdateDialog(state: AppUpdateState, update: UpdateInfo, onEvent: (Ap
         text = { UpdateDialogBody(state) },
         confirmButton = { UpdateConfirmButton(state, onEvent = onEvent) },
         dismissButton = {
-            // Пока качаем — отложить нечего; когда ставить нельзя, «Понятно» и так закрывает диалог.
             if (!state.downloading && state.installable) {
                 TextButton(onClick = { onEvent(AppUpdateEvent.Dismiss) }) {
                     Text("Позже")
@@ -74,7 +61,6 @@ private fun UpdateDialog(state: AppUpdateState, update: UpdateInfo, onEvent: (Ap
     )
 }
 
-/** Ожидание ответа GitHub. Без кнопок: отменять нечего — это один короткий запрос. */
 @Composable
 private fun CheckingDialog() {
     AlertDialog(
@@ -121,8 +107,6 @@ private fun UpdateDialogBody(state: AppUpdateState) {
 
             state.downloadedApk != null -> Text("Обновление скачано — осталось установить.")
 
-            // Ставить релизный APK поверх debug/demo нельзя: applicationId другой, и система
-            // поставит его вторым приложением рядом, а не обновит текущее.
             !state.installable -> Text(
                 "Установлена ${BuildConfig.VERSION_NAME}. Обновиться можно только из релизной сборки.",
             )

@@ -97,26 +97,12 @@ import com.filmax.feature.search.common.sortLabel
 import kotlinx.coroutines.flow.drop
 import org.koin.androidx.compose.koinViewModel
 
-/** За сколько хвостовых рядов сетки до конца просить следующую страницу витрины. */
 private const val LOAD_MORE_TAIL = 3
 
-/** Ключ фокуса строки поиска — стартовая цель экрана и точка возврата. */
 private const val SEARCH_KEY = "search"
 
-/** Высота строки поиска: одна на кнопку и на поле ввода, чтобы шапка не прыгала. */
 private val SearchBarHeight = 56.dp
 
-/**
- * TV-Каталог (экран «Каталог» макета) — витрина, а не строка поиска: сетка постеров живёт по
- * фильтрам тип/жанр/сортировка и наполнена ещё до того, как зритель набрал первую букву.
- *
- * Текст набирают системной клавиатурой телевизора: строка поиска — обычное поле ввода, и по
- * «ОК» на нём открывается привычная системная клавиатура с раскладками, историей и голосовым
- * вводом платформы. Выдачу показывает сама сетка: `visibleItems` переключается на результаты
- * по мере набора запроса.
- *
- * Поверх общего [SearchScreenModel] — тот же debounce-поиск, что и на телефоне.
- */
 @Composable
 fun TvCatalogScreen(
     onOpenItem: (Int) -> Unit,
@@ -134,14 +120,8 @@ fun TvCatalogScreen(
     }
     VoiceListeningDialog(voice)
 
-    // Витрину и жанры тянем только здесь: телефонный поиск с тем же ScreenModel показывает
-    // подсказки, и выдача каталога ему не нужна.
     LaunchedEffect(Unit) { screenModel.dispatch(SearchEvent.LoadCatalog) }
 
-    // remember, а не построение объекта на каждой рекомпозиции: CatalogActions создавал новый
-    // экземпляр (и новые лямбды) на каждую эмиссию state, а его читает сетка постеров ниже по
-    // дереву — смена ссылки инвалидировала все видимые карточки при каждом наборе символа/фильтре.
-    // Ключи — всё, что реально захватывают лямбды: screenModel/focus/voice/onOpenItem.
     val actions = remember(screenModel, focus, voice, onOpenItem) {
         CatalogActions(
             onOpenItem = onOpenItem,
@@ -172,12 +152,10 @@ fun TvCatalogScreen(
     }
 }
 
-/** Действия каталога одним объектом — как TvHomeActions на главной. */
 private data class CatalogActions(
     val onOpenItem: (Int) -> Unit,
     val onQuery: (String) -> Unit,
     val onVoice: () -> Unit,
-    /** Ввод закончен: фокус возвращаем на строку поиска, уже снова кнопку. */
     val onEditingFinished: () -> Unit,
     val onFilter: (ItemType?) -> Unit,
     val onSort: (SortOption) -> Unit,
@@ -196,9 +174,6 @@ private fun CatalogContent(
     ScrollToTopOnNavFocus(gridState)
     val gridItems = state.visibleItems
 
-    // Догрузка витрины: фокус/скролл в LOAD_MORE_TAIL хвостовых рядах — просим следующую
-    // страницу. derivedStateOf пересчитывается без рекомпозиции, дёргает её только смена
-    // «пора/не пора»; повторные вызовы гасит идемпотентность модели.
     val loadMore by remember {
         derivedStateOf {
             val info = gridState.layoutInfo
@@ -208,10 +183,6 @@ private fun CatalogContent(
     }
     LaunchedEffect(loadMore) { if (loadMore) onLoadMore() }
 
-    // Единая сетка каталога/подборки/«Продолжить»/«Истории» — шапка занимает её первую строку
-    // целиком (span на все колонки) и уезжает вверх при скролле вместе с постерами, а не висит
-    // отдельной панелью над сеткой. «Вниз» из чипов уходит в постеры, «вверх» с первого ряда —
-    // на таб-бар, тем же пространственным поиском, что и раньше внутри LazyColumn.
     TvPosterGrid(
         state = gridState,
         modifier = Modifier.fillMaxSize().then(focus.containerModifier),
@@ -224,11 +195,6 @@ private fun CatalogContent(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        // Идёт поиск/первая загрузка витрины и показать пока нечего — не путать с «Ничего не
-        // найдено»: тот рисуем только когда запрос реально завершился пустым результатом.
-        // Пока идёт УТОЧНЕНИЕ уже непустой выдачи (пользователь допечатал буквы), прежние
-        // карточки остаются на месте — collectLatest в SearchScreenModel не даст устаревшему
-        // ответу их перезаписать, а этот индикатор здесь просто не нужен.
         when {
             gridItems.isNotEmpty() -> Unit
             state.loading -> item(key = "loading", span = { GridItemSpan(maxLineSpan) }) { CatalogSearchLoading() }
@@ -247,7 +213,6 @@ private fun CatalogContent(
     }
 }
 
-/** Хвостовой индикатор догрузки страницы — невысокий, чтобы не дёргать сетку. */
 @Composable
 private fun CatalogLoadingMore() {
     Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
@@ -262,9 +227,6 @@ private fun CatalogHeader(
     actions: CatalogActions,
     modifier: Modifier = Modifier,
 ) {
-    // Отступ сверху резервирует место под таб-бар — тот рисуется отдельным оверлеем и своё
-    // место в раскладке не занимает (тот же приём, что и в разделе «Я смотрю»). Горизонтальный
-    // safe area детям шапки уже не нужен: его теперь даёт contentPadding самой TvPosterGrid.
     Column(modifier.padding(top = TvMetrics.ContentTop)) {
         CatalogSearchBar(
             query = state.query,
@@ -274,8 +236,6 @@ private fun CatalogHeader(
             modifier = searchModifier,
         )
         Spacer(Modifier.height(16.dp))
-        // Явная связь «вниз»: ряд типов → первый жанр. Спатиальный поиск здесь ненадёжен:
-        // с focusRestorer на обоих рядах DOWN проскакивал жанры и падал сразу в сетку постеров.
         val firstGenreFocus = remember { FocusRequester() }
         val hasGenres = state.genres.isNotEmpty()
         CatalogTypeRow(
@@ -301,7 +261,6 @@ private fun CatalogHeader(
     }
 }
 
-/** Строка поиска с системной клавиатурой и отдельной кнопкой голосового ввода. */
 @Composable
 private fun CatalogSearchBar(
     query: String,
@@ -310,8 +269,6 @@ private fun CatalogSearchBar(
     onEditingFinished: () -> Unit,
     modifier: Modifier,
 ) {
-    // В навигации строка — кнопка: пульт свободно ходит по экрану, а клавиатура не всплывает.
-    // По «ОК» она становится настоящим полем ввода и открывает системную клавиатуру телевизора.
     var editing by rememberSaveable { mutableStateOf(false) }
 
     Row(
@@ -321,10 +278,6 @@ private fun CatalogSearchBar(
     ) {
         val barSize = Modifier.weight(1f).height(SearchBarHeight)
         if (editing) {
-            // БЕЗ [modifier] (focus.item экрана): точка возврата фокуса — кнопка навигации, а не
-            // поле ввода. Раньше модификатор висел и здесь, и при первом открытии поля после
-            // захода с таб-бара отложенный стартовый requestFocus экрана срабатывал на строке —
-            // отбирал фокус у поля, клавиатура закрывалась через секунду, а фокус улетал в сетку.
             SearchInput(
                 query = query,
                 onQuery = onQuery,
@@ -341,7 +294,6 @@ private fun CatalogSearchBar(
     }
 }
 
-/** Строка в состоянии навигации: показывает запрос и по «ОК» уступает место полю ввода. */
 @Composable
 private fun SearchButton(query: String, onClick: () -> Unit, modifier: Modifier) {
     TvFocusCard(
@@ -361,10 +313,6 @@ private fun SearchButton(query: String, onClick: () -> Unit, modifier: Modifier)
     }
 }
 
-/**
- * Настоящее поле ввода, за которым открывается системная клавиатура. «Назад» закрывает её, а
- * состояние `isImeVisible` возвращает строку в режим навигации, не выводя зрителя из каталога.
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SearchInput(
@@ -376,7 +324,6 @@ private fun SearchInput(
     val fieldState = rememberTextFieldState(query)
     val fieldFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    // Первое событие фокуса бывает ещё до запроса; иначе строка закрылась бы в тот же кадр.
     var hadFocus by remember { mutableStateOf(false) }
 
     LaunchedEffect(fieldState) {
@@ -384,7 +331,6 @@ private fun SearchInput(
     }
     LaunchedEffect(Unit) { fieldFocus.requestFocus() }
 
-    // «Назад» получает сама IME. Закрытие клавиатуры — надёжный признак завершения ввода.
     val keyboardVisible = WindowInsets.isImeVisible
     var keyboardWasVisible by remember { mutableStateOf(false) }
     LaunchedEffect(keyboardVisible) {
@@ -412,7 +358,6 @@ private fun SearchInput(
     }
 }
 
-/** Общая поверхность строки поиска: подложка, иконка и рамка фокуса для двух состояний. */
 @Composable
 private fun SearchBarSurface(
     modifier: Modifier = Modifier,
@@ -444,7 +389,6 @@ private fun SearchBarSurface(
     )
 }
 
-/** Кнопка голосового поиска остаётся отдельной целью фокуса рядом со строкой. */
 @Composable
 private fun VoiceSearchButton(onVoice: () -> Unit) {
     TvFocusCard(
@@ -479,17 +423,8 @@ private fun CatalogTypeRow(
     val sort = state.sort
     val filters = state.filters
     var filtersOpen by remember { mutableStateOf(false) }
-    // Первый вход фокуса в ряд — всегда на первый чип (fallback focusRestorer): без него D-pad
-    // сажал фокус на пространственно-ближайший чип в середине ряда (строка поиска сверху и сетка
-    // снизу — во всю ширину). Повторные входы восстанавливают последний сфокусированный.
     val firstTypeChipFocus = remember { FocusRequester() }
-    // «Вниз» с любого чипа — на первый жанр. Свойство стоит на КАЖДОМ чипе: focusProperties
-    // контейнера на детей не распространяется, и спатиальный поиск скипал ряд жанров в сетку.
     val chipModifier = Modifier.focusProperties { downFocus?.let { down = it } }
-    // Горизонтальный скролл, а не Row: тип + сортировка + «Фильтры» не влезали в safe area, и
-    // последний чип клипился. Разделители-палочки убраны — от них между группами зиял большой
-    // отступ; теперь шаг между всеми чипами одинаковый. Горизонтальный safe area уже даёт
-    // TvPosterGrid — свой contentPadding здесь не нужен, иначе отступ задвоился бы.
     LazyRow(
         modifier = Modifier.fillMaxWidth().focusRestorer(firstTypeChipFocus),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -503,8 +438,6 @@ private fun CatalogTypeRow(
                 modifier = if (index == 0) chipModifier.focusRequester(firstTypeChipFocus) else chipModifier,
             )
         }
-        // Поле сортировки: OK листает по кругу. Стрелка ↕ (U+2195), а не ⇅ из макета: у второй
-        // покрытие во встроенных шрифтах Android TV не гарантировано.
         item {
             TvChip(
                 label = "↕ ${sortLabel(sort.field)}",
@@ -513,7 +446,6 @@ private fun CatalogTypeRow(
                 modifier = chipModifier,
             )
         }
-        // Направление: ↑ по возрастанию (kino.watch `-field`), ↓ по убыванию.
         item {
             TvChip(
                 label = if (sort.ascending) "↑ Возр." else "↓ Убыв.",
@@ -522,7 +454,6 @@ private fun CatalogTypeRow(
                 modifier = chipModifier,
             )
         }
-        // Полный набор фильтров (год, рейтинги, страна, 4K, завершённость) — в оверлей-панели.
         item {
             TvChip(
                 label = if (filters.activeCount > 0) "Фильтры · ${filters.activeCount}" else "Фильтры",
@@ -548,11 +479,9 @@ private fun CatalogGenreRow(
     genres: List<Genre>,
     selectedId: Int?,
     onGenre: (Int?) -> Unit,
-    /** Привязывается к первому жанру: fallback focusRestorer и цель `down` ряда типов. */
     firstChipFocus: FocusRequester,
 ) {
     LazyRow(
-        // Горизонтальный safe area уже даёт TvPosterGrid — свой contentPadding здесь не нужен.
         modifier = Modifier.fillMaxWidth().focusRestorer(firstChipFocus),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -560,7 +489,6 @@ private fun CatalogGenreRow(
             TvChip(
                 label = genre.title,
                 selected = genre.id == selectedId,
-                // Повторный OK по выбранному жанру снимает фильтр — отдельного чипа «Все» в ряду нет.
                 onClick = { onGenre(if (genre.id == selectedId) null else genre.id) },
                 modifier = if (index == 0) Modifier.focusRequester(firstChipFocus) else Modifier,
             )
@@ -568,11 +496,6 @@ private fun CatalogGenreRow(
     }
 }
 
-/**
- * Индикатор на время дебаунса+сети активного поиска, когда показать ещё нечего. Без него окно
- * между нажатием клавиши и приходом ответа выглядело пустым и как будто зависшим — тот же
- * хвостовой спиннер догрузки [CatalogLoadingMore], только по центру и покрупнее.
- */
 @Composable
 private fun CatalogSearchLoading() {
     Box(
@@ -625,14 +548,12 @@ private fun CatalogPoster(item: Item, modifier: Modifier, onClick: () -> Unit) {
             contentDescription = item.title,
             modifier = posterModifier,
             shape = TvMetrics.PosterShape,
-            // Плейсхолдер-градиент по умолчанию розовый; в монохроме под постером — поверхность.
             accentColor = TvSurfaceContainer,
             cacheKey = ImageCacheKeys.poster(item.type, item.id, PosterSize.Medium),
         )
     }
 }
 
-/** Описание текущей выборки: `Фильмы · Драма · 24 результата` (макет: catFilterLabel). */
 private fun catalogSummary(state: SearchState): String {
     val parts = buildList {
         add(typeLabel(state.filter))
@@ -642,7 +563,6 @@ private fun catalogSummary(state: SearchState): String {
     return parts.joinToString(" · ")
 }
 
-/** Подпись чипа-фильтра: множественное число. */
 private fun typeLabel(type: ItemType?): String =
     TypeOptions.firstOrNull { it.first == type }?.second ?: TypeOptions.first().second
 
@@ -651,7 +571,6 @@ private fun nextSort(current: CatalogSort): CatalogSort {
     return SortOptions[(index + 1) % SortOptions.size].first
 }
 
-/** «24 результата» — с русским числительным, иначе строка читается как машинный лог. */
 private fun resultsCount(count: Int): String {
     val word = when {
         count % HUNDRED in TEENS -> "результатов"

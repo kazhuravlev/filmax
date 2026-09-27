@@ -21,16 +21,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/**
- * Регрессия на «прогрев картинок для каждого тайтла из любого списка» — раньше [ItemDto.toDomain]
- * ставил в очередь и маленький постер, и полноразмерный бэкдроп для КАЖДОГО тайтла (списки,
- * поиск, похожее, подборки), хотя бэкдроп реально показывается только в hero/«Продолжить» на
- * главной (см. `HomeScreenModel`). Это забивало 250 МБ дискового кэша Coil и вытесняло как раз те
- * маленькие постеры, что переиспользуются между экранами. Тесты ниже фиксируют: маппер прогревает
- * ТОЛЬКО маленький постер, а бэкдроп там больше не появляется.
- */
 class CatalogMapperTest {
-
     private val originalPrefetcher = ImageDiscovery.prefetcher
     private val originalTitlePrefetcher = ItemDiscovery.prefetcher
     private val fakePrefetcher = FakeImagePrefetcher()
@@ -38,9 +29,6 @@ class CatalogMapperTest {
 
     @BeforeTest
     fun setUp() {
-        // ImageDiscovery.prefetcher — общий mutable-глобал (@Volatile var), подставляем свой
-        // фейк на время теста и обязательно возвращаем прежний, иначе один тест может «загрязнить»
-        // состояние для другого (в этом модуле или даже в другом, если раннер их не изолирует).
         ImageDiscovery.prefetcher = fakePrefetcher
         ItemDiscovery.prefetcher = fakeTitlePrefetcher
     }

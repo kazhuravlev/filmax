@@ -61,38 +61,22 @@ import com.filmax.feature.profile.common.label
 import org.koin.androidx.compose.koinViewModel
 import java.util.Locale
 
-/** Ширина колонки настроек. Читать строку длиной во весь экран с 3 метров невозможно. */
 private val ContentMaxWidth = 640.dp
 
-/** Отступ сверху: шапка профиля не под таб-баром, а заметно ниже — это первый экран раздела. */
 private val ContentTop = 96.dp
 
 private val AvatarSize = 76.dp
 
-/** Высота строки настройки. Фиксированная: разная высота строк ломает ритм списка под пультом. */
 private val RowHeight = 60.dp
 
-/** Шаг между строками одной группы. Задаётся ТОЛЬКО в [SettingsGroup] — см. её doc. */
 private val RowGap = 10.dp
 
-/** Отступ от надзаголовка группы до первой строки. */
 private val GroupTitleGap = 12.dp
 
-/** Промежуток между группами и между шапкой профиля и первой группой. */
 private val GroupGap = 26.dp
 
-/** Промежуток между ярлыком и значением строки: длинный ярлык не наезжает на значение. */
 private val RowLabelValueGap = 16.dp
 
-/**
- * TV-Профиль. Одна колонка: шапка аккаунта, затем группы «Просмотр», «Приложение», «Фоновая
- * загрузка» и в самом низу «Аккаунт» с единственной строкой выхода.
- * Данные и события — общие с мобильным профилем ([ProfileScreenModel]), меняется только
- * раскладка под 10-foot. Клик по строке настройки циклически меняет её значение.
- *
- * Статистики (просмотрено/в избранном) здесь нет: на пульте она ни на что не влияет и только
- * оттягивает внимание от единственной задачи экрана — поменять настройку или выйти.
- */
 @Composable
 fun TvProfileScreen(
     onLogout: () -> Unit,
@@ -127,8 +111,6 @@ fun TvProfileScreen(
     )
 }
 
-// ── Контент ──────────────────────────────────────────────────────────────────
-
 @Composable
 private fun ProfileContent(
     state: ProfileState,
@@ -157,15 +139,8 @@ private fun ProfileContent(
         ) {
             ProfileHeader(profile = state.profile, modifier = Modifier.padding(bottom = 6.dp))
             SettingsGroup("Просмотр") { PlaybackRows(state = state, actions = actions) }
-            // Блока «Устройство» временно нет: device/info и device/settings отвечают 500,
-            // и строка вела на нерабочий экран. Вернуть, когда бэкенд починят.
-            //
-            // На телевизоре магазина нет вообще — приложение ставится APK, и ручная проверка
-            // здесь нужнее, чем на телефоне.
             SettingsGroup("Приложение") { AppRows(state = state, actions = actions) }
             SettingsGroup("Фоновая загрузка") { BackgroundFetchRows(state = state, actions = actions) }
-            // Выход — последняя строка экрана: случайно до неё не доезжают, а подписка в шапке
-            // уже показана — отдельная справочная строка «Подписка» здесь ничего не добавляла.
             SettingsGroup("Аккаунт") { AccountRows(actions = actions) }
             FilmaxVersionLabel(color = TvOnSurfaceDim)
         }
@@ -207,15 +182,6 @@ private fun ProfileHeader(profile: UserProfile?, modifier: Modifier = Modifier) 
     }
 }
 
-// ── Группы настроек ──────────────────────────────────────────────────────────
-
-/**
- * Группа строк настроек: надзаголовок и строки с единым шагом [RowGap]. ЕДИНСТВЕННОЕ место,
- * где задаются отступы между строками — раньше «Сервер API» и «Проверить обновления» лежали в
- * колонке экрана голыми, без `spacedBy`, и слипались в одну плашку, пока остальные группы
- * держали шаг каждая своей `Column`. Строки внутри — только [SettingRow], своих отступов у них
- * нет и быть не должно.
- */
 @Composable
 private fun SettingsGroup(title: String, rows: @Composable ColumnScope.() -> Unit) {
     Column {
@@ -240,7 +206,6 @@ private data class ProfileActions(
     val onClearItemCache: () -> Unit,
 )
 
-/** Лямбды замыкают текущий [state], поэтому пересобираются вместе с ним — без remember. */
 private fun profileActions(
     screenModel: ProfileScreenModel,
     state: ProfileState,
@@ -289,14 +254,10 @@ private fun PlaybackRows(state: ProfileState, actions: ProfileActions) {
         spec = SettingRowSpec(label = "Качество видео", value = state.playback.quality.label),
         onClick = actions.onCycleQuality,
     )
-    // «Авто» — первый пресет из списка, чьи озвучка и субтитры есть у тайтла; в плеере
-    // пресет можно сменить или переопределить ручным выбором дорожек — на этот тайтл.
     SettingRow(
         spec = SettingRowSpec(label = "Озвучка и субтитры", value = state.playback.presetLabel),
         onClick = actions.onCyclePreset,
     )
-    // Интерфейс плеера — общий для тайтлов и трейлеров (см. PlayerUi). Пока вариант один,
-    // пункт всё равно на месте: следующий интерфейс появится как новое значение перечисления.
     SettingRow(
         spec = SettingRowSpec(label = "Интерфейс плеера", value = state.playback.playerUi.label),
         onClick = actions.onCyclePlayerUi,
@@ -330,13 +291,6 @@ private fun AccountRows(actions: ProfileActions) {
     )
 }
 
-/**
- * Единый раздел настроек фоновой докачки: общий выключатель (картинки И информация о тайтлах,
- * см. [com.filmax.core.domain.cache.BackgroundFetchSettings]), прокси изображений, оверлей
- * технической диагностики этой же докачки ([com.filmax.core.domain.cache.TechOverlaySettings]) и
- * сброс обоих дисковых кэшей по отдельности — у каждого свой размер/счётчик, поэтому и
- * сбрасываются порознь.
- */
 @Composable
 private fun BackgroundFetchRows(state: ProfileState, actions: ProfileActions) {
     val stats = state.imageCacheStats
@@ -381,28 +335,12 @@ private fun BackgroundFetchRows(state: ProfileState, actions: ProfileActions) {
     )
 }
 
-// ── Строка настройки ─────────────────────────────────────────────────────────
-
 private data class SettingRowSpec(
     val label: String,
     val value: String? = null,
     val labelColor: Color = TvOnSurface,
 )
 
-/**
- * Строка настройки: слева ярлык, справа значение.
- *
- * Фокус рисуем вручную, а не через `TvFocusCard`, несмотря на единую схему фокуса в остальном
- * приложении. Причина геометрическая: `Modifier.verticalScroll` клипает контент по горизонтали
- * (`clipScrollableContainer` расширяет бокс только сверху и снизу), а `FocusScale` = 1.08 на
- * строке шириной 640dp — это +25dp с каждой стороны. Рамке столько не дать: карточные ряды
- * решают это запасом `FocusInset` = 12dp, здесь его не хватит вдвое, а расширить колонку до
- * 690dp — значит вынести рамку на 32dp от края экрана, внутрь оверскан-зоны, ради защиты
- * от которой и существует `SafeHorizontal`.
- *
- * Поэтому масштаб заменён вторым статичным сигналом — подъёмом фона: рамка [TvFocus] и цвет
- * фона меняются вместе, так что фокус читается и без геометрии.
- */
 @Composable
 private fun SettingRow(spec: SettingRowSpec, onClick: (() -> Unit)?) {
     var focused by remember { mutableStateOf(false) }
@@ -430,8 +368,6 @@ private fun SettingRow(spec: SettingRowSpec, onClick: (() -> Unit)?) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        // Ярлык уступает место значению: длинный ярлык («Сбросить кеш изображений (12.3 из
-        // 200 МБ)») режется многоточием, а не выдавливает значение за край строки.
         Text(
             spec.label,
             style = MaterialTheme.typography.titleMedium,
@@ -452,14 +388,11 @@ private fun SettingRow(spec: SettingRowSpec, onClick: (() -> Unit)?) {
     }
 }
 
-// ── Вспомогательное ──────────────────────────────────────────────────────────
-
 private fun <T> next(options: List<T>, current: T): T {
     val index = options.indexOf(current)
     return options[(index + 1).mod(options.size)]
 }
 
-/** Хост без схемы — короче для строки настройки (`smarttvcdn.online` вместо полного URL). */
 private fun apiHostLabel(host: String): String = host.removePrefix("https://").removePrefix("http://")
 
 private fun onOff(enabled: Boolean): String = if (enabled) "Вкл" else "Выкл"

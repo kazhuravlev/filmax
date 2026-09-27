@@ -11,10 +11,6 @@ import com.filmax.data.search.remote.SearchApi
 internal class SearchRepositoryImpl(
     private val api: SearchApi,
 ) : SearchRepository {
-
-    // distinctBy(id) во всех трёх: kino.watch может отдать тайтл дважды (актёр в нескольких ролях
-    // одного тайтла, совпадение по двум названиям), а выдача идёт в Lazy-списки с key = id —
-    // дубликат ключа роняет Compose («Key … was already used»).
     override suspend fun search(query: String, type: ItemType?, perPage: Int): RequestResult<List<Item>> =
         safeRequest { api.search(query, type?.apiValue, perPage).toDomain().items.distinctBy { it.id } }
 

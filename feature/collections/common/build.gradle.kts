@@ -1,4 +1,3 @@
-// Логический слой Collections (без UI): ScreenModel-и + контракты + DI + маршруты.
 plugins {
     id("filmax.android.library")
     alias(libs.plugins.kotlin.serialization)

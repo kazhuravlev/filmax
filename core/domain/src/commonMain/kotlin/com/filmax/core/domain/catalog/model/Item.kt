@@ -17,15 +17,9 @@ data class Item(
     val trailer: Trailer?,
     val inWatchlist: Boolean,
     val finished: Boolean,
-    /** Числовой IMDb-id тайтла — по нему TMDB отдаёт фото актёров. null, если API его не прислал. */
     val imdbId: String? = null,
-    /** Число просмотров тайтла на kino.watch. 0 — данных нет (не «ноль просмотров»). */
     val views: Int = 0,
-    /** В видео тайтла есть реклама (kino.watch `advert`) — показываем бейдж на карточке-постере. */
     val advert: Boolean = false,
-    /** Максимальное доступное качество — высота кадра в пикселях (kino.watch `quality`, например
-     * 2160). 0 — сервер не прислал (тайтл без загруженного видео). Бейдж SD/HD/FHD/4K на
-     * карточке-постере — см. `qualityLabel()` в core:tv-designsystem. */
     val quality: Int = 0,
 )
 
@@ -41,12 +35,6 @@ enum class ItemType(val apiValue: String) {
     }
 }
 
-/**
- * Жанр каталога. [type] — тип контента, к которому жанр относится (`movie`, `serial`, `music`…):
- * `api/v1/genres` отдаёт одним списком жанры ВСЕХ типов, включая музыкальные, поэтому без
- * фильтра по типу в киношный каталог попадают «Blues» и «Chillout». Внутри тайтла поля нет —
- * там жанр приходит без типа, отсюда null по умолчанию.
- */
 data class Genre(val id: Int, val title: String, val type: String? = null)
 
 data class ItemRating(
@@ -55,10 +43,6 @@ data class ItemRating(
     val imdb: String?,
     val kinopoisk: String?,
 ) {
-    /**
-     * Средняя внешняя оценка по шкале 0–10: берём доступные значения IMDb и Кинопоиска
-     * и усредняем их. Если ни одной оценки нет — `null` (в UI показываем «N/A»).
-     */
     val external: Double?
         get() {
             val scores = listOfNotNull(imdb?.toDoubleOrNull(), kinopoisk?.toDoubleOrNull())
@@ -88,17 +72,10 @@ data class MediaTrack(
     val files: List<VideoFile>,
     val audios: List<AudioTrack>,
     val subtitles: List<SubtitleTrack>,
-    /** Прогресс просмотра в секундах (kino.watch `watching.time`); 0 — не начат. */
     val watchedSeconds: Int = 0,
-    /** Серверный статус просмотра дорожки (kino.watch `watching.status`). */
     val watchStatus: WatchStatus = WatchStatus.NotStarted,
 )
 
-/**
- * Статус просмотра видео на сервере (`watching.status` в `items/{id}` и `/history`). [apiValue] —
- * как kino.watch кодирует его числом; всё сравнение в домене идёт по enum, число живёт только на
- * границе с API ([fromApi]).
- */
 enum class WatchStatus(val apiValue: Int) {
     NotStarted(-1),
     InProgress(0),
@@ -106,7 +83,6 @@ enum class WatchStatus(val apiValue: Int) {
     ;
 
     companion object {
-        /** null и неизвестные числа — «не начат»: сервер ничего не сказал, начинаем с нуля. */
         fun fromApi(value: Int?): WatchStatus = entries.firstOrNull { it.apiValue == value } ?: NotStarted
     }
 }
@@ -120,14 +96,11 @@ data class VideoFile(
 
 data class AudioTrack(
     val id: Int,
-    /** Порядковый номер дорожки в потоке (1-based) — совпадает с порядком в HLS-манифесте. */
     val index: Int,
     val lang: String?,
     val title: String?,
     val channels: Int,
-    /** Тип озвучки: «Многоголосый», «Дубляж», «Оригинал»… null — API не отдал. */
     val voiceType: String? = null,
-    /** Студия озвучки: «BaibaKo», «Русский дубляж»… null — API не отдал. */
     val voiceAuthor: String? = null,
 )
 

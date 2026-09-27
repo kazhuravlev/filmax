@@ -5,7 +5,6 @@ plugins {
 
 android {
     namespace = "com.filmax.core.network"
-    // BuildConfig.DEBUG нужен isDebugBuild: HTTP-логи включаются только в отладочной сборке.
     buildFeatures { buildConfig = true }
 }
 
@@ -30,14 +29,12 @@ kotlin {
             api(koinBom)
             api(libs.koin.android)
         }
-        // appleMain — общий для iOS и tvOS (Darwin-движок Ktor покрывает обе платформы).
         appleMain.dependencies {
             api(libs.ktor.client.darwin)
         }
     }
 }
 
-// Network inspector — реальный Chucker в debug, пустышка в release (только Android).
 dependencies {
     "debugImplementation"(libs.chucker)
     "releaseImplementation"(libs.chucker.no.op)

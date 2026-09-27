@@ -1,5 +1,3 @@
-// Чистые производные и форматирование экрана Деталей, общие для mobile и tv:
-// модель сериала (сезоны + точка «продолжить»), подписи меты и склонения. Без UI-зависимостей.
 
 package com.filmax.feature.details.common
 
@@ -8,26 +6,17 @@ import com.filmax.core.domain.catalog.model.ItemType
 import com.filmax.core.domain.catalog.model.MediaTrack
 import com.filmax.core.domain.watching.model.Continuation
 
-// Модули русских правил склонения по числу (последние две / одна цифра).
 private const val PLURAL_MOD_HUNDRED = 100
 private const val PLURAL_MOD_TEN = 10
 
 private const val MINUTES_IN_HOUR = 60
 
-/**
- * Производные данные сериала для экрана: сезоны (сгруппированы и отсортированы) и точка «продолжить».
- * Отдельная чистая модель вместо переплетённых remember-блоков в Composable.
- */
 data class SeriesData(
-    /** Пары «номер сезона → серии по порядку», отсортированные по номеру сезона. */
     val seasons: List<Pair<Int, List<MediaTrack>>>,
-    /** Эпизод для «Продолжить», только когда общий расчёт признал его незавершённым. */
     val resume: MediaTrack?,
-    /** Индекс сезона эпизода «продолжить» в [seasons] (0, если не определён). */
     val resumeSeasonIndex: Int,
 )
 
-/** Считает [SeriesData] из плейлиста серий — чистая функция, тестируемая отдельно от UI. */
 fun calculateSeriesData(tracklist: List<MediaTrack>, continuation: Continuation? = null): SeriesData {
     val seasons = tracklist
         .groupBy { it.seasonNumber }
@@ -45,17 +34,9 @@ fun calculateSeriesData(tracklist: List<MediaTrack>, continuation: Continuation?
     return SeriesData(seasons = seasons, resume = resume, resumeSeasonIndex = resumeSeasonIndex)
 }
 
-/**
- * Сериал определяем по ТИПУ тайтла, а не по числу дорожек: у фильма с двумя озвучками
- * `tracklist.size > 1`, и он получил бы селектор сезонов из одного бессмысленного сезона.
- */
 fun Item.isSeries(): Boolean =
     type == ItemType.SERIES || type == ItemType.ANIME || type == ItemType.DOCUMENTARY
 
-/**
- * У фильма в мете длительность, у сериала — объём: «3 сезона», а у односезонного «12 серий»
- * («1 сезон» не сообщает ничего).
- */
 fun volumeLabel(item: Item, series: SeriesData?): String? = when {
     series == null -> item.duration.averageMinutes?.toInt()?.takeIf { it > 0 }?.let { durationLabel(it) }
     series.seasons.size > 1 -> "${series.seasons.size} ${seasonsWord(series.seasons.size)}"
@@ -63,7 +44,6 @@ fun volumeLabel(item: Item, series: SeriesData?): String? = when {
     else -> null
 }
 
-/** «2 ч 46 мин» / «46 мин» — часы опускаем, когда их нет. */
 private fun durationLabel(minutes: Int): String {
     val hours = minutes / MINUTES_IN_HOUR
     val rest = minutes % MINUTES_IN_HOUR
@@ -72,10 +52,6 @@ private fun durationLabel(minutes: Int): String {
 
 private const val GROUPING_SIZE = 3
 
-/**
- * «12 345» — число просмотров с разрядами через пробел (аналог JS `toLocaleString()` в
- * ru-локали). 0 — это «данных нет», а не «ноль просмотров», поэтому такие тайтлы без подписи.
- */
 fun viewsLabel(views: Int): String? = views.takeIf { it > 0 }
     ?.toString()
     ?.reversed()

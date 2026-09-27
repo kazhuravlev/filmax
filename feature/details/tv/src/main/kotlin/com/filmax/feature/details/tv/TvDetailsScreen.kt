@@ -1,8 +1,4 @@
-// Экран деталей составной: hero с действиями, сезоны с эпизодами и ряд похожих. Каждая часть —
-// свой composable, и это правильное дробление; растаскивать их по файлам значило бы разорвать
-// один экран на куски, которые читаются только вместе.
 @file:Suppress("TooManyFunctions")
-// BringIntoViewSpec: единственный способ выключить фокус-прокрутку полотна в hero-стейте.
 @file:OptIn(ExperimentalFoundationApi::class)
 
 package com.filmax.feature.details.tv
@@ -137,67 +133,44 @@ import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
-/** Типовая ширина плашки меты в скелетоне; реальная плашка растёт по своему содержимому. */
 private val SkeletonInfoPanelWidth = 420.dp
 
-/** Непрозрачность чёрной подложки под метой/рейтингами — та же, что у [TvRatingPill]. */
 private const val HERO_INFO_SCRIM_ALPHA = 0.72f
 
-/** Максимальная ширина описания и строки состава: длинная строка на 3 метрах не читается. */
 private val ReadableTextWidth = 760.dp
 
-/** Отступ снизу единого полотна: рамке фокуса последнего ряда нужно место. */
 private val ContentBottomPadding = 70.dp
 
-/** Индекс элемента «описание» в полотне: сюда полотно едет, когда фокус уходит с кнопок вниз. */
 private const val CONTENT_START_INDEX = 1
 
-/** Сколько кадров пропустить перед прокруткой к стейту (см. [rememberHeroFocusScroller]). */
 private const val FRAMES_BEFORE_STATE_SCROLL = 2
 
-/**
- * Чип человека (актёр/режиссёр, см. [TvPersonChip]): портретное фото сверху, имя под ним.
- * Форма — та же, что и у плашки в целом ([PersonChipShape]): скругление не отдельное для фото,
- * а общее. Ширина и высота ФИКСИРОВАНЫ и одинаковы у всех чипов ряда — иначе имена разной
- * длины давали чипы вразнобой. Имя, которое не влезает в [PersonChipWidth], не обрезается
- * навсегда: бегущей строкой оно едет при фокусе (см. [TvPersonChip]).
- */
 private val PersonChipShape = TvMetrics.CardShape
 private val PersonChipWidth = 120.dp
 private val PersonChipHeight = 188.dp
 private val PersonChipNameHeight = 40.dp
 private val PersonChipGap = 12.dp
 
-/** Размер постера-обложки в hero (см. [HeroPoster]) — компактнее каталожного, рядом с бэкдропом. */
 private val HeroPosterWidth = 140.dp
 private val HeroPosterHeight = 210.dp
 
 private const val EPISODES_TITLE = "Эпизоды"
 
-/** Общий префикс ключей фокуса кнопок hero: по нему экран узнаёт, что возвращается в шапку. */
 private const val HERO_KEY_PREFIX = "hero:"
 
-/** Ключ фокуса кнопки «Смотреть»: стартовая цель экрана. */
 private const val HERO_PLAY_KEY = "hero:play"
 
-/** Ключ фокуса кнопки «Сезоны и серии» — сюда возвращается фокус после закрытия браузера. */
 private const val HERO_SEASONS_KEY = "hero:seasons"
 
-/** Фильм играется целиком, без выбора дорожки: плеер ждёт videoId = -1. */
 private const val MOVIE_VIDEO_ID = -1
 private const val NO_RESUME_POSITION = 0
 
-/** «Сезона нет» — фильм или сезон неизвестен (PlayerRoute.season = -1). */
 private const val NO_SEASON = -1
 
 private const val MAX_META_GENRES = 2
 private const val SECONDS_IN_MINUTE = 60
 private const val MINUTES_IN_HOUR = 60
 
-/**
- * TV-Детали. Фильм и сериал — один вертикальный поток: hero, описание, эпизоды (сериал),
- * «Похожее». Поверх общего [DetailsScreenModel] (itemId берётся из маршрута через SavedStateHandle).
- */
 @Composable
 fun TvDetailsScreen(
     nav: TvDetailsNav,
@@ -246,15 +219,6 @@ fun TvDetailsScreen(
     }
 }
 
-/**
- * Скелетон холодного промаха кэша (`state.loading` без ещё загруженного `item`) — редкий путь:
- * тайтл почти всегда уже лежит в `ItemDetailsCache` и экран открывается мгновенно (см. doc
- * `DetailsScreenModel.onFetchData`). Раньше здесь был голый `CircularProgressIndicator` на чёрном
- * фоне — грубое приближение раскладки [DetailsHero] тем же визуальным языком, что и
- * [PosterRailSkeleton]/`TvRailSkeleton` (главная): статичные градиентные плашки
- * ([GradientPosterPlaceholder]) без shimmer-анимации (см. её обоснование в `PosterImage.kt` —
- * десятки одновременных shimmer-анимаций на ТВ роняли FPS).
- */
 @Composable
 private fun TvDetailsSkeleton(modifier: Modifier = Modifier) {
     Column(
@@ -306,7 +270,6 @@ private fun TvDetailsSkeleton(modifier: Modifier = Modifier) {
     }
 }
 
-/** Одна плашка скелетона — та же статичная градиентная заглушка, что и у постеров/рядов. */
 @Composable
 private fun SkeletonBlock(width: Dp, height: Dp, shape: Shape) {
     GradientPosterPlaceholder(
@@ -325,43 +288,26 @@ private val SkeletonTextLineHeight = 16.dp
 private val SkeletonShortTextLineWidth = 420.dp
 private val SkeletonTextShape = RoundedCornerShape(4.dp)
 
-/**
- * Навигация TV-деталей — группой (detekt LongParameterList): входной composable иначе набирает
- * больше шести параметров.
- */
 data class TvDetailsNav(
     val onPlay: (itemId: Int, season: Int, videoId: Int, resumePositionSeconds: Int) -> Unit,
     val onOpenItem: (Int) -> Unit,
-    /** Тап по актёру/режиссёру -> его фильмография (isDirector различает запрос к API). */
     val onOpenPerson: (name: String, isDirector: Boolean) -> Unit,
-    /** Играть трейлер: прямой HLS-url и заголовок. */
     val onPlayTrailer: (url: String, title: String) -> Unit,
 )
 
-/** Действия экрана — группой, чтобы не раздувать списки параметров у вложенных секций. */
 private data class DetailsActions(
-    /** [season] ≤ 0 — фильм/сезон неизвестен; номер видео уникален только внутри сезона. */
     val onPlay: (season: Int, videoId: Int, resumePositionSeconds: Int) -> Unit,
-    /** «Буду смотреть» — нативный watchlist kino.watch. */
     val onToggleWantToWatch: () -> Unit,
     val onOpenItem: (Int) -> Unit,
     val onOpenPerson: (name: String, isDirector: Boolean) -> Unit,
     val onPlayTrailer: (url: String, title: String) -> Unit,
-    /** Добавить тайтл в подборку или убрать из неё — состояние решает сам экран. */
     val onToggleFolder: (BookmarkFolder) -> Unit,
-    /** Создать подборку и сразу занести в неё тайтл — из того же диалога выбора. */
     val onCreateFolder: (title: String) -> Unit,
-    /** Фокус зашёл на кнопку «Смотреть» — см. [DetailsEvent.PrefetchPlayback]. */
     val onPrefetchPlayback: () -> Unit,
-    /** Открыли браузер серий — прогреть кадры всех серий, см. [DetailsEvent.PrefetchEpisodeThumbnails]. */
     val onPrefetchEpisodeThumbnails: () -> Unit,
-    /** Ждёт настоящий ответ continuation, если он ещё грузится — см. `DetailsScreenModel.awaitContinuation`. */
     val awaitContinuation: suspend () -> Continuation?,
 )
 
-// Экран собирает hero, все секции полотна и диалог выбора подборки в одном месте — раскладывать
-// его по отдельным composable ради лимитов значило бы разорвать код, который читается только
-// вместе (см. заголовок файла). Тот же осознанный Suppress, что и для класса-модели экрана.
 @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @Composable
 private fun DetailsContent(
@@ -380,54 +326,24 @@ private fun DetailsContent(
     val series = remember(item, continuation) {
         if (item.isSeries()) calculateSeriesData(item.tracklist, continuation) else null
     }
-    // Селектор стартует на сезоне недосмотренной серии, а не на первом: продолжают чаще, чем
-    // начинают заново.
-    //
-    // rememberSaveable, а не remember: тот же класс бага, что уже чинили для contentFocused
-    // выше (см. её комментарий) — уход в плеер/фильмографию и обратно пересоздаёт композицию
-    // с нуля, и обычный remember тихо сбрасывал вручную выбранный сезон на resumeSeasonIndex,
-    // а восстановление фокуса на ключ "episode:${id}" переставало находить карточку — она
-    // просто не рендерилась, потому что список серий откатывался на другой сезон.
     var selectedSeason by rememberSaveable(item.id) { mutableIntStateOf(series?.resumeSeasonIndex ?: 0) }
     val episodes = series?.seasons?.getOrNull(selectedSeason)?.second.orEmpty()
-    // Открыт ли полноэкранный браузер «Сезоны и серии». rememberSaveable — по той же причине,
-    // что и selectedSeason: уход в плеер из браузера и возврат должны вернуть в браузер.
     var seasonsOpen by rememberSaveable(item.id) { mutableStateOf(false) }
 
-    // Первый заход открывает экран на «Смотреть», возврат из плеера — на серии, с которой ушли.
-    // И то, и другое — одна цель фокуса, поэтому и механизм один: два конкурирующих реквеста в
-    // одном кадре давали то кнопку, то серию, и ряд серий выглядел мёртвым (отсюда «иногда»).
     val focus = rememberTvScreenFocus(startAt = HERO_PLAY_KEY)
 
-    // Кнопка играет недосмотренную серию, иначе первую серию ВЫБРАННОГО сезона (у фильма дорожка
-    // не выбирается вовсе).
     val target = series?.let { it.resume ?: episodes.firstOrNull() ?: item.tracklist.firstOrNull() }
-    // Трейлер показываем, только если url — играбельный http(s) (kino.watch отдаёт прямой HLS).
     val trailerUrl = item.trailer?.url?.takeIf { it.startsWith("http") }
-    // Актёры карточками: фото из TMDB, если доехали; иначе — имена из строки kino.watch.
     val people = remember(cast, item.cast) { resolveCast(cast, item.cast) }
-    // Режиссёр(ы) той же карточкой: у kino.watch это тоже строка имён через запятую.
     val directors = remember(item.director) { resolveDirectors(item.director) }
 
     val listState = rememberLazyListState()
-    // Для onPlay ниже: ожидание continuation (см. её doc) — suspend, а обработчик клика — нет.
     val playScope = rememberCoroutineScope()
-    // false = стейт hero (открытие экрана), true = фокус ушёл в контент. Пока полотно в стейте
-    // hero, фокус-прокрутка (bringIntoView) выключена ПОЛНОСТЬЮ: именно она давала подскролл к
-    // середине при открытии — стартовый requestFocus на «Смотреть» уезжал раньше раскладки.
-    //
-    // Начальное значение — не всегда false: если экран восстанавливает фокус сразу вглубь
-    // контента (например, на карточку серии, на которой стояли до перехода к режиссёру и
-    // обратно), фокус в hero-кнопки в этой композиции вообще не заходит — rememberHeroFocusScroller
-    // никогда не срабатывает, и NoFocusScroll остаётся включённым навсегда, ломая bringIntoView
-    // (в т.ч. подскролл) во всех рядах контента, включая «Похожее». Поэтому стартуем сразу в
-    // нужном стейте, а не ждём живого перехода фокуса через шапку.
     val contentFocused = remember {
         mutableStateOf(focus.initialReturnTarget?.startsWith(HERO_KEY_PREFIX) == false)
     }
     val onHeroFocusChanged = rememberHeroFocusScroller(listState, contentFocused)
 
-    // Локальная функция вместо лямбды-в-лямбде (ktlint Wrapping): у тайтла без трейлера кнопки нет.
     fun playTrailer() {
         trailerUrl?.let { url -> actions.onPlayTrailer(url, "Трейлер · ${item.title}") }
     }
@@ -439,9 +355,6 @@ private fun DetailsContent(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().then(focus.containerModifier),
-            // Без top-инсета: бэкдроп hero — первый элемент полотна — должен упираться в настоящий
-            // верхний край экрана и уходить под плавающий TvTopNavBar, а не начинаться под ним.
-            // Клиренс под таб-бар отъезжает внутрь DetailsHero — на текстовую колонку, а не сюда.
             contentPadding = PaddingValues(bottom = ContentBottomPadding),
         ) {
             item(key = "hero") {
@@ -454,9 +367,6 @@ private fun DetailsContent(
                         playLabel = remember(continuation, series?.resume, target) {
                             playLabel(continuation, series?.resume, target)
                         },
-                        // Фильм играется целиком (videoId = -1), сериал — конкретной серией. Сериал
-                        // без серий играть нечем — кнопка молчит. В плеер уходят НОМЕР серии и
-                        // СЕЗОН: номер уникален только внутри сезона.
                         onPlay = {
                             playScope.launch {
                                 val resolved = actions.awaitContinuation()
@@ -468,13 +378,6 @@ private fun DetailsContent(
                                         resolved?.savedPositionSeconds ?: NO_RESUME_POSITION,
                                     )
                                 } else {
-                                    // ГОНКА (см. doc DetailsScreenModel.loadContinuation): пока
-                                    // continuation не пришла, `continuation`/`target` в этой
-                                    // композиции — временный дефолт (null / первая серия сезона),
-                                    // и без ожидания настоящего ответа серия сыграла бы с нуля,
-                                    // хотя прогресс уже есть — «потерял моё место». Ждём реальный
-                                    // ответ (с таймаутом на случай медленного сервера) и пересчитываем
-                                    // серию/позицию по НЕМУ, а не по тому, что успело попасть в кадр.
                                     val resolvedResume = resolved
                                         ?.let { c ->
                                             item.tracklist.firstOrNull { track ->
@@ -497,7 +400,6 @@ private fun DetailsContent(
                             }
                         },
                         onOpenFolderPicker = { folderPicker.pickerOpen = true },
-                        // Браузер серий есть у любого сериала с дорожками; у фильма кнопки нет.
                         onOpenSeasons = series?.takeIf { it.seasons.isNotEmpty() }?.let {
                             {
                                 seasonsOpen = true
@@ -548,7 +450,6 @@ private fun DetailsContent(
                 title = item.title,
                 seasons = series.seasons,
                 resumeId = series.resume?.id,
-                // Позиция — только у актуального continuation (правило PlayerRoute.resumePositionSeconds).
                 resumePositionSeconds = continuation
                     ?.takeIf { it.isActualContinuation }
                     ?.savedPositionSeconds
@@ -560,12 +461,6 @@ private fun DetailsContent(
     }
 }
 
-/**
- * Переключатель двух стейтов полотна по фокусу кнопок hero. Стейт 1: фокус на кнопках —
- * полотно к началу, hero виден целиком (плюс описание под ним). Стейт 2: фокус ушёл с кнопок
- * вниз — полотно едет к описанию, hero скрывается прокруткой. Всё это ОДИН LazyColumn:
- * ничего не накладывается и не режется. Начальная композиция (фокуса ещё не было) — не выход.
- */
 @Composable
 private fun rememberHeroFocusScroller(
     listState: LazyListState,
@@ -574,10 +469,6 @@ private fun rememberHeroFocusScroller(
     val scope = rememberCoroutineScope()
     var heroHadFocus by remember { mutableStateOf(false) }
 
-    // Прокрутка к стейту — через кадр: смена фокуса в этом же кадре запускает системный
-    // bringIntoView, и без паузы он перехватывал бы нашу прокрутку (полотно застревало на
-    // полпути, верх постера оставался срезанным). Более поздний вызов забирает scroll-мьютекс
-    // списка себе — поэтому пропускаем кадры и едем к цели последними.
     fun scrollAfterFrame(targetIndex: Int) {
         scope.launch {
             repeat(FRAMES_BEFORE_STATE_SCROLL) { withFrameNanos { } }
@@ -598,16 +489,10 @@ private fun rememberHeroFocusScroller(
     }
 }
 
-/**
- * Спека «не скроллить»: пока полотно в стейте hero, любой bringIntoView от фокуса гасится —
- * позицией полотна управляет только [rememberHeroFocusScroller]. Включается обратно, когда
- * фокус уходит в контент: там штатная фокус-прокрутка нужна для глубоких рядов.
- */
 private val NoFocusScroll = object : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = 0f
 }
 
-/** Данные секций полотна под hero — группой (detekt LongParameterList). */
 private data class DetailsSectionsData(
     val item: Item,
     val similar: List<Item>,
@@ -620,11 +505,6 @@ private data class DetailsSectionsData(
     val selectedSeason: Int,
 )
 
-/**
- * Секции полотна под hero: описание, режиссёр (+ «От режиссёра»), актёры, эпизоды, «Похожее».
- * Режиссёр и его фильмография — первыми среди состава и рядов похожего: это то, ради чего люди
- * чаще всего открывают карточку конкретного человека, а не разгребают весь состав сначала.
- */
 private fun LazyListScope.detailsSections(
     data: DetailsSectionsData,
     actions: DetailsActions,
@@ -678,46 +558,22 @@ private fun LazyListScope.detailsSections(
 
 // ─────────────────────────────────── Hero ───────────────────────────────────
 
-/** Фокус и действия кнопок hero — группой (detekt LongParameterList). */
 private data class HeroPlayback(
     val playModifier: Modifier,
     val onPlay: () -> Unit,
-    /** Текст кнопки «Смотреть» — уже с сезоном/серией, если применимо, см. [playLabel]. */
     val playLabel: String,
-    /** Открыть диалог выбора подборки — единственная кнопка «Добавить в подборку» / «В подборках». */
     val onOpenFolderPicker: () -> Unit,
-    /** Открыть браузер «Сезоны и серии»; null — фильм или сериал без дорожек, кнопки нет. */
     val onOpenSeasons: (() -> Unit)? = null,
-    /** Фокус-ключ кнопки браузера (см. [HERO_SEASONS_KEY]) — точка возврата после закрытия. */
     val seasonsModifier: Modifier = Modifier,
-    /** «Сезоны и серии» у многосезонного, «Серии» — когда сезон один и выбирать нечего. */
     val seasonsLabel: String = "Сезоны и серии",
-    /** «Буду смотреть», см. [DetailsActions.onToggleWantToWatch]. */
     val onToggleWantToWatch: () -> Unit,
-    /** Текущее состояние «Буду смотреть» — см. [DetailsState.isWantToWatch]. */
     val isWantToWatch: Boolean,
-    /** У kino.watch `watching/togglewatchlist` добавляет в «Я смотрю» только сериалы — у фильма
-     * кнопки нет вовсе, а не задизейблена. */
     val showWantToWatch: Boolean,
-    /** Фокус зашёл на кнопки hero или ушёл с них — экран переключает стейт полотна. */
     val onHeroFocusChanged: (Boolean) -> Unit,
-    /** null — у тайтла нет играбельного трейлера, кнопки нет. */
     val onTrailer: (() -> Unit)? = null,
-    /** Фокус зашёл именно на «Смотреть» — см. [DetailsEvent.PrefetchPlayback]. */
     val onPrefetchPlayback: () -> Unit = {},
 )
 
-/**
- * Hero: бэкдроп во всю ширину, название сверху слева (а не над кнопками внизу — рядом с постером
- * и составом теперь просится подпись экрана, а не заголовок-плакат), под ним постер 2:3 и рядом с
- * ним мета/рейтинг/кнопки.
- *
- * Высота — не меньше [TvMetrics.DetailsHeroHeight], но растёт под содержимое: hero — первый
- * элемент единого полотна и скрывается обычной прокруткой, когда фокус уходит в контент, а не
- * сжимается поверх него. Раньше высота была жёсткой, и название в четыре строки (у kino.watch
- * бывают «Название / Original Title / ещё одно») отбирало место у постера и кнопок — они
- * сплющивались в полоски. Теперь длинное название просто сдвигает всё под собой вниз.
- */
 @Composable
 private fun DetailsHero(
     item: Item,
@@ -728,22 +584,13 @@ private fun DetailsHero(
     Box(
         Modifier
             .fillMaxWidth()
-            // Бэкдроп растёт вверх на высоту таб-бара (см. LazyColumn выше): сам кадр честно
-            // упирается в верхний край экрана и уходит под плавающий TvTopNavBar, а текстовая
-            // колонка ниже отступает от него на ContentTop — её высота (и раскладка внутри)
-            // от этого не меняется, просто сдвинута вниз на ту же величину, что раньше давал
-            // top-инсет списка.
             .heightIn(min = TvMetrics.DetailsHeroHeight + TvMetrics.ContentTop),
     ) {
-        // matchParentSize, а не fillMaxSize: высоту Box задаёт текстовая колонка, а бэкдроп
-        // подстраивается под неё — с fillMaxSize в ленивом списке (бесконечная высота) он бы
-        // не знал, сколько занимать.
         HeroBackdrop(
             item = item,
             scrims = heroScrims(),
             modifier = Modifier.matchParentSize(),
             posterUrl = item.posters.wide ?: item.posters.big,
-            // Заглушка постера — нейтральная поверхность: цвет на экране только у самого кадра.
             accentColor = TvSurfaceContainerHigh,
         )
 
@@ -757,22 +604,16 @@ private fun DetailsHero(
                     bottom = 22.dp,
                 ),
         ) {
-            // Заголовок всегда виден целиком: без maxLines/ellipsis (обрезать нельзя) и без
-            // marquee (не единственный фокусируемый элемент кадра, гонять текст туда-сюда
-            // назойливо). Не влезает в строку — переносится: fillMaxWidth на всю ширину кадра.
             Text(
                 item.title,
                 style = MaterialTheme.typography.headlineMedium,
                 color = TvOnSurface,
                 modifier = Modifier.fillMaxWidth(),
             )
-            // Без weight: ряд постера и кнопок берёт свою естественную высоту, а не остаток
-            // после заголовка — иначе длинный заголовок и сплющивал его.
             Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 HeroPoster(item)
                 Column {
                     HeroInfoPanel(item = item, series = series)
-                    // Кнопки измеряются независимо от плашки: длинные подписи не обрезаются.
                     HeroButtons(
                         hasAnyFolder = hasAnyFolder,
                         playback = playback,
@@ -784,10 +625,6 @@ private fun DetailsHero(
     }
 }
 
-/**
- * Год/жанр и рейтинги на полупрозрачной чёрной подложке: бэкдроп под ними — постер тайтла,
- * часто пёстрый, и текст без неё местами терялся.
- */
 @Composable
 private fun HeroInfoPanel(item: Item, series: SeriesData?) {
     Column(
@@ -807,7 +644,6 @@ private fun HeroInfoPanel(item: Item, series: SeriesData?) {
     }
 }
 
-/** Обложка 2:3 рядом с бэкдропом — «обычный постер» тайтла, а не только широкий фон hero. */
 @Composable
 private fun HeroPoster(item: Item) {
     PosterImage(
@@ -820,11 +656,6 @@ private fun HeroPoster(item: Item) {
     )
 }
 
-/**
- * Скримы hero. Стопы длинные и с промежуточными точками: в монохроме переход серого в серый
- * на коротком отрезке полосит (бандинг), а уход в прозрачность берём как `TvSurface` с нулевой
- * альфой — интерполяция в `Color.Transparent` тянет RGB к чёрному и даёт грязный «хвост».
- */
 @Composable
 private fun heroScrims(): List<Brush> = remember {
     listOf(
@@ -843,11 +674,6 @@ private fun heroScrims(): List<Brush> = remember {
     )
 }
 
-/**
- * Кнопки hero — двумя рядами: сверху «Смотреть»/«Трейлер» (собственно воспроизведение), под
- * ними — наши пометки тайтла (подборки, «Хочу посмотреть»). `onFocusChanged` висит на общем
- * контейнере: фокус в любом из двух рядов одинаково держит полотно в стейте hero.
- */
 @Composable
 private fun HeroButtons(
     hasAnyFolder: Boolean,
@@ -863,13 +689,9 @@ private fun HeroButtons(
                 text = playback.playLabel,
                 onClick = playback.onPlay,
                 leadingIcon = Icons.Filled.PlayArrow,
-                // onFocusChanged именно здесь, а не на общем onHeroFocusChanged контейнера ниже:
-                // прогрев нужен только когда фокус реально на «Смотреть», а не на любой кнопке hero.
                 modifier = playback.playModifier
                     .onFocusChanged { if (it.hasFocus) playback.onPrefetchPlayback() },
             )
-            // Браузер серий — рядом со «Смотреть»: это второй способ запустить воспроизведение,
-            // а не пометка тайтла, поэтому в первом ряду, а не во втором.
             playback.onOpenSeasons?.let { onOpenSeasons ->
                 TvButton(
                     text = playback.seasonsLabel,
@@ -889,9 +711,6 @@ private fun HeroButtons(
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            // Единственная кнопка подборок: тайтл либо нигде не сохранён, либо уже в одной или
-            // нескольких (включая «Буду смотреть» — для сервера это обычная подборка). Красная
-            // заливка иконки — сигнал «уже добавлено», клик всегда открывает диалог выбора.
             TvButton(
                 text = if (hasAnyFolder) "В подборках" else "Добавить в подборку",
                 onClick = playback.onOpenFolderPicker,
@@ -899,9 +718,6 @@ private fun HeroButtons(
                 leadingIcon = if (hasAnyFolder) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
                 leadingIconTint = if (hasAnyFolder) TvError else null,
             )
-            // «Буду смотреть»: нативный watchlist kino.watch, переключается в один клик
-            // (см. DetailsEvent.ToggleWantToWatch) — та же красная заливка, что и у кнопки
-            // подборок, сигнализирует «уже добавлено». Только у сериалов (см. [showWantToWatch]).
             if (playback.showWantToWatch) {
                 TvButton(
                     text = if (playback.isWantToWatch) "Буду смотреть" else "Хочу посмотреть",
@@ -915,14 +731,8 @@ private fun HeroButtons(
     }
 }
 
-/**
- * КП и IMDb показываем РАЗДЕЛЬНО: `rating.external` усредняет их, а расхождение оценок — это
- * и есть причина смотреть обе. Цветового кодирования нет: в монохроме оценку несёт число.
- * Число просмотров — тот же формат пилюли, третьим элементом ряда.
- */
 @Composable
 private fun RatingsRow(rating: ItemRating, views: Int, modifier: Modifier = Modifier) {
-    // ratingLabel режет «0» (у kino.watch это «оценки нет») и приводит «8.312» к одному знаку.
     val sources = remember(rating, views) {
         buildList {
             ratingLabel(rating.kinopoisk)?.let { add(it to "КиноПоиск") }
@@ -961,13 +771,9 @@ private fun RatingValue(value: String, source: String) {
     }
 }
 
-// ─────────────────────────── Описание и состав ──────────────────────────────
-
 @Composable
 private fun DetailsAbout(item: Item) {
     if (item.plot.isNotBlank()) {
-        // Без maxLines/ellipsis: это единственное место, где показан полный синопсис — резать
-        // его до 4 строк означало обрезать описание у большинства тайтлов на полуслове.
         Text(
             item.plot,
             style = MaterialTheme.typography.bodyLarge,
@@ -979,13 +785,6 @@ private fun DetailsAbout(item: Item) {
     }
 }
 
-// ─────────────────────────────── Актёры и режиссёр ────────────────────────────
-
-/**
- * Ряд людей (актёры ИЛИ режиссёры — один и тот же компонент для обоих, только заголовок и цель
- * клика отличаются): портретные чипы одинакового размера ([TvPersonChip]), с переносом на новую
- * строку ([FlowRow]) — весь состав виден сразу, без горизонтального скролла ряда.
- */
 @OptIn(ExperimentalLayoutApi::class)
 private fun LazyListScope.peopleSection(
     key: String,
@@ -1003,7 +802,6 @@ private fun LazyListScope.peopleSection(
                 horizontalArrangement = Arrangement.spacedBy(PersonChipGap),
                 verticalArrangement = Arrangement.spacedBy(PersonChipGap),
             ) {
-                // Без key: имена в составе могут повторяться, позиционного ключа достаточно.
                 people.forEach { member ->
                     TvPersonChip(member = member, onClick = { onOpenPerson(member.name) })
                 }
@@ -1012,14 +810,6 @@ private fun LazyListScope.peopleSection(
     }
 }
 
-/**
- * Чип человека: портретное фото сверху (TMDB/угаданное или инициалы), имя под ним одной строкой.
- * Карточка — фиксированного размера ([PersonChipWidth] × [PersonChipHeight]), одинакового у всех
- * чипов ряда. Фото занимает всё, что остаётся над именем (`weight(1f)` в колонке) — то есть
- * 100% высоты своей области, по центру, с обрезкой по бокам ([ContentScale.Crop] на более узкий,
- * чем у фото, контейнер). Имя не обрезается навсегда многоточием: при фокусе на чипе запускается
- * бегущая строка — так виден весь текст без роста карточки.
- */
 @Composable
 private fun TvPersonChip(member: CastMember, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
@@ -1030,8 +820,6 @@ private fun TvPersonChip(member: CastMember, onClick: () -> Unit) {
         modifier = Modifier
             .size(width = PersonChipWidth, height = PersonChipHeight)
             .onFocusChanged { focused = it.hasFocus }
-            // Читаем dim.value в drawing-фазе (graphicsLayer), не в composition (alpha()):
-            // иначе каждый кадр анимации затухания рекомпозирует весь чип — см. TvComponents.kt.
             .graphicsLayer { alpha = dim.value },
     ) {
         Column(
@@ -1061,14 +849,6 @@ private fun TvPersonChip(member: CastMember, onClick: () -> Unit) {
     }
 }
 
-/**
- * Портретное фото чипа: фото (TMDB надёжное, угаданное по MD5 имени на kino.watch CDN — нет,
- * часть ссылок честно 404) или инициалы. Скругление — то же [PersonChipShape], что и у плашки
- * целиком: отдельной формы у фото нет. Здесь нужен именно `AsyncImage`, а не общий `PosterImage`:
- * тот при ошибке загрузки рисует значок «фото нет» (правильно для настоящих постеров), а для
- * угаданного аватара лучше молча откатиться на инициалы. Ключ ремембера — photoUrl: при
- * переиспользовании чипа в ряду флаг ошибки сбрасывается.
- */
 @Composable
 private fun PersonPhoto(member: CastMember, modifier: Modifier = Modifier) {
     Box(
@@ -1095,9 +875,6 @@ private fun PersonPhoto(member: CastMember, modifier: Modifier = Modifier) {
     }
 }
 
-// ────────────────────────────── Эпизоды сериала ──────────────────────────────
-
-/** Данные и действия секции эпизодов — группой (detekt LongParameterList). */
 private data class EpisodesSection(
     val seasons: List<Pair<Int, List<MediaTrack>>>,
     val episodes: List<MediaTrack>,
@@ -1108,13 +885,6 @@ private data class EpisodesSection(
     val focus: TvScreenFocus,
 )
 
-/**
- * Секция эпизодов: заголовок → чипы сезонов → ряд карточек серий.
- *
- * Чипы — горизонтальный ряд, а не FlowRow с переносом: у сериала на 8+ сезонов перенос забирал
- * под чипы половину экрана. Чипы и карточки — разные ряды LazyColumn, поэтому «вниз» с чипов
- * ведёт в серии, а не прыгает через них.
- */
 private fun LazyListScope.episodesSection(section: EpisodesSection) {
     if (section.seasons.size > 1) {
         item(key = "seasons") {
@@ -1130,7 +900,6 @@ private fun LazyListScope.episodesSection(section: EpisodesSection) {
             }
         }
     } else {
-        // Один сезон — селектор не нужен, но заголовок секции остаётся.
         item(key = "episodes-title") {
             SectionTitle(EPISODES_TITLE, Modifier.padding(top = 24.dp))
         }
@@ -1147,7 +916,6 @@ private fun LazyListScope.episodesSection(section: EpisodesSection) {
     }
 }
 
-/** Заголовок секции, когда над рядом нет чипов (TvRail рисует заголовок вплотную к своему ряду). */
 @Composable
 private fun SectionTitle(title: String, modifier: Modifier = Modifier) {
     Text(
@@ -1158,18 +926,6 @@ private fun SectionTitle(title: String, modifier: Modifier = Modifier) {
     )
 }
 
-/**
- * Ряд серий. Свой LazyRow, а не [TvRail]: заголовок «Эпизоды» стоит над чипами сезонов, а
- * TvRail жёстко ставит заголовок над своим рядом. Отступы и группа фокуса — как у TvRail.
- *
- * Ряд ПЕРЕСОЗДАЁТСЯ на каждый сезон (`key`), а не переиспользует один LazyListState. Соседний
- * сезон — это другой набор данных: другие ключи и другая длина. Общий стейт тащил в него скролл
- * прошлого сезона и — главное — удержанный (pinned) фокусом элемент: при следующем размещении
- * ряд ставил его вторым проходом и Compose падал с «Place was called on a node which was placed
- * already». Ловилось так: посмотреть серию → вернуться на карточку → полистать сезоны и серии
- * (Crashlytics 1.7.1, реальный ТВ-бокс). Свежий стейт не тащит ни скролла, ни пинов, и сброс
- * скролла к началу больше не нужен отдельным эффектом.
- */
 @Composable
 private fun EpisodesRow(
     episodes: List<MediaTrack>,
@@ -1194,9 +950,7 @@ private fun EpisodesRow(
                 EpisodeCard(
                     episode = episode,
                     isResume = episode.id == resumeId,
-                    // Возврат из плеера ставит фокус обратно на эту серию.
                     modifier = focus.item("episode:${episode.id}"),
-                    // Плееру нужны номер серии (API `video`) и сезон, а не id трека.
                     onClick = { onPlay(episode.seasonNumber, episode.number) },
                 )
             }
@@ -1229,10 +983,6 @@ private fun EpisodeCard(
     }
 }
 
-/**
- * Превью серии: кадр, а если его нет — крупный номер серии (у kino.watch thumbnail часто пустой,
- * и пустая плитка не отличима от соседней).
- */
 @Composable
 private fun EpisodeThumb(url: String, episode: MediaTrack, isResume: Boolean, modifier: Modifier) {
     Box(modifier.background(TvSurfaceContainer), contentAlignment = Alignment.Center) {
@@ -1253,8 +1003,6 @@ private fun EpisodeThumb(url: String, episode: MediaTrack, isResume: Boolean, mo
             )
         }
         if (isResume) {
-            // Явный бейдж вместо слова «продолжить» в строке меты: в ряду из десятка одинаковых
-            // плиток текстовый признак не находится взглядом.
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
@@ -1269,16 +1017,12 @@ private fun EpisodeThumb(url: String, episode: MediaTrack, isResume: Boolean, mo
     }
 }
 
-// ─────────────────────────── Выбор подборки ──────────────────────────────
-
-/** Стейт диалогов выбора подборки: живёт в [DetailsContent], меняется кнопкой подборок и диалогами. */
 @Stable
 private class TvFolderPickerUi {
     var pickerOpen by mutableStateOf(false)
     var creatingFolder by mutableStateOf(false)
 }
 
-/** Рисует активный диалог выбора подборки и переводит выбор в события экрана. */
 @Composable
 private fun TvFolderPickerHost(
     ui: TvFolderPickerUi,
@@ -1313,12 +1057,6 @@ private fun TvFolderPickerHost(
     }
 }
 
-/**
- * Список ВСЕХ подборок пользователя, включая «Буду смотреть» — единая точка выбора, куда
- * добавить тайтл или откуда его убрать. Уже содержащие тайтл подборки отмечены красной залитой
- * иконкой закладки, остальные — белым контуром. «Новая подборка» всегда последней строкой, даже
- * если подборок ещё нет вовсе.
- */
 @Composable
 private fun TvFolderPickerDialog(
     folders: List<BookmarkFolder>,
@@ -1364,7 +1102,6 @@ private fun TvFolderPickerDialog(
     }
 }
 
-/** Строка диалога: иконка (белый контур — не добавлено, красная заливка — уже в подборке), название, счётчик. */
 @Composable
 private fun TvFolderPickerRow(
     title: String,
@@ -1406,7 +1143,6 @@ private fun TvFolderPickerRow(
     }
 }
 
-/** Диалог названия новой подборки. По подтверждению подборка создаётся и тайтл сразу в неё добавляется. */
 @Composable
 private fun TvCreateBookmarkFolderDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
@@ -1460,7 +1196,6 @@ private fun TvCreateBookmarkFolderDialog(onConfirm: (String) -> Unit, onDismiss:
     }
 }
 
-/** «3 тайтла» / «1 тайтл» / «5 тайтлов» — подпись счётчика под названием подборки. */
 private fun bookmarkCountLabel(count: Int): String {
     val word = when {
         count % 100 in 11..14 -> "тайтлов"
@@ -1474,9 +1209,6 @@ private fun bookmarkCountLabel(count: Int): String {
 private val FolderDialogWidth = 420.dp
 private val FolderRowHeight = 56.dp
 
-// ────────────────────────── Похожее / От режиссёра ───────────────────────────
-
-/** Ряд постеров тайтлов — общий для «От режиссёра» и «Похожего»: карточка та же, что и в каталоге. */
 private fun LazyListScope.posterRail(
     key: String,
     title: String,
@@ -1514,15 +1246,8 @@ private fun LazyListScope.posterRail(
     }
 }
 
-/** Сколько карточек-заглушек рисовать, пока «Похожее» ещё грузится. */
 private const val SIMILAR_SKELETON_COUNT = 6
 
-/**
- * «Похожее», пока не пришёл ответ: заголовок уже на месте, вместо карточек — статичные
- * градиентные плейсхолдеры ([GradientPosterPlaceholder], тот же, что и под непрогруженным
- * постером). Без shimmer-анимации — см. её обоснование в `PosterImage.kt` (десятки одновременных
- * shimmer-анимаций на ТВ роняли FPS).
- */
 @Composable
 private fun PosterRailSkeleton(title: String) {
     TvRail(title = title, modifier = Modifier.padding(top = 26.dp)) {
@@ -1537,10 +1262,6 @@ private fun PosterRailSkeleton(title: String) {
     }
 }
 
-// ───────────────────────────── Производные данные ────────────────────────────
-// Чистые производные сериала и подписи меты общие с mobile — см. details.common.DetailsFormat.
-
-/** Мета-строка hero: год · объём/длительность · страна · жанры. Пустые части выпадают. */
 private fun metaParts(item: Item, series: SeriesData?): List<String> = buildList {
     if (item.year > 0) add(item.year.toString())
     volumeLabel(item, series)?.let { add(it) }
@@ -1550,20 +1271,11 @@ private fun metaParts(item: Item, series: SeriesData?): List<String> = buildList
     }
 }
 
-/**
- * «Продолжить с 40:05 · S2E5» — сериал с недосмотренной серией; «Продолжить · S2E6» — сериал,
- * у которого предыдущая серия досмотрена (следующая играет с начала); «Продолжить с 40:05» — фильм;
- * «Смотреть · S1E1» — сериал без continuation (кнопка всё равно сыграет конкретную серию — первую
- * недосмотренную сезона или первую серию вовсе, см. `target` в [DetailsContent]); «Смотреть» —
- * фильм без сохранённой позиции.
- */
 private fun playLabel(
     continuation: Continuation?,
     resume: MediaTrack?,
     target: MediaTrack?,
 ): String = when {
-    // Позиция 0 у актуального continuation — следующая серия после досмотренной: продолжаем
-    // сериал, а не «с 0:00».
     continuation?.isActualContinuation == true -> buildString {
         append("Продолжить")
         continuation.savedPositionSeconds.takeIf { it > 0 }?.let { append(" с ${formatResumePosition(it)}") }
@@ -1573,7 +1285,6 @@ private fun playLabel(
     else -> "Смотреть"
 }
 
-/** «40:05» / «1:12:03» — сохранённая позиция на кнопке «Продолжить» и в превью браузера серий. */
 internal fun formatResumePosition(positionSeconds: Int): String {
     val totalMinutes = positionSeconds / SECONDS_IN_MINUTE
     val seconds = positionSeconds % SECONDS_IN_MINUTE
@@ -1589,7 +1300,6 @@ private fun Int.twoDigits(): String = toString().padStart(length = 2, padChar = 
 private fun episodeTag(track: MediaTrack): String =
     if (track.seasonNumber > 0) "S${track.seasonNumber}E${track.number}" else "Серия ${track.number}"
 
-/** Мета карточки серии: «Серия 3 · 45 мин». Номер опускаем, если он уже стал заголовком. */
 private fun episodeMeta(episode: MediaTrack): String? = buildList {
     if (episode.title.isNotBlank()) add("Серия ${episode.number}")
     episode.durationSeconds.takeIf { it > 0 }?.let { add("${it / SECONDS_IN_MINUTE} мин") }

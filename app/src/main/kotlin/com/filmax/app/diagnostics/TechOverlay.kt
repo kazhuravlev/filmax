@@ -29,28 +29,6 @@ import kotlinx.coroutines.delay
 import org.koin.compose.koinInject
 import java.util.Locale
 
-/**
- * Оверлей-диагностика «Показывать технические данные» (см. [TechOverlaySettings]) — маленький
- * прижатый в угол блок текста поверх ВСЕГО приложения (кладётся последним в root-обёртке
- * `MainActivity`, после `FilmaxTvNavGraph`/`AppUpdatePrompt`, так что рисуется поверх них). Ничего
- * не перехватывает: `Text`/`Column`/`Box` тут не фокусируемы и не кликабельны сами по себе, поэтому
- * пульт продолжает управлять экраном под оверлеем как ни в чём не бывало.
- *
- * Составляет три строки живой диагностики фоновых очередей и сети — то же, что видно в логах, но
- * без logcat/дебаггера прямо на экране телевизора:
- *  - тайтлы: [TitleBackgroundFetcher.progress] + [ItemDetailsCache.count] (см. `ItemDetailsCacheDb`
- *    в core:network про потолок в [ITEM_CACHE_MAX_ENTRIES] строк — константа там `private`, поэтому
- *    здесь просто задокументированное дублирование числа, а не импорт);
- *  - картинки: [ImagePrefetcher.progress] + [ImageCacheRepository.stats];
- *  - сеть: скорость, посчитанная сэмплированием [NetworkStats.totalBytes] раз в секунду, и признак
- *    throttle ([ImagePrefetchThrottle.shouldThrottle]) — фоновая докачка намеренно тормозится на
- *    10 секунд после любой другой сетевой активности (см. doc [ImagePrefetchThrottle]), и без этой
- *    строки со стороны выглядело бы так, будто очередь просто не работает.
- *
- * Когда настройка выключена, композится буквально ничего — ранний `return` до какой-либо разметки
- * и до инъекции остальных источников (см. ниже), чтобы выключенный оверлей не совершал лишнюю
- * подписку на пять `StateFlow` без необходимости.
- */
 @Composable
 fun TechOverlay() {
     val settings: TechOverlaySettings = koinInject()
@@ -67,8 +45,6 @@ fun TechOverlay() {
     val itemCacheCount by itemCache.count.collectAsState()
     val imageCacheStats by imageCache.stats.collectAsState()
 
-    // ImagePrefetchThrottle/NetworkStats — держатели вне DI (см. их doc), а не Koin-бины, и не
-    // StateFlow — опрашиваем их сами раз в секунду, пока оверлей виден.
     var speedLabel by remember { mutableStateOf("0 КБ/с") }
     var throttled by remember { mutableStateOf(ImagePrefetchThrottle.shouldThrottle) }
     var cooldownRemainingMillis by remember {
@@ -148,7 +124,4 @@ private val OverlayPadding = 12.dp
 private const val OVERLAY_FONT_SIZE_SP = 10
 private const val OVERLAY_TEXT_ALPHA = 0.7f
 
-/** Дублирует `MAX_ENTRIES` из `ItemDetailsCacheDb` (core:network, androidMain) — та константа
- * `private`, а тянуть ради одного числа лишний публичный API не стоит. Если потолок там изменится,
- * поменять и здесь. */
 private const val ITEM_CACHE_MAX_ENTRIES = 2000

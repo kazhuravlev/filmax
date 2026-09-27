@@ -4,29 +4,15 @@ import com.filmax.core.domain.error.AppError
 import com.filmax.core.domain.error.RequestFailure
 import kotlin.concurrent.Volatile
 
-/**
- * Приёмник телеметрии ошибок (на Android — Crashlytics). Контракт живёт в domain, чтобы граница
- * ошибок [safeRequest] и репозитории могли репортить без зависимости от платформы: конкретную
- * реализацию подставляет app-модуль на старте, до этого момента работает no-op.
- */
 interface ErrorReporter {
-
-    /** Привязывает последующие отчёты к пользователю (username kino.watch); null — сброс при logout. */
     fun setUser(id: String?)
 
-    /** Хлебная крошка: строка попадает в хронологию ближайшего отчёта, сама по себе не событие. */
     fun log(message: String)
 
-    /** Non-fatal событие: ошибка запроса/парсинга — всё, что пережил [safeRequest]. */
     fun report(error: Throwable)
 }
 
-/**
- * Глобальная точка доступа к репортеру. Держатель, а не Koin: [safeRequest] — inline-функция
- * верхнего уровня без DI, и тащить инжекцию во все репозитории ради телеметрии незачем.
- */
 object ErrorReporting {
-
     @Volatile
     var reporter: ErrorReporter = NoopErrorReporter
 
@@ -37,18 +23,6 @@ object ErrorReporting {
     }
 }
 
-/**
- * Отправляет сбой запроса с оглядкой на его класс: событием уходит только то, что похоже на
- * баг (5xx, падение парсинга), а ожидаемое в эксплуатации — нет сети, таймаут, протухшая
- * сессия, нет подписки — остаётся хлебной крошкой.
- *
- * Без этого деления один вход в приложение из метро давал пять non-fatal (главная тянет пять
- * запросов параллельно), и настоящие баги тонули бы в отчётах о плохом канале связи.
- *
- * Событие уходит обёрнутым в [RequestFailure]: тип non-fatal Crashlytics пишет строкой из
- * рантайма и не деобфусцирует — с обёрткой заголовок issue читается («Server», «Empty»),
- * а стек первопричины остаётся в cause.
- */
 fun ErrorReporter.reportRequestFailure(kind: AppError, error: Throwable) {
     if (kind in REPORTED_ERRORS) {
         report(RequestFailure.of(kind, error))
@@ -57,5 +31,4 @@ fun ErrorReporter.reportRequestFailure(kind: AppError, error: Throwable) {
     }
 }
 
-/** Классы сбоев, которые едут в телеметрию событием: остальные — крошкой (см. [reportRequestFailure]). */
 private val REPORTED_ERRORS = setOf(AppError.Server, AppError.Empty, AppError.Playback)

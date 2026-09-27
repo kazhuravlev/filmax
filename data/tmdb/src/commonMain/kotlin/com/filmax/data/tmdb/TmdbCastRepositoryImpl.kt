@@ -9,13 +9,8 @@ import kotlinx.coroutines.withContext
 internal class TmdbCastRepositoryImpl(
     private val api: TmdbApi,
 ) : CastRepository {
-
     override suspend fun getCast(imdbId: String?): List<CastMember> {
         val imdbTag = imdbTag(imdbId).takeIf { api.hasKey } ?: return emptyList()
-        // Любая неудача (нет совпадения, сбой сети, невалидный ответ) — пустой список: фото
-        // украшают детали, ронять или тормозить из-за них экран нельзя.
-        // withContext(IO) — единственный сетевой путь мимо safeRequest (тот уводит на IO сам,
-        // см. RequestResult.kt): декод ответа TMDB не должен идти на Main.immediate экрана.
         return withContext(Dispatchers.IO) {
             runCatching { fetchCast(imdbTag) }.getOrDefault(emptyList())
         }
@@ -23,7 +18,6 @@ internal class TmdbCastRepositoryImpl(
 
     private suspend fun fetchCast(imdbTag: String): List<CastMember> {
         val found = api.findByImdb(imdbTag)
-        // Тип берём из ответа find, а не угадываем: TMDB сам говорит, фильм это или сериал.
         val credits = when {
             found.movieResults.isNotEmpty() -> api.movieCredits(found.movieResults.first().id)
             found.tvResults.isNotEmpty() -> api.tvCredits(found.tvResults.first().id)
@@ -38,11 +32,6 @@ internal class TmdbCastRepositoryImpl(
         }
     }
 
-    /**
-     * kino.watch отдаёт числовой IMDb-id (например `2861424`); TMDB ждёт полный тег `tt…`.
-     * Классические id — 7 цифр с ведущими нулями, поэтому добиваем до семи; более длинные
-     * (8-значные) остаются как есть. Значение уже с `tt` принимаем как есть.
-     */
     private fun imdbTag(raw: String?): String? {
         val value = raw?.trim().orEmpty()
         return when {

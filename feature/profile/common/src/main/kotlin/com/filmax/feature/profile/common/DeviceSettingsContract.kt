@@ -2,13 +2,6 @@ package com.filmax.feature.profile.common
 
 import com.filmax.core.domain.user.model.DeviceSettings
 
-/**
- * Состояние экрана «Настройки устройства».
- *
- * [settings] — рабочая копия: тумблеры и селекторы правят её локально, на сервер уходит только
- * по «Сохранить» ([DeviceSettingsEvent.Save]). Так экран не бьёт по сети на каждый клик и
- * повторяет поведение оригинального клиента kino.watch.
- */
 data class DeviceSettingsState(
     val settings: DeviceSettings? = null,
     val loading: Boolean = true,
@@ -27,6 +20,5 @@ sealed interface DeviceSettingsEvent {
 }
 
 sealed interface DeviceSettingsSideEffect {
-    /** Настройки сохранены — экран должен закрыться и вернуть пользователя в Профиль. */
     data object Saved : DeviceSettingsSideEffect
 }

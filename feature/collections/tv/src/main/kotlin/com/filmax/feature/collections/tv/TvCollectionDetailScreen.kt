@@ -43,13 +43,8 @@ import com.filmax.feature.collections.common.CollectionDetailEvent
 import com.filmax.feature.collections.common.CollectionDetailScreenModel
 import org.koin.androidx.compose.koinViewModel
 
-/** За сколько хвостовых рядов сетки до конца просить следующую страницу подборки. */
 private const val LOAD_MORE_TAIL = 3
 
-/**
- * TV-экран одной подборки: сетка постеров поверх общего [CollectionDetailScreenModel]
- * (itemId берётся из маршрута через SavedStateHandle).
- */
 @Composable
 fun TvCollectionDetailScreen(
     title: String,
@@ -63,9 +58,6 @@ fun TvCollectionDetailScreen(
     val gridState = rememberLazyGridState()
     ScrollToTopOnNavFocus(gridState)
 
-    // Догрузка следующей страницы: подборки бывают крупнее одной страницы, а грид без хвостового
-    // детектора обрезал бы их молча. derivedStateOf пересчитывается без рекомпозиции, дёргает её
-    // только смена «пора/не пора»; повторные вызовы гасит идемпотентность модели.
     val loadMore by remember {
         derivedStateOf {
             val info = gridState.layoutInfo
@@ -84,8 +76,6 @@ fun TvCollectionDetailScreen(
             CollectionHeader(title)
 
             when {
-                // Полноэкранный спиннер — только когда показать совсем нечего: с кэшем
-                // (см. CollectionItemsCache) сетка красится сразу, а ревалидация идёт тихо.
                 state.loading && state.items.isEmpty() ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -119,7 +109,6 @@ fun TvCollectionDetailScreen(
     }
 }
 
-/** Заголовок подборки над сеткой. */
 @Composable
 private fun CollectionHeader(title: String) {
     Column(Modifier.padding(horizontal = TvMetrics.SafeHorizontal)) {
@@ -138,7 +127,6 @@ private fun CollectionHeader(title: String) {
     }
 }
 
-/** Хвостовой индикатор догрузки страницы — невысокий, чтобы не дёргать сетку. */
 @Composable
 private fun CollectionLoadingMore() {
     Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
@@ -146,7 +134,6 @@ private fun CollectionLoadingMore() {
     }
 }
 
-/** Карточка тайтла — общая для всего ТВ-приложения (ряды Главной, каталог, фильмография). */
 @Composable
 private fun CollectionPoster(item: Item, modifier: Modifier, onClick: () -> Unit) {
     TvPosterCard(
@@ -167,14 +154,12 @@ private fun CollectionPoster(item: Item, modifier: Modifier, onClick: () -> Unit
             contentDescription = item.title,
             modifier = posterModifier,
             shape = TvMetrics.PosterShape,
-            // Плейсхолдер-градиент по умолчанию цветной; в монохроме под постером — поверхность.
             accentColor = TvSurfaceContainer,
             cacheKey = ImageCacheKeys.poster(item.type, item.id, PosterSize.Medium),
         )
     }
 }
 
-/** Подпись типа в мете карточки — та же, что в рядах Главной и в каталоге. */
 private fun ItemType.label(): String = when (this) {
     ItemType.MOVIE -> "Фильм"
     ItemType.SERIES -> "Сериал"

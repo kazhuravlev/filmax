@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class TrackResolutionTest {
-
     private val original = AudioMatchCandidate(lang = null, label = "1. Оригинал")
     private val russianDub = AudioMatchCandidate(lang = "rus", label = "2. Русский · Дубляж")
     private val russianVoiceover = AudioMatchCandidate(lang = "rus", label = "3. Русский · Многоголосый · BaibaKo")
@@ -126,9 +125,7 @@ class TrackResolutionTest {
             globalPreset = null,
         )
         assertTrue(resolved.isCustom)
-        // Авто-пресет для этой серии — «Оригинал + англ.», его озвучка и подставляется.
         assertEquals(0, resolved.audioIndex)
-        // Сохранённое «Выкл» уважается, хотя пресет включил бы английские.
         assertEquals(off, resolved.subtitle)
     }
 

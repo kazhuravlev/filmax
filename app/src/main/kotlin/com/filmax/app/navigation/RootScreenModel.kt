@@ -10,7 +10,6 @@ class RootScreenModel(
     private val auth: AuthRepository,
     private val user: UserRepository,
 ) : BaseScreenModel<RootState, RootSideEffect, RootEvent>(RootState()) {
-
     init {
         onFetchData()
     }
@@ -21,7 +20,6 @@ class RootScreenModel(
         screenModelScope {
             auth.isAuthenticated.collect { value ->
                 updateState { it.copy(isAuthenticated = value) }
-                // Авторизованы — подтягиваем инициалы для аватара (best-effort).
                 if (value == true) fetchUserInitials()
             }
         }

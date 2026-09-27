@@ -33,11 +33,6 @@ import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.core.tv.designsystem.TvSurface
 import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 
-/**
- * Боковая панель сезонов и серий. Рядов-кнопок с фокусом здесь нет — как и всюду в плеере,
- * курсор ведёт обработчик клавиш: подсветка — [episodeCursor], сезон меняется ◄/►.
- * У каждой серии — полоса просмотра (как в «Моё») и отметка «Сейчас» у играющей.
- */
 @Composable
 internal fun EpisodesPanel(
     panel: EpisodesPanelData,
@@ -58,15 +53,8 @@ internal fun EpisodesPanel(
             hasPrev = seasonCursor > 0,
             hasNext = seasonCursor < panel.seasons.lastIndex,
         )
-        // Список пересоздаётся на каждый сезон, а не переиспользует один LazyListState.
-        // Соседний сезон — это другой набор данных: другие ключи и другая длина (у сериала на
-        // 28 сезонов бывает и 18 серий, и 4). Общий стейт тащил в него позицию прошлого сезона,
-        // удержанные фокусом элементы и незавершённую анимацию скролла — на реальном ТВ-боксе
-        // Compose падал при размещении: «Place was called on a node which was placed already».
-        // Тот же расчёт на экране деталей решён сбросом скролла при смене сезона.
         key(seasonCursor) {
             val listState = rememberLazyListState()
-            // Курсор всегда в кадре: список едет за клавишами, включая стартовую позицию «Сейчас».
             LaunchedEffect(episodeCursor) { listState.animateScrollToItem(episodeCursor) }
             LazyColumn(
                 state = listState,
@@ -85,7 +73,6 @@ internal fun EpisodesPanel(
     }
 }
 
-/** Шапка панели: «Сезон N» и стрелки-подсказки только в те стороны, где сезоны есть. */
 @Composable
 private fun EpisodesPanelHeader(seasonNumber: Int, hasPrev: Boolean, hasNext: Boolean) {
     Row(
@@ -113,7 +100,6 @@ private fun EpisodesPanelHeader(seasonNumber: Int, hasPrev: Boolean, hasNext: Bo
     }
 }
 
-/** [highlighted] — под курсором, [isCurrent] — серия, которая играет сейчас. Это разные вещи. */
 @Composable
 private fun EpisodePanelRow(episode: MediaTrack, highlighted: Boolean, isCurrent: Boolean) {
     Column(
@@ -152,10 +138,6 @@ private fun EpisodePanelRow(episode: MediaTrack, highlighted: Boolean, isCurrent
     }
 }
 
-/**
- * Полоса просмотра серии — как на карточках «Моё»: трек виден у КАЖДОЙ серии (у непросмотренной
- * он пустой), заполнение — сколько досмотрено. Так список читается как история просмотра.
- */
 @Composable
 private fun EpisodeWatchBar(episode: MediaTrack, highlighted: Boolean) {
     val fraction = episodeWatchFraction(episode)
@@ -179,7 +161,6 @@ private fun EpisodeWatchBar(episode: MediaTrack, highlighted: Boolean) {
     }
 }
 
-/** Доля просмотра серии: досмотренная — всегда полная полоса, даже если время чуть меньше конца. */
 private fun episodeWatchFraction(episode: MediaTrack): Float = when {
     episode.watchStatus == WatchStatus.Finished -> 1f
     episode.durationSeconds > 0 -> (episode.watchedSeconds.toFloat() / episode.durationSeconds).coerceIn(0f, 1f)
@@ -188,8 +169,6 @@ private fun episodeWatchFraction(episode: MediaTrack): Float = when {
 
 private fun episodeDurationLabel(episode: MediaTrack): String =
     episode.durationSeconds.takeIf { it > 0 }?.let { "${it / SECONDS_IN_MINUTE} мин" }.orEmpty()
-
-/** `watching.status` из API: 1 — серия досмотрена до конца. */
 
 private const val SECONDS_IN_MINUTE = 60
 

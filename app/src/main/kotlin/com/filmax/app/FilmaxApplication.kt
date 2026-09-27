@@ -38,24 +38,17 @@ import org.koin.android.ext.koin.androidLogger
 import org.koin.core.context.startKoin
 import org.koin.core.logger.Level
 
-// SingletonImageLoader.Factory — делегирован FilmaxImageLoaderFactory: Coil сам находит эту
-// реализацию через applicationContext при первом обращении к синглтон-загрузчику, вызывать
-// что-то явно в onCreate не нужно (см. com.filmax.app.image.FilmaxImageLoaderFactory).
 class FilmaxApplication :
     Application(),
     SingletonImageLoader.Factory by FilmaxImageLoaderFactory() {
     override fun onCreate() {
         super.onCreate()
         initErrorReporting()
-        // Сетевой слой знает классы исключений Ktor и HTTP-статус — им и классифицируем сбои,
-        // а не текстом сообщения (см. AppError.resolve).
         ErrorClassification.classifier = KtorErrorClassifier
         runOneTimeHousekeeping()
         val koinApp = startKoin {
             androidLogger(Level.ERROR)
             androidContext(this@FilmaxApplication)
-            // Ключ TMDB отдаём модулю свойством, а не в коде: секрет живёт в BuildConfig (из
-            // local.properties), а data:tmdb читает его через getProperty.
             properties(mapOf(TMDB_API_KEY_PROPERTY to BuildConfig.TMDB_API_KEY))
             modules(
                 // core / data
@@ -82,23 +75,11 @@ class FilmaxApplication :
             )
         }
         seedDemoTokenIfNeeded(koinApp.koin.get())
-        // Фоновый прогрев вкладок «Моё»/«Каталог» (главная прогревает себя сама — см. doc
-        // AppWarmup). Сам себя ограничивает по авторизации и одноразовости — здесь только запуск
-        // на фоновом скоупе, чтобы не задерживать onCreate.
         koinApp.koin.get<AppWarmup>().start(CoroutineScope(Dispatchers.IO))
     }
 
-    /**
-     * Включает телеметрию ошибок. Debug пишет в logcat (Crashlytics в debug — шум разработки);
-     * release/demo — в Crashlytics, если сборка шла с app/google-services.json (без него
-     * Firebase не сконфигурирован, initializeApp вернёт null, и репортинг остаётся no-op).
-     */
     private fun initErrorReporting() {
         if (BuildConfig.DEBUG) {
-            // Сегодня в debug-сборке конфига Firebase нет (её applicationId не зарегистрирован,
-            // и задачи google-services для неё выключены), но стоит его зарегистрировать — и
-            // Crashlytics поднимется САМ через FirebaseInitProvider со сбором, включённым по
-            // умолчанию. Поэтому запрет явный, а не «по счастливому стечению обстоятельств».
             FirebaseApp.initializeApp(this)?.let {
                 FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(false)
             }
@@ -107,18 +88,11 @@ class FilmaxApplication :
         }
         FirebaseApp.initializeApp(this) ?: return
         val crashlytics = FirebaseCrashlytics.getInstance()
-        // Один APK на оба форм-фактора — в отчётах различаем их так же, как MainActivity выбирает UI.
         val isTv = packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
         crashlytics.setCustomKey("form_factor", if (isTv) "tv" else "mobile")
         ErrorReporting.reporter = CrashlyticsErrorReporter(crashlytics)
     }
 
-    /**
-     * Demo-сборка стартует авторизованной: если в BuildConfig зашит токен (только build type `demo`)
-     * и хранилище ещё пустое — засеваем его через сам [TokenStorage]: файл и ключи хранилища знает
-     * только он. Так demo-билд открывается без входа на любом устройстве. В release/debug оба
-     * токена пустые — метод сразу выходит и ничего не трогает.
-     */
     private fun seedDemoTokenIfNeeded(tokenStorage: TokenStorage) {
         val access = BuildConfig.DEMO_ACCESS_TOKEN
         val refresh = BuildConfig.DEMO_REFRESH_TOKEN
@@ -126,24 +100,10 @@ class FilmaxApplication :
         tokenStorage.seedIfEmpty(access, refresh)
     }
 
-    /**
-     * Разовая уборка после обновления: удаляет файлы хранилищ, которые перестали использоваться
-     * в текущей версии, но остались на диске у тех, кто ставил приложение раньше. Выполняется
-     * не более одного раза — факт запуска фиксируется отдельным маленьким файлом
-     * `filmax_housekeeping` (не тем, что чистим), чтобы сама уборка не плодила I/O при каждом
-     * старте. Идёт на фоновом потоке: диск не должен трогаться из `onCreate` синхронно.
-     *
-     * Каждый шаг уборки — свой ключ (`cleanup_v1`, дальше `cleanup_v2`, …), выполняется независимо
-     * и один раз. Добавить новый шаг в будущем — дописать проверку `if (!prefs.getBoolean("cleanup_vN", false))`
-     * с соответствующими удалениями и пометкой ключа как выполненного, не трогая предыдущие.
-     */
     private fun runOneTimeHousekeeping() {
         CoroutineScope(Dispatchers.IO).launch {
             val prefs = getSharedPreferences("filmax_housekeeping", MODE_PRIVATE)
 
-            // cleanup_v1: файл "filmax_item_cache" — кэш деталей тайтлов на старом Settings/
-            // SharedPreferences-хранилище. Заменён на SQLite ("filmax_item_cache.db"), миграции
-            // данных нет — старый файл просто больше никем не читается и не пишется.
             if (!prefs.getBoolean(KEY_CLEANUP_V1_DONE, false)) {
                 deleteSharedPreferences("filmax_item_cache")
                 prefs.edit().putBoolean(KEY_CLEANUP_V1_DONE, true).apply()

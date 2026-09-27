@@ -60,19 +60,7 @@ import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
 import com.filmax.feature.player.common.NO_VALUE_CAPTION
 import com.filmax.feature.player.common.formatPlayerTime
 
-/**
- * UI 2 ([com.filmax.core.domain.playback.PlayerUi.Ui2]) — привычная большинству раскладка
- * стриминговых плееров: внизу кадра название, полоса прокрутки с остатком времени справа и ряд
- * круглых кнопок под ней — транспорт слева (пауза, ±10 с), действия справа (следующая серия,
- * серии, аудио, субтитры, скорость, качество, пресет). Под кнопками выбора — их текущее
- * значение мелко («rus», «Выкл», «1×», «1080p»), всегда, не только под курсором: что выбрано,
- * видно без открытия селектора. Выбор — в поповере над рядом справа, серии — панелью.
- *
- * Аудиодорожка — отдельная кнопка рядом с субтитрами: у kino.watch озвучек несколько, и «Аудио
- * и субтитры» одним пунктом было бы тесно.
- */
 internal object Ui2PlayerUi : TvPlayerUi {
-
     @Composable
     override fun Content(session: TvPlayerSession, modifier: Modifier) {
         val ui = remember(session.player) { Ui2PlayerUiState(session.player) }
@@ -84,10 +72,8 @@ internal object Ui2PlayerUi : TvPlayerUi {
     }
 }
 
-/** Что ведёт пульт: полоса прокрутки или ряд кнопок под ней. */
 internal enum class Ui2Zone { Scrubber, Controls }
 
-/** Кнопка нижнего ряда: транспорт или действие из сетки настроек сессии. */
 internal sealed interface Ui2Control {
     data object PlayPause : Ui2Control
 
@@ -98,11 +84,6 @@ internal sealed interface Ui2Control {
     data class Action(val action: SettingsAction) : Ui2Control
 }
 
-/**
- * Ряд кнопок: транспорт слева, действия справа. Недоступные категории (одна дорожка, одно
- * качество) в ряду не показываются вовсе: чего нет, того нет.
- * Порядок фиксирован здесь, а не в [PlayerActions.items]: тот задаёт сетку UI 1.
- */
 internal fun ui2Controls(menu: PlayerActions): List<Ui2Control> = buildList {
     add(Ui2Control.PlayPause)
     add(Ui2Control.Rewind)
@@ -121,23 +102,12 @@ private val UI2_ACTION_ORDER = listOf(
     SettingsAction.Preset,
 )
 
-/**
- * Раскладка пульта UI 2:
- *  - Оверлей скрыт: ◄/► — сразу перемотка с полосой под курсором, OK — пауза/воспроизведение,
- *    ▲/▼ — просто показать оверлей с курсором на паузе.
- *  - Полоса: ◄/► — перемотка с разгоном, OK — пауза/воспроизведение, ▼ — в ряд кнопок.
- *  - Ряд кнопок: ◄/► — по кнопкам, ▲ — на полосу, OK — действие кнопки.
- *  - Поповер и панель серий забирают ввод целиком (см. [BasePlayerUiState]).
- */
-// Каркас тот же, что у UI 1: обработчики зон и есть API раскладки.
 @Suppress("TooManyFunctions")
 @Stable
 internal class Ui2PlayerUiState(player: Player) : BasePlayerUiState(player) {
-
     var zone by mutableStateOf(Ui2Zone.Controls)
     var controlCursor by mutableIntStateOf(0)
 
-    /** На паузе оверлей остаётся: экран паузы с синопсисом — это и есть состояние, а не бездействие. */
     override val idleHidesOverlay: Boolean
         get() = visible && isPlaying
 
@@ -159,7 +129,6 @@ internal class Ui2PlayerUiState(player: Player) : BasePlayerUiState(player) {
         else -> onControlsKey(key, menu)
     }
 
-    /** Оверлей скрыт: первое нажатие и показывает его, и уже что-то делает. */
     private fun onHiddenKey(key: Key): Boolean {
         when (key) {
             Key.DirectionLeft, Key.MediaRewind -> {
@@ -206,7 +175,6 @@ internal class Ui2PlayerUiState(player: Player) : BasePlayerUiState(player) {
             Key.DirectionUp -> zone = Ui2Zone.Scrubber
             Key.DirectionDown -> Unit
             Key.DirectionCenter, Key.Enter -> controls.getOrNull(controlCursor)?.let { activate(it, menu) }
-            // Медиа-клавиши пульта работают из любой точки ряда, не только с кнопки под курсором.
             Key.MediaPlayPause -> togglePlay()
             Key.MediaRewind -> seekBy(-SKIP_STEP_MS)
             Key.MediaFastForward -> seekBy(SKIP_STEP_MS)
@@ -232,7 +200,6 @@ internal class Ui2PlayerUiState(player: Player) : BasePlayerUiState(player) {
         touch()
     }
 
-    /** Точка входа в ряд — всегда пауза, первая кнопка слева. */
     private fun focusPlayPause() {
         zone = Ui2Zone.Controls
         controlCursor = 0
@@ -241,15 +208,12 @@ internal class Ui2PlayerUiState(player: Player) : BasePlayerUiState(player) {
     private fun Key.isOk(): Boolean = this == Key.DirectionCenter || this == Key.Enter
 }
 
-// ── Оверлей ──────────────────────────────────────────────────────────────────
-
 @Composable
 private fun Ui2Overlay(ui: Ui2PlayerUiState, session: TvPlayerSession) {
     val menu = session.menu
     Box(
         Modifier
             .fillMaxSize()
-            // На паузе притемняем весь кадр, при воспроизведении — только низ под текстом.
             .background(if (ui.isPlaying) Color.Transparent else PausedDim)
             .background(
                 Brush.verticalGradient(
@@ -284,8 +248,6 @@ private fun Ui2Overlay(ui: Ui2PlayerUiState, session: TvPlayerSession) {
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            // Экран паузы: синопсис под названием, пока стоим. При воспроизведении он лишний —
-            // текст на кадре должен исчезать вместе с оверлеем, а не жить на нём.
             if (!ui.isPlaying && session.description.isNotBlank()) {
                 Text(
                     session.description,
@@ -306,10 +268,6 @@ private fun Ui2Overlay(ui: Ui2PlayerUiState, session: TvPlayerSession) {
     }
 }
 
-/**
- * Поповер — над рядом кнопок справа, где стоят сами действия; панель серий — по центру справа:
- * она высокая, над рядом ей не поместиться.
- */
 @Composable
 private fun BoxScope.Ui2Panels(ui: Ui2PlayerUiState, menu: PlayerActions) {
     ui.submenu?.let { category ->
@@ -337,10 +295,6 @@ private fun BoxScope.Ui2Panels(ui: Ui2PlayerUiState, menu: PlayerActions) {
     }
 }
 
-/**
- * Полоса прокрутки: красная заливка на полупрозрачном треке, thumb растёт под курсором, справа —
- * остаток времени. Во время перемотки над thumb'ом всплывает время, куда попадём.
- */
 @Composable
 private fun Ui2Scrubber(ui: Ui2PlayerUiState, modifier: Modifier = Modifier) {
     val focused = ui.zone == Ui2Zone.Scrubber
@@ -397,10 +351,6 @@ private fun Ui2Scrubber(ui: Ui2PlayerUiState, modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * Трек, докачанный участок ([buffered], светлее трека), заливка и thumb; [thumbCenter] — уже
- * посчитанная от ширины трека координата центра.
- */
 @Composable
 private fun Ui2Track(
     fraction: Float,
@@ -448,12 +398,6 @@ private fun Ui2Track(
     }
 }
 
-/**
- * Ряд кнопок: транспорт слева, действия прижаты вправо. Каждая кнопка вместе со своей подписью —
- * одна колонка ([Ui2ControlSlot]) шириной ровно в кнопку: подпись не может уехать от кнопки,
- * а место под неё зарезервировано у всех, чтобы ряд не прыгал, когда подпись появляется.
- * Скорости в ряду нет вовсе: на ТВ ей не пользуются, а кнопка занимала место.
- */
 @Composable
 private fun Ui2ControlsRow(ui: Ui2PlayerUiState, menu: PlayerActions, modifier: Modifier = Modifier) {
     val controls = ui2Controls(menu)
@@ -470,18 +414,11 @@ private fun Ui2ControlsRow(ui: Ui2PlayerUiState, menu: PlayerActions, modifier: 
                 caption = control.caption(menu),
                 focused = ui.zone == Ui2Zone.Controls && index == focusedIndex,
             )
-            // Транспорт слева, действия прижаты к правому краю — ровно под правый край полосы.
             if (control == Ui2Control.Forward) Spacer(Modifier.weight(1f))
         }
     }
 }
 
-/**
- * Кнопка и подпись под ней в одном контейнере. Подпись — мелким шрифтом по центру кнопки
- * (см. [caption]); null — подписи у кнопки нет (транспорт, серии, пресет), но место под неё
- * всё равно зарезервировано, чтобы ряд не прыгал. Длинная подпись обрезается многоточием, а
- * при увеличенном системном шрифте строка подрастает, а не режет текст.
- */
 @Composable
 private fun Ui2ControlSlot(icon: ImageVector, contentDescription: String, caption: String?, focused: Boolean) {
     Column(Modifier.width(ButtonSize), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -505,7 +442,6 @@ private fun Ui2ControlSlot(icon: ImageVector, contentDescription: String, captio
     }
 }
 
-/** Круглая кнопка: под курсором — белый круг с чёрной иконкой, иначе белая иконка на кадре. */
 @Composable
 private fun Ui2Button(icon: ImageVector, contentDescription: String, focused: Boolean) {
     Box(
@@ -539,7 +475,6 @@ private fun Ui2Control.icon(isPlaying: Boolean): ImageVector = when (this) {
     }
 }
 
-/** Описание кнопки для accessibility: у действий с выбором — вместе с текущим значением. */
 private fun Ui2Control.label(menu: PlayerActions, isPlaying: Boolean): String = when (this) {
     Ui2Control.PlayPause -> if (isPlaying) "Пауза" else "Смотреть"
     Ui2Control.Rewind -> "Назад 10 с"
@@ -550,12 +485,6 @@ private fun Ui2Control.label(menu: PlayerActions, isPlaying: Boolean): String = 
     }
 }
 
-/**
- * Короткое значение под кнопкой: код языка озвучки и субтитров («rus», «eng», «—» без субтитров)
- * и класс качества («FHD», «4K») — уже посчитанное [PlayerChoice.shortValue], здесь ничего не
- * разбирается из подписи. null — подписи нет (транспорт, серии, пресет, скорость). Полные подписи
- * поповера («2. Русский · Многоголосый · BaibaKo», «2160p») под кнопку в 44dp не влезают.
- */
 private fun Ui2Control.caption(menu: PlayerActions): String? = when (this) {
     Ui2Control.PlayPause, Ui2Control.Rewind, Ui2Control.Forward -> null
     is Ui2Control.Action -> when (action) {
@@ -565,10 +494,8 @@ private fun Ui2Control.caption(menu: PlayerActions): String? = when (this) {
     }
 }
 
-/** Шаг кнопок «±10 с». */
 private const val SKIP_STEP_MS = 10_000L
 
-/** Ниже этой доли высоты кадр начинает уходить в тень под текст и полосу. */
 private const val GRADIENT_START = 0.5f
 
 private val Ui2Accent = Color(0xFFE50914)
@@ -577,7 +504,6 @@ private val BottomShade = Color(0xE6000000)
 private val TrackBackground = Color(0x59FFFFFF)
 private val BufferedBackground = Color(0x40FFFFFF)
 
-/** Синопсис на паузе — не шире половины кадра, как абзац, а не бегущая строка. */
 private const val DESCRIPTION_WIDTH_FRACTION = 0.55f
 private val BubbleBackground = Color(0xCC000000)
 
@@ -596,8 +522,6 @@ private val ButtonGap = 10.dp
 private val CaptionHeight = 16.dp
 private val CaptionGap = 2.dp
 
-/** Подпись значения под кнопкой — приглушённо-белая: значение, а не действие. */
 private val CaptionColor = Color(0xCCFFFFFF)
 
-/** Поповер стоит над рядом кнопок, чуть выше его верхнего края; подписи под кнопками — ниже. */
 private val PopoverBottom = BottomInset + ButtonSize + CaptionGap + CaptionHeight + 12.dp
