@@ -56,7 +56,7 @@ import androidx.media3.common.Player
 import com.filmax.core.domain.playback.PlaybackSettings
 import com.filmax.core.tv.designsystem.TvMetrics
 import com.filmax.core.tv.designsystem.TvOnSurfaceVariant
-import com.filmax.feature.player.common.PlaybackSpeeds
+import com.filmax.core.tv.designsystem.qualityLabel
 import com.filmax.feature.player.common.formatPlayerTime
 
 /**
@@ -116,7 +116,6 @@ private val UI2_ACTION_ORDER = listOf(
     SettingsAction.Episodes,
     SettingsAction.Audio,
     SettingsAction.Subtitle,
-    SettingsAction.Speed,
     SettingsAction.Quality,
     SettingsAction.Preset,
 )
@@ -447,10 +446,11 @@ private fun Ui2Track(
 }
 
 /**
- * Ряд кнопок: транспорт слева, действия прижаты вправо. Под каждой кнопкой выбора — её текущее
- * значение мелким шрифтом (см. [caption]); у транспорта и серий подписи нет. Строка подписей
+ * Ряд кнопок: транспорт слева, действия прижаты вправо. Под озвучкой, субтитрами и качеством —
+ * текущее значение мелким шрифтом (см. [caption]); у остальных подписи нет. Строка подписей
  * зарезервирована всегда, чтобы ряд не прыгал. Никакого tooltip над кнопкой под курсором:
- * «Смотреть»/«Пауза» над иконкой паузы ничего не сообщали, а строку занимали.
+ * «Смотреть»/«Пауза» над иконкой паузы ничего не сообщали, а строку занимали. Скорости в ряду
+ * нет вовсе: на ТВ ей не пользуются, а кнопка занимала место.
  */
 @Composable
 private fun Ui2ControlsRow(ui: Ui2PlayerUiState, menu: PlayerActions, modifier: Modifier = Modifier) {
@@ -540,50 +540,46 @@ private fun Ui2Control.label(menu: PlayerActions, isPlaying: Boolean): String = 
 }
 
 /**
- * Короткое значение под кнопкой: «rus» / «Выкл» / «1×» / «4K» / «Авто». Пустая строка — подписи
- * нет (транспорт, серии). Полные подписи поповера («2. Русский · Многоголосый · BaibaKo»,
- * «Обычная», «2160p») под кнопку в 44dp не влезают — сжимаем до того, что различает варианты.
+ * Короткое значение под кнопкой: код языка озвучки и субтитров («rus», «eng», «—» без субтитров)
+ * и класс качества («FHD», «4K» — тот же маппинг, что у бейджа на карточках, см. [qualityLabel]).
+ * Пустая строка — подписи нет (транспорт, серии, пресет). Полные подписи поповера
+ * («2. Русский · Многоголосый · BaibaKo», «2160p») под кнопку в 44dp не влезают.
  */
 private fun Ui2Control.caption(menu: PlayerActions): String {
     if (this !is Ui2Control.Action) return ""
     val value = menu.selected(action)
     return when (action) {
-        SettingsAction.Audio -> audioCaption(value)
-        SettingsAction.Subtitle -> if (value == PlaybackSettings.SubtitleOff) value else languageCode(value)
-        SettingsAction.Speed -> if (value == PlaybackSpeeds.NormalLabel) "1×" else value
+        SettingsAction.Audio -> languageCode(value)
+        SettingsAction.Subtitle -> if (value == PlaybackSettings.SubtitleOff) NO_CAPTION else languageCode(value)
         SettingsAction.Quality -> qualityCaption(value)
-        SettingsAction.Preset -> value
-        SettingsAction.Episodes, SettingsAction.NextEpisode -> ""
+        SettingsAction.Speed, SettingsAction.Preset, SettingsAction.Episodes, SettingsAction.NextEpisode -> ""
     }
 }
 
 /**
- * Озвучка: студия, если есть («BaibaKo»), иначе тип («Дубляж»), иначе язык кодом — именно
- * студия отличает одну русскую многоголоску от другой. Номер «2. » в начале — только для
- * уникальности подписи в поповере, под кнопкой он не нужен.
+ * Код языка по подписи дорожки: «2. Русский · Дубляж» → «rus», «ENG #03» → «eng», «Оригинал» →
+ * «orig». Ищем по подстроке: подписи kino.watch называют язык то по-русски, то кодом, то в
+ * верхнем регистре. Неизвестный язык — первое слово подписи без номера, как есть.
  */
-private fun audioCaption(label: String): String {
-    val parts = label.replaceFirst(AUDIO_NUMBER_PREFIX, "").split(" · ")
-    return if (parts.size > 1) parts.last() else languageCode(parts.first())
+private fun languageCode(label: String): String {
+    val haystack = label.lowercase()
+    return when {
+        haystack.contains("рус") || haystack.contains("rus") -> "rus"
+        haystack.contains("англ") || haystack.contains("eng") -> "eng"
+        haystack.contains("укр") || haystack.contains("ukr") -> "ukr"
+        haystack.contains("ориг") || haystack.contains("orig") -> "orig"
+        else -> label.replaceFirst(AUDIO_NUMBER_PREFIX, "").substringBefore(" ").lowercase().ifBlank { NO_CAPTION }
+    }
 }
 
 private val AUDIO_NUMBER_PREFIX = Regex("""^\d+\.\s*""")
 
-/** «Русский» → «rus»: код языка короче имени и читается под кнопкой с трёх метров. */
-private fun languageCode(name: String): String = when (name) {
-    "Русский" -> "rus"
-    "English" -> "eng"
-    "Українська" -> "ukr"
-    "Оригинал" -> "orig"
-    else -> name
-}
+/** «1080p» → «FHD», «2160p» → «4K»: высота кадра из подписи качества через общий [qualityLabel]. */
+private fun qualityCaption(label: String): String =
+    label.takeWhile { it.isDigit() }.toIntOrNull()?.let(::qualityLabel) ?: label
 
-/** «2160p» → «4K», «1440p» → «2K»; остальное как есть («1080p»). */
-private fun qualityCaption(label: String): String = when (label) {
-    "2160p" -> "4K"
-    "1440p" -> "2K"
-    else -> label
-}
+/** Прочерк под субтитрами, когда они выключены или их нет. */
+private const val NO_CAPTION = "—"
 
 /** Шаг кнопок «±10 с». */
 private const val SKIP_STEP_MS = 10_000L
