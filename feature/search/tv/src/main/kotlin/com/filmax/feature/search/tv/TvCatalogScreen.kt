@@ -318,8 +318,12 @@ private fun CatalogSearchBar(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val barModifier = modifier.weight(1f).height(SearchBarHeight)
+        val barSize = Modifier.weight(1f).height(SearchBarHeight)
         if (editing) {
+            // БЕЗ [modifier] (focus.item экрана): точка возврата фокуса — кнопка навигации, а не
+            // поле ввода. Раньше модификатор висел и здесь, и при первом открытии поля после
+            // захода с таб-бара отложенный стартовый requestFocus экрана срабатывал на строке —
+            // отбирал фокус у поля, клавиатура закрывалась через секунду, а фокус улетал в сетку.
             SearchInput(
                 query = query,
                 onQuery = onQuery,
@@ -327,10 +331,10 @@ private fun CatalogSearchBar(
                     editing = false
                     onEditingFinished()
                 },
-                modifier = barModifier,
+                modifier = barSize,
             )
         } else {
-            SearchButton(query = query, onClick = { editing = true }, modifier = barModifier)
+            SearchButton(query = query, onClick = { editing = true }, modifier = modifier.then(barSize))
         }
         VoiceSearchButton(onVoice)
     }

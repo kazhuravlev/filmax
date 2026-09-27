@@ -134,10 +134,10 @@ class DetailsScreenModel(
                 is RequestResult.Success -> {
                     val item = itemResult.data
                     updateState { it.copy(loading = false, item = item, isWantToWatch = item.inWatchlist) }
-                    // Down-sync: если на сервере фильм уже в watchlist — заносим в локальный кэш.
-                    if (item.inWatchlist) {
-                        favorites.add(item.toFavoriteItem())
-                    }
+                    // Нативный watchlist («Хочу посмотреть») и подборка «Буду смотреть» — разные
+                    // вещи, и здесь они НЕ синхронизируются: раньше тайтл из watchlist при каждом
+                    // открытии карточки молча добавлялся в подборку, и пользователь находил в ней
+                    // то, чего туда не клал. В подборку — только явно, через диалог подборок.
                     // Постеры (item/similar) уже ушли в фоновую закачку из ItemDto.toDomain() — тут
                     // только фото актёров и режиссёра, угаданные из сырых строк cast/director: их
                     // эта функция не знает, а строим мы их именно здесь (actorPhotoUrl).

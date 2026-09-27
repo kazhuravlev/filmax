@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -710,9 +711,11 @@ private data class HeroPlayback(
  * и составом теперь просится подпись экрана, а не заголовок-плакат), под ним постер 2:3 и рядом с
  * ним мета/рейтинг/кнопки.
  *
- * Высота фиксированная: hero — первый элемент единого полотна и скрывается обычной прокруткой,
- * когда фокус уходит в контент, а не сжимается поверх него. Так постер всегда либо виден
- * целиком, либо честно уезжает вверх — ничего не режется.
+ * Высота — не меньше [TvMetrics.DetailsHeroHeight], но растёт под содержимое: hero — первый
+ * элемент единого полотна и скрывается обычной прокруткой, когда фокус уходит в контент, а не
+ * сжимается поверх него. Раньше высота была жёсткой, и название в четыре строки (у kino.watch
+ * бывают «Название / Original Title / ещё одно») отбирало место у постера и кнопок — они
+ * сплющивались в полоски. Теперь длинное название просто сдвигает всё под собой вниз.
  */
 @Composable
 private fun DetailsHero(
@@ -729,12 +732,15 @@ private fun DetailsHero(
             // колонка ниже отступает от него на ContentTop — её высота (и раскладка внутри)
             // от этого не меняется, просто сдвинута вниз на ту же величину, что раньше давал
             // top-инсет списка.
-            .height(TvMetrics.DetailsHeroHeight + TvMetrics.ContentTop),
+            .heightIn(min = TvMetrics.DetailsHeroHeight + TvMetrics.ContentTop),
     ) {
+        // matchParentSize, а не fillMaxSize: высоту Box задаёт текстовая колонка, а бэкдроп
+        // подстраивается под неё — с fillMaxSize в ленивом списке (бесконечная высота) он бы
+        // не знал, сколько занимать.
         HeroBackdrop(
             item = item,
             scrims = heroScrims(),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.matchParentSize(),
             posterUrl = item.posters.wide ?: item.posters.big,
             // Заглушка постера — нейтральная поверхность: цвет на экране только у самого кадра.
             accentColor = TvSurfaceContainerHigh,
@@ -742,7 +748,7 @@ private fun DetailsHero(
 
         Column(
             Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .padding(
                     start = TvMetrics.SafeHorizontal,
                     end = TvMetrics.SafeHorizontal,
@@ -759,7 +765,9 @@ private fun DetailsHero(
                 color = TvOnSurface,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Row(Modifier.weight(1f).padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            // Без weight: ряд постера и кнопок берёт свою естественную высоту, а не остаток
+            // после заголовка — иначе длинный заголовок и сплющивал его.
+            Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 HeroPoster(item)
                 Column {
                     HeroInfoPanel(item = item, series = series)

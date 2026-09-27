@@ -9,7 +9,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.filmax.core.domain.cache.ImageCacheKeys
-import com.filmax.core.domain.cache.PosterSize
 import com.filmax.core.domain.catalog.model.Item
 
 /**
@@ -33,7 +32,7 @@ fun HeroBackdrop(
     posterUrl: String = item.posters.big,
     accentColor: Color = HeroBackdropAccent,
 ) {
-    val size = if (posterUrl == item.posters.wide) PosterSize.Wall else PosterSize.Big
+    val subId = if (posterUrl == item.posters.wide) ImageCacheKeys.WALL else ImageCacheKeys.SIZE_BIG
     Box(modifier) {
         PosterImage(
             url = posterUrl,
@@ -41,7 +40,7 @@ fun HeroBackdrop(
             modifier = Modifier.matchParentSize(),
             shape = RoundedCornerShape(0.dp),
             accentColor = accentColor,
-            cacheKey = ImageCacheKeys.poster(item.type, item.id, size),
+            cacheKey = ImageCacheKeys.poster(item.type.apiValue, item.id, subId),
         )
         scrims.forEach { brush ->
             Box(Modifier.matchParentSize().background(brush))
