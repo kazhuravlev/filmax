@@ -37,7 +37,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Movie
@@ -74,7 +73,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -183,6 +181,7 @@ fun TvDetailsScreen(
 ) {
     val state by screenModel.collectAsState()
     val item = state.item
+    LaunchedEffect(Unit) { screenModel.dispatch(DetailsEvent.RefreshWatching) }
 
     Box(
         modifier = modifier
@@ -208,7 +207,6 @@ fun TvDetailsScreen(
                         nav.onPlay(item.id, season, videoId, resumePositionSeconds)
                     },
                     onToggleWantToWatch = { screenModel.dispatch(DetailsEvent.ToggleWantToWatch) },
-                    onRemoveFromWatching = { screenModel.dispatch(DetailsEvent.RemoveFromWatching) },
                     onOpenItem = nav.onOpenItem,
                     onOpenPerson = nav.onOpenPerson,
                     onPlayTrailer = nav.onPlayTrailer,
@@ -304,7 +302,6 @@ data class TvDetailsNav(
 private data class DetailsActions(
     val onPlay: (season: Int, videoId: Int, resumePositionSeconds: Int) -> Unit,
     val onToggleWantToWatch: () -> Unit,
-    val onRemoveFromWatching: () -> Unit,
     val onOpenItem: (Int) -> Unit,
     val onOpenPerson: (name: String, isDirector: Boolean) -> Unit,
     val onPlayTrailer: (url: String, title: String) -> Unit,
@@ -418,8 +415,7 @@ private fun DetailsContent(
                         seasonsLabel = if ((series?.seasons?.size ?: 0) > 1) "Сезоны и серии" else "Серии",
                         onToggleWantToWatch = actions.onToggleWantToWatch,
                         isWantToWatch = isWantToWatch,
-                        showWantToWatch = item.isSeries(),
-                        onRemoveFromWatching = actions.onRemoveFromWatching,
+                        showWantToWatch = item.isSeries() || isWantToWatch || !watchingAction.loaded,
                         watchingAction = watchingAction,
                         onHeroFocusChanged = onHeroFocusChanged,
                         onTrailer = trailerUrl?.let { ::playTrailer },
@@ -579,7 +575,6 @@ private data class HeroPlayback(
     val onToggleWantToWatch: () -> Unit,
     val isWantToWatch: Boolean,
     val showWantToWatch: Boolean,
-    val onRemoveFromWatching: () -> Unit,
     val watchingAction: WatchingActionState,
     val onHeroFocusChanged: (Boolean) -> Unit,
     val onTrailer: (() -> Unit)? = null,
@@ -731,16 +726,9 @@ private fun HeroButtons(
                 leadingIconTint = if (hasAnyFolder) TvError else null,
             )
             if (playback.showWantToWatch) {
-                TvButton(
-                    text = if (playback.isWantToWatch) "В «Я смотрю»" else "Хочу посмотреть",
-                    onClick = { if (!playback.watchingAction.busy) playback.onToggleWantToWatch() },
-                    primary = false,
-                    leadingIcon = if (playback.isWantToWatch) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                    leadingIconTint = if (playback.isWantToWatch) TvError else null,
-                )
+                WatchingHeartButton(playback)
             }
         }
-        WatchingRemovalButton(playback)
         playback.watchingAction.error?.let { error ->
             Text(
                 "Не удалось обновить список: ${appErrorText(error).title}. Попробуйте ещё раз.",
@@ -752,67 +740,19 @@ private fun HeroButtons(
 }
 
 @Composable
-private fun WatchingRemovalButton(playback: HeroPlayback) {
-    var confirmRemoval by remember { mutableStateOf(false) }
-    if (confirmRemoval) {
-        RemoveWatchingDialog(
-            onConfirm = {
-                confirmRemoval = false
-                playback.onRemoveFromWatching()
-            },
-            onDismiss = { confirmRemoval = false },
-        )
-    }
+private fun WatchingHeartButton(playback: HeroPlayback) {
     TvButton(
         text = when {
             playback.watchingAction.busy -> "Обновляем список…"
-            playback.watchingAction.removed -> "Убрано из «Я смотрю»"
-            else -> "Убрать из «Я смотрю»"
+            !playback.watchingAction.loaded -> "Повторить проверку"
+            playback.isWantToWatch -> "Я смотрю"
+            else -> "Хочу посмотреть"
         },
-        onClick = {
-            when {
-                playback.watchingAction.busy || playback.watchingAction.removed -> Unit
-                playback.showWantToWatch -> playback.onRemoveFromWatching()
-                else -> confirmRemoval = true
-            }
-        },
+        onClick = { if (!playback.watchingAction.busy) playback.onToggleWantToWatch() },
         primary = false,
-        leadingIcon = Icons.Filled.Close,
+        leadingIcon = if (playback.isWantToWatch) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+        leadingIconTint = if (playback.isWantToWatch) TvError else null,
     )
-}
-
-@Composable
-private fun RemoveWatchingDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    val cancelFocus = remember { FocusRequester() }
-    var focusRequested by remember { mutableStateOf(false) }
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.widthIn(max = 480.dp).background(TvSurfaceContainer, TvMetrics.PanelShape).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text("Убрать из «Я смотрю»?", style = MaterialTheme.typography.titleLarge, color = TvOnSurface)
-            Text(
-                "Кинопаб удалит историю и сохранённую позицию просмотра этого фильма. Подборки сохранятся.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = TvOnSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TvButton(
-                    text = "Отмена",
-                    onClick = onDismiss,
-                    primary = false,
-                    focusRequester = cancelFocus,
-                    modifier = Modifier.onPlaced {
-                        if (!focusRequested) {
-                            focusRequested = true
-                            cancelFocus.requestFocus()
-                        }
-                    },
-                )
-                TvButton(text = "Убрать", onClick = onConfirm)
-            }
-        }
-    }
 }
 
 @Composable

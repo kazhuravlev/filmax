@@ -25,7 +25,7 @@ data class DetailsState(
 
 data class WatchingActionState(
     val busy: Boolean = false,
-    val removed: Boolean = false,
+    val loaded: Boolean = false,
     val error: AppError? = null,
 )
 
@@ -34,7 +34,7 @@ sealed interface DetailsEvent {
 
     data object ToggleWantToWatch : DetailsEvent
 
-    data object RemoveFromWatching : DetailsEvent
+    data object RefreshWatching : DetailsEvent
 
     data class ToggleFolder(val folder: BookmarkFolder) : DetailsEvent
 

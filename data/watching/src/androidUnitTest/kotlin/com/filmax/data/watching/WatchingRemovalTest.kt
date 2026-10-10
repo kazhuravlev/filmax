@@ -29,8 +29,8 @@ class WatchingRemovalTest {
         val engine = responses(SERIES_LIST, """{"watching":0}""", EMPTY_LIST, EMPTY_LIST, EMPTY_LIST)
         client(engine).use { client ->
             val repository = WatchingRepositoryImpl(WatchingApi(client))
-            assertIs<RequestResult.Success<Unit>>(repository.removeFromWatching(42, WatchingListType.Serials))
-            assertIs<RequestResult.Success<Unit>>(repository.removeFromWatching(42, WatchingListType.Serials))
+            assertIs<RequestResult.Success<Unit>>(repository.setWatching(42, WatchingListType.Serials, false))
+            assertIs<RequestResult.Success<Unit>>(repository.setWatching(42, WatchingListType.Serials, false))
         }
         assertEquals(1, engine.requestHistory.count { it.url.encodedPath.endsWith("togglewatchlist") })
         assertTrue(engine.requestHistory.none { it.url.encodedPath.contains("history") })
@@ -46,7 +46,7 @@ class WatchingRemovalTest {
         val engine = responses(EMPTY_LIST, EMPTY_LIST)
         client(engine).use { client ->
             assertIs<RequestResult.Success<Unit>>(
-                WatchingRepositoryImpl(WatchingApi(client)).removeFromWatching(42, WatchingListType.Serials),
+                WatchingRepositoryImpl(WatchingApi(client)).setWatching(42, WatchingListType.Serials, false),
             )
         }
         assertTrue(engine.requestHistory.all { it.url.encodedPath.endsWith("serials") })
@@ -54,13 +54,13 @@ class WatchingRemovalTest {
 
     @Test
     fun `movie removal posts history clear for only the selected title`() = runBlocking {
-        val engine = responses("", EMPTY_LIST)
+        val engine = responses(SERIES_LIST, "", EMPTY_LIST)
         client(engine).use { client ->
             assertIs<RequestResult.Success<Unit>>(
-                WatchingRepositoryImpl(WatchingApi(client)).removeFromWatching(42, WatchingListType.Movies),
+                WatchingRepositoryImpl(WatchingApi(client)).setWatching(42, WatchingListType.Movies, false),
             )
         }
-        val clear = engine.requestHistory.first()
+        val clear = engine.requestHistory[1]
         assertEquals(HttpMethod.Post, clear.method)
         assertEquals("/api/v1/history/clear-for-item", clear.url.encodedPath)
         assertEquals("42", clear.url.parameters["id"])
@@ -69,11 +69,11 @@ class WatchingRemovalTest {
 
     @Test
     fun `remaining item is reported as failure`() = runBlocking {
-        val engine = responses("", SERIES_LIST)
+        val engine = responses(SERIES_LIST, "", SERIES_LIST)
         client(engine).use { client ->
-            val result = WatchingRepositoryImpl(WatchingApi(client)).removeFromWatching(42, WatchingListType.Movies)
+            val result = WatchingRepositoryImpl(WatchingApi(client)).setWatching(42, WatchingListType.Movies, false)
             assertIs<RequestResult.Error>(result)
-            assertTrue(result.message.orEmpty().contains("still in watching/movies"))
+            assertTrue(result.message.orEmpty().contains("expected false, got true"))
         }
     }
 
@@ -82,7 +82,7 @@ class WatchingRemovalTest {
         val engine = responses("""{"status":200}""")
         client(engine).use { client ->
             assertIs<RequestResult.Error>(
-                WatchingRepositoryImpl(WatchingApi(client)).removeFromWatching(42, WatchingListType.Serials),
+                WatchingRepositoryImpl(WatchingApi(client)).setWatching(42, WatchingListType.Serials, false),
             )
         }
         assertEquals(1, engine.requestHistory.size)
@@ -93,10 +93,80 @@ class WatchingRemovalTest {
         val engine = MockEngine { respond("unavailable", HttpStatusCode.ServiceUnavailable) }
         client(engine).use { client ->
             assertIs<RequestResult.Error>(
-                WatchingRepositoryImpl(WatchingApi(client)).removeFromWatching(42, WatchingListType.Serials),
+                WatchingRepositoryImpl(WatchingApi(client)).setWatching(42, WatchingListType.Serials, false),
             )
         }
         assertTrue(engine.requestHistory.all { it.url.encodedPath.endsWith("serials") })
+    }
+
+    @Test
+    fun `series can be added removed and added again`() = runBlocking {
+        val engine = responses(
+            EMPTY_LIST, """{"watching":1}""", SERIES_LIST,
+            SERIES_LIST, """{"watching":0}""", EMPTY_LIST,
+            EMPTY_LIST, """{"watching":true}""", SERIES_LIST,
+        )
+        client(engine).use { client ->
+            val repository = WatchingRepositoryImpl(WatchingApi(client))
+            for (enabled in listOf(true, false, true)) {
+                assertIs<RequestResult.Success<Unit>>(repository.setWatching(42, WatchingListType.Serials, enabled))
+            }
+        }
+        assertEquals(3, engine.requestHistory.count { it.url.encodedPath.endsWith("togglewatchlist") })
+        assertTrue(engine.requestHistory.none { it.url.encodedPath.contains("history") })
+    }
+
+    @Test
+    fun `stale unsubscribed state cannot remove an already subscribed series`() = runBlocking {
+        val engine = responses(SERIES_LIST, SERIES_LIST)
+        client(engine).use { client ->
+            assertIs<RequestResult.Success<Unit>>(
+                WatchingRepositoryImpl(WatchingApi(client)).setWatching(42, WatchingListType.Serials, true),
+            )
+        }
+        assertTrue(engine.requestHistory.all { it.url.encodedPath.endsWith("serials") })
+    }
+
+    @Test
+    fun `movie removal never changes subscription or recreates progress on repeat`() = runBlocking {
+        val engine = responses(SERIES_LIST, "", EMPTY_LIST, EMPTY_LIST, EMPTY_LIST)
+        client(engine).use { client ->
+            val repository = WatchingRepositoryImpl(WatchingApi(client))
+            repeat(2) {
+                assertIs<RequestResult.Success<Unit>>(repository.setWatching(42, WatchingListType.Movies, false))
+            }
+        }
+        assertEquals(1, engine.requestHistory.count { it.method == HttpMethod.Post })
+        assertTrue(engine.requestHistory.none { it.url.encodedPath.contains("toggle") })
+        assertTrue(engine.requestHistory.none { it.url.encodedPath.endsWith("marktime") })
+    }
+
+    @Test
+    fun `movie addition cannot create fake progress or a subscription`() = runBlocking {
+        val engine = responses()
+        client(engine).use { client ->
+            assertIs<RequestResult.Error>(
+                WatchingRepositoryImpl(WatchingApi(client)).setWatching(42, WatchingListType.Movies, true),
+            )
+        }
+        assertTrue(engine.requestHistory.isEmpty())
+    }
+
+    @Test
+    fun `failed movie deletion is reported without changing subscriptions`() = runBlocking {
+        val engine = MockEngine { request ->
+            if (request.method == HttpMethod.Post) {
+                respond("unavailable", HttpStatusCode.ServiceUnavailable)
+            } else {
+                respond(SERIES_LIST, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+            }
+        }
+        client(engine).use { client ->
+            assertIs<RequestResult.Error>(
+                WatchingRepositoryImpl(WatchingApi(client)).setWatching(42, WatchingListType.Movies, false),
+            )
+        }
+        assertTrue(engine.requestHistory.none { it.url.encodedPath.contains("toggle") })
     }
 
     @Test

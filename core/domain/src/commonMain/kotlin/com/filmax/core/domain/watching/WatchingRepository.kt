@@ -30,7 +30,7 @@ interface WatchingRepository {
 
     suspend fun toggleWatchlist(itemId: Int): RequestResult<Boolean>
 
-    suspend fun removeFromWatching(itemId: Int, type: WatchingListType): RequestResult<Unit>
+    suspend fun setWatching(itemId: Int, type: WatchingListType, enabled: Boolean): RequestResult<Unit>
 
     suspend fun clearHistory(itemId: Int): RequestResult<Unit>
 

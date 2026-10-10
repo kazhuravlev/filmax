@@ -149,19 +149,23 @@ internal class WatchingRepositoryImpl(
     override suspend fun toggleWatchlist(itemId: Int): RequestResult<Boolean> =
         safeRequest { api.toggleWatchlist(itemId).inWatchlist }
 
-    override suspend fun removeFromWatching(itemId: Int, type: WatchingListType): RequestResult<Unit> {
+    override suspend fun setWatching(itemId: Int, type: WatchingListType, enabled: Boolean): RequestResult<Unit> {
         val result = safeRequest {
-            when (type) {
-                WatchingListType.Serials -> {
-                    // Check the server list so stale details or a repeated click cannot subscribe again.
-                    if (api.getWatchingList(type, subscribed = true).items.any { it.id == itemId }) {
-                        check(!api.toggleWatchlist(itemId).inWatchlist) { "Series is still subscribed" }
+            require(type.isSeries || !enabled) { "Movies enter watching through playback" }
+            val inWatching = api.getWatchingList(type, subscribed = true).items.any { it.id == itemId }
+            if (inWatching != enabled) {
+                when (type) {
+                    WatchingListType.Serials -> {
+                        check(api.toggleWatchlist(itemId).inWatchlist == enabled) {
+                            "Series subscription did not change to $enabled"
+                        }
                     }
+                    WatchingListType.Movies -> api.clearItemHistory(itemId)
                 }
-                WatchingListType.Movies -> api.clearItemHistory(itemId)
             }
-            check(api.getWatchingList(type, subscribed = true).items.none { it.id == itemId }) {
-                "Item $itemId is still in watching/${type.apiValue} after removal"
+            val updated = api.getWatchingList(type, subscribed = true).items.any { it.id == itemId }
+            check(updated == enabled) {
+                "Item $itemId membership in watching/${type.apiValue}: expected $enabled, got $updated"
             }
         }
         invalidateHistory()

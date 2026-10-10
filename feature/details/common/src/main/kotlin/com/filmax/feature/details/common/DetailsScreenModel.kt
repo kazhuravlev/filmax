@@ -65,7 +65,7 @@ class DetailsScreenModel(
         when (event) {
             DetailsEvent.ToggleDownload -> toggleDownload()
             DetailsEvent.ToggleWantToWatch -> toggleWantToWatch()
-            DetailsEvent.RemoveFromWatching -> removeFromWatching()
+            DetailsEvent.RefreshWatching -> state.item?.let(::loadWatchingMembership)
             is DetailsEvent.ToggleFolder -> toggleFolder(event.folder)
             is DetailsEvent.CreateFolderAndAdd -> createFolderAndAdd(event.title)
             DetailsEvent.PrefetchPlayback -> prefetchPlayback()
@@ -95,13 +95,14 @@ class DetailsScreenModel(
         screenModelScope { _ ->
             catalog.getCachedItemDetails(route.itemId)?.let { preview ->
                 updateState {
-                    it.copy(loading = false, item = preview, isWantToWatch = preview.inWatchlist)
+                    it.copy(loading = false, item = preview)
                 }
             }
             when (val itemResult = catalog.getItemDetails(route.itemId)) {
                 is RequestResult.Success -> {
                     val item = itemResult.data
-                    updateState { it.copy(loading = false, item = item, isWantToWatch = item.inWatchlist) }
+                    updateState { it.copy(loading = false, item = item) }
+                    loadWatchingMembership(item)
                     prefetchCastPhotos(item.cast, item.director)
                     loadCast(item.imdbId)
                     loadDirectorFilms(item)
@@ -189,34 +190,40 @@ class DetailsScreenModel(
     private suspend fun findHistoryEntry() =
         watching.getHistory().getOrNull()?.firstOrNull { it.itemId == route.itemId }
 
-    private fun toggleWantToWatch() {
-        val item = state.item ?: return
+    private fun loadWatchingMembership(item: Item) {
         if (state.watchingAction.busy) return
         screenModelScope {
             updateState { it.copy(watchingAction = WatchingActionState(busy = true)) }
-            try {
-                when (val result = watching.toggleWatchlist(item.id)) {
-                    is RequestResult.Success -> updateState { it.copy(isWantToWatch = result.data) }
-                    is RequestResult.Error -> updateState {
-                        it.copy(watchingAction = it.watchingAction.copy(error = result.kind))
-                    }
+            val type = if (item.isSeries()) WatchingListType.Serials else WatchingListType.Movies
+            when (val result = watching.getWatchingTitles(type)) {
+                is RequestResult.Success -> updateState {
+                    it.copy(
+                        isWantToWatch = result.data.any { title -> title.itemId == item.id },
+                        watchingAction = WatchingActionState(loaded = true),
+                    )
                 }
-            } finally {
-                DataInvalidation.markDirty(DataDomain.WATCHING)
-                catalog.invalidateItemCache(item.id)
-                updateState { it.copy(watchingAction = it.watchingAction.copy(busy = false)) }
+                is RequestResult.Error -> updateState {
+                    it.copy(watchingAction = WatchingActionState(error = result.kind))
+                }
             }
         }
     }
 
-    private fun removeFromWatching() {
+    private fun toggleWantToWatch() {
         val item = state.item ?: return
-        if (state.watchingAction.busy || state.watchingAction.removed) return
+        if (state.watchingAction.busy) return
+        when {
+            !state.watchingAction.loaded -> loadWatchingMembership(item)
+            state.isWantToWatch || item.isSeries() -> setWatchingMembership(item, enabled = !state.isWantToWatch)
+        }
+    }
+
+    private fun setWatchingMembership(item: Item, enabled: Boolean) {
         screenModelScope {
-            updateState { it.copy(watchingAction = WatchingActionState(busy = true)) }
+            updateState { it.copy(watchingAction = WatchingActionState(busy = true, loaded = true)) }
             try {
                 val type = if (item.isSeries()) WatchingListType.Serials else WatchingListType.Movies
-                when (val result = watching.removeFromWatching(item.id, type)) {
+                when (val result = watching.setWatching(item.id, type, enabled)) {
                     is RequestResult.Success -> {
                         if (!item.isSeries()) {
                             continuationJob?.cancel()
@@ -224,10 +231,10 @@ class DetailsScreenModel(
                         }
                         updateState {
                             it.copy(
-                                isWantToWatch = false,
+                                isWantToWatch = enabled,
                                 continuation = if (item.isSeries()) it.continuation else null,
                                 continuationLoading = false,
-                                watchingAction = WatchingActionState(removed = true),
+                                watchingAction = WatchingActionState(loaded = true),
                             )
                         }
                     }
