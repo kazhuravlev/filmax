@@ -8,6 +8,7 @@ import com.filmax.data.watching.remote.dto.ToggleWatchlistResponseDto
 import com.filmax.data.watching.remote.dto.WatchingListResponseDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.retry
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
@@ -57,10 +58,14 @@ internal class WatchingApi(private val client: HttpClient) {
     }
 
     suspend fun toggleWatchlist(id: Int): ToggleWatchlistResponseDto =
-        client.get("api/v1/watching/togglewatchlist") { parameter("id", id) }.body()
+        client.get("api/v1/watching/togglewatchlist") {
+            parameter("id", id)
+            // A retry can undo a successful mutation when only its response was lost.
+            retry { maxRetries = 0 }
+        }.body()
 
     suspend fun clearItemHistory(id: Int) {
-        client.get("api/v1/history/clear-for-item") { parameter("id", id) }
+        client.post("api/v1/history/clear-for-item") { parameter("id", id) }
     }
 
     suspend fun getNotifications(): NotificationsDto =

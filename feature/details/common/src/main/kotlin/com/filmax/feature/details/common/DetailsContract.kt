@@ -1,6 +1,7 @@
 package com.filmax.feature.details.common
 
 import com.filmax.core.domain.catalog.model.Item
+import com.filmax.core.domain.error.AppError
 import com.filmax.core.domain.person.CastMember
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.model.Continuation
@@ -11,6 +12,7 @@ data class DetailsState(
     val continuation: Continuation? = null,
     val continuationLoading: Boolean = true,
     val isWantToWatch: Boolean = false,
+    val watchingAction: WatchingActionState = WatchingActionState(),
     val similar: List<Item> = emptyList(),
     val similarLoading: Boolean = false,
     val directorFilms: List<Item> = emptyList(),
@@ -21,10 +23,18 @@ data class DetailsState(
     val error: String? = null,
 )
 
+data class WatchingActionState(
+    val busy: Boolean = false,
+    val removed: Boolean = false,
+    val error: AppError? = null,
+)
+
 sealed interface DetailsEvent {
     data object ToggleDownload : DetailsEvent
 
     data object ToggleWantToWatch : DetailsEvent
+
+    data object RemoveFromWatching : DetailsEvent
 
     data class ToggleFolder(val folder: BookmarkFolder) : DetailsEvent
 

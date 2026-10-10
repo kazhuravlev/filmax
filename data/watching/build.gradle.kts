@@ -17,5 +17,9 @@ kotlin {
             implementation(koinBom)
             implementation(libs.koin.core)
         }
+        androidUnitTest.dependencies {
+            implementation(kotlin("test-junit"))
+            implementation(libs.ktor.client.mock)
+        }
     }
 }

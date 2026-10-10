@@ -20,6 +20,7 @@ import com.filmax.core.domain.user.isItemInBookmark
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.domain.watching.model.Continuation
+import com.filmax.core.domain.watching.model.WatchingListType
 import com.filmax.core.domain.watching.model.calculateContinuation
 import com.filmax.core.presentation.BaseScreenModel
 import com.filmax.core.presentation.DataDomain
@@ -64,6 +65,7 @@ class DetailsScreenModel(
         when (event) {
             DetailsEvent.ToggleDownload -> toggleDownload()
             DetailsEvent.ToggleWantToWatch -> toggleWantToWatch()
+            DetailsEvent.RemoveFromWatching -> removeFromWatching()
             is DetailsEvent.ToggleFolder -> toggleFolder(event.folder)
             is DetailsEvent.CreateFolderAndAdd -> createFolderAndAdd(event.title)
             DetailsEvent.PrefetchPlayback -> prefetchPlayback()
@@ -189,14 +191,55 @@ class DetailsScreenModel(
 
     private fun toggleWantToWatch() {
         val item = state.item ?: return
+        if (state.watchingAction.busy) return
         screenModelScope {
-            val optimistic = !state.isWantToWatch
-            updateState { it.copy(isWantToWatch = optimistic) }
-            watching.toggleWatchlist(item.id).getOrNull()?.let { isWantToWatch ->
-                updateState { it.copy(isWantToWatch = isWantToWatch) }
+            updateState { it.copy(watchingAction = WatchingActionState(busy = true)) }
+            try {
+                when (val result = watching.toggleWatchlist(item.id)) {
+                    is RequestResult.Success -> updateState { it.copy(isWantToWatch = result.data) }
+                    is RequestResult.Error -> updateState {
+                        it.copy(watchingAction = it.watchingAction.copy(error = result.kind))
+                    }
+                }
+            } finally {
+                DataInvalidation.markDirty(DataDomain.WATCHING)
+                catalog.invalidateItemCache(item.id)
+                updateState { it.copy(watchingAction = it.watchingAction.copy(busy = false)) }
             }
-            DataInvalidation.markDirty(DataDomain.WATCHING)
-            catalog.invalidateItemCache(item.id)
+        }
+    }
+
+    private fun removeFromWatching() {
+        val item = state.item ?: return
+        if (state.watchingAction.busy || state.watchingAction.removed) return
+        screenModelScope {
+            updateState { it.copy(watchingAction = WatchingActionState(busy = true)) }
+            try {
+                val type = if (item.isSeries()) WatchingListType.Serials else WatchingListType.Movies
+                when (val result = watching.removeFromWatching(item.id, type)) {
+                    is RequestResult.Success -> {
+                        if (!item.isSeries()) {
+                            continuationJob?.cancel()
+                            continuationJob = null
+                        }
+                        updateState {
+                            it.copy(
+                                isWantToWatch = false,
+                                continuation = if (item.isSeries()) it.continuation else null,
+                                continuationLoading = false,
+                                watchingAction = WatchingActionState(removed = true),
+                            )
+                        }
+                    }
+                    is RequestResult.Error -> updateState {
+                        it.copy(watchingAction = WatchingActionState(error = result.kind))
+                    }
+                }
+            } finally {
+                DataInvalidation.markDirty(DataDomain.WATCHING)
+                catalog.invalidateItemCache(item.id)
+                updateState { it.copy(watchingAction = it.watchingAction.copy(busy = false)) }
+            }
         }
     }
 

@@ -2,10 +2,11 @@ package com.filmax.data.watching.remote.dto
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonPrimitive
 
 @Serializable
 data class WatchingListResponseDto(
-    val items: List<WatchingItemDto> = emptyList(),
+    val items: List<WatchingItemDto>,
 )
 
 @Serializable
@@ -15,9 +16,14 @@ data class ToggleWatchedResponseDto(
 
 @Serializable
 data class ToggleWatchlistResponseDto(
-    val watching: Int = 0,
+    val watching: JsonPrimitive,
 ) {
-    val inWatchlist: Boolean get() = watching == 1
+    val inWatchlist: Boolean
+        get() = when (watching.content) {
+            "1", "true" -> true
+            "0", "false" -> false
+            else -> error("Unexpected watchlist state: $watching")
+        }
 }
 
 @Serializable

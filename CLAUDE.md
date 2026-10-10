@@ -176,12 +176,18 @@ section current when you learn something new about the backend or the platform.
   `watching/{type}` (reference client `getAwaitItems`); the reference client resumes the first
   episode with `status <= 0`. `/history` and `watching/*` entries lack genres/ratings/trailer and
   need background enrichment. The last 90 s of any episode count as finished.
-- **Watchlist vs bookmarks**: `watching/togglewatchlist` only toggles and returns `in_watchlist`,
+- **Watchlist vs bookmarks**: `watching/togglewatchlist` only toggles and returns `watching`
+  (numeric 0/1 in the reference client, boolean in the API documentation),
   never a list, and it adds to "watching" only for series (the button is hidden for movies). The
   app's "Буду смотреть" list is a dedicated bookmark folder found by title. The server can store
   duplicate `(folderId, itemId)` links; `removeFromBookmark` removes all copies, so dedupe by
   remove + single add. `bookmarks/get-item-folders?item=` lists a title's folders; a 200 without
   the `folders` key is an unknown shape and must be treated as an error (fallback: page scan).
+  Removing a series from "Я смотрю" checks `watching/serials?subscribed=1` before toggling off;
+  it preserves episode history. Removing a movie uses `POST history/clear-for-item?id=…`
+  (API documentation and reference Android client), clearing its history/resume position after
+  confirmation. Both paths re-read the watching list to verify removal. Never automatically
+  retry `togglewatchlist`: despite using GET, a repeat can undo a successful mutation.
 - **User/device**: `api/v1/user` has no `id`; the subscription may be nested in `user` or top
   level; `end_time` is unix seconds and `days` is fractional. All timestamps are seconds.
   `device/info` and `device/settings` answer 500 (Sep 2026) — the device-settings screen is kept
