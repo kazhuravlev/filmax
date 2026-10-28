@@ -34,7 +34,7 @@ sealed interface DetailsEvent {
 
     data object ToggleWantToWatch : DetailsEvent
 
-    data object RefreshWatching : DetailsEvent
+    data class RefreshWatching(val returning: Boolean) : DetailsEvent
 
     data class ToggleFolder(val folder: BookmarkFolder) : DetailsEvent
 

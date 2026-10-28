@@ -20,12 +20,14 @@ import com.filmax.core.domain.user.isItemInBookmark
 import com.filmax.core.domain.user.model.BookmarkFolder
 import com.filmax.core.domain.watching.WatchingRepository
 import com.filmax.core.domain.watching.model.Continuation
+import com.filmax.core.domain.watching.model.WatchHistory
 import com.filmax.core.domain.watching.model.WatchingListType
 import com.filmax.core.domain.watching.model.calculateContinuation
 import com.filmax.core.presentation.BaseScreenModel
 import com.filmax.core.presentation.DataDomain
 import com.filmax.core.presentation.DataInvalidation
 import com.filmax.feature.details.common.navigation.DetailsRoute
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -53,6 +55,8 @@ class DetailsScreenModel(
 
     private var episodeThumbnailsWarmed = false
 
+    private var historyEntry: Deferred<WatchHistory?>? = null
+
     private var continuationJob: Deferred<Continuation?>? = null
 
     init {
@@ -65,7 +69,10 @@ class DetailsScreenModel(
         when (event) {
             DetailsEvent.ToggleDownload -> toggleDownload()
             DetailsEvent.ToggleWantToWatch -> toggleWantToWatch()
-            DetailsEvent.RefreshWatching -> state.item?.let(::loadWatchingMembership)
+            is DetailsEvent.RefreshWatching -> state.item?.let { item ->
+                loadWatchingMembership(item)
+                if (event.returning) refreshContinuation(item)
+            }
             is DetailsEvent.ToggleFolder -> toggleFolder(event.folder)
             is DetailsEvent.CreateFolderAndAdd -> createFolderAndAdd(event.title)
             DetailsEvent.PrefetchPlayback -> prefetchPlayback()
@@ -87,12 +94,19 @@ class DetailsScreenModel(
         if (playbackPrefetched) return
         val item = state.item ?: return
         playbackPrefetched = true
-        screenModelScope { _ -> catalog.getItemDetails(item.id, forceRefresh = true) }
+        screenModelScope { _ ->
+            val fresh = catalog.getItemDetails(item.id, forceRefresh = true).getOrNull() ?: return@screenModelScope
+            if (fresh == state.item) return@screenModelScope
+            updateState { it.copy(item = fresh) }
+            historyEntry?.let { history -> resolveContinuation(CompletableDeferred(fresh), history) }
+        }
     }
 
     override fun onFetchData() {
         screenModelScope { _ -> reloadBookmarkFolders() }
         screenModelScope { _ ->
+            val history = async { runCatching { findHistoryEntry() }.getOrNull() }
+            historyEntry = history
             catalog.getCachedItemDetails(route.itemId)?.let { preview ->
                 updateState {
                     it.copy(loading = false, item = preview)
@@ -102,16 +116,17 @@ class DetailsScreenModel(
                 is RequestResult.Success -> {
                     val item = itemResult.data
                     updateState { it.copy(loading = false, item = item) }
+                    resolveContinuation(CompletableDeferred(item), history)
                     loadWatchingMembership(item)
                     prefetchCastPhotos(item.cast, item.director)
                     loadCast(item.imdbId)
                     loadDirectorFilms(item)
                     loadSimilar()
-                    loadContinuation(item)
                 }
 
                 is RequestResult.Error -> {
                     updateState { it.copy(loading = false, error = itemResult.message) }
+                    state.item?.let { preview -> resolveContinuation(CompletableDeferred(preview), history) }
                     showError(itemResult)
                 }
             }
@@ -126,14 +141,30 @@ class DetailsScreenModel(
         }
     }
 
-    private fun loadContinuation(item: Item) {
+    private fun resolveContinuation(item: Deferred<Item?>, history: Deferred<WatchHistory?>) {
+        val previous = continuationJob
         continuationJob = screenModelScope.async {
-            val fromItem = runCatching { calculateContinuation(item) }.getOrNull()
-            updateState { it.copy(continuation = fromItem, continuationLoading = true) }
-            val continuation = runCatching { calculateContinuation(item, findHistoryEntry()) }.getOrNull()
+            previous?.join()
+            if (!history.isCompleted || !item.isCompleted) {
+                updateState { it.copy(continuation = null, continuationLoading = true) }
+            }
+            val entry = runCatching { history.await() }.getOrNull()
+            val resolvedItem = runCatching { item.await() }.getOrNull() ?: state.item
+            val continuation = resolvedItem?.let { runCatching { calculateContinuation(it, entry) }.getOrNull() }
             updateState { it.copy(continuation = continuation, continuationLoading = false) }
             continuation
         }
+    }
+
+    private fun refreshContinuation(item: Item) {
+        val history = screenModelScope.async { runCatching { findHistoryEntry() }.getOrNull() }
+        historyEntry = history
+        val refreshed = screenModelScope.async {
+            val fresh = catalog.getItemDetails(item.id).getOrNull()
+            if (fresh != null && fresh != state.item) updateState { it.copy(item = fresh) }
+            fresh
+        }
+        resolveContinuation(refreshed, history)
     }
 
     suspend fun awaitContinuation(): Continuation? {

@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -126,6 +127,7 @@ import com.filmax.feature.details.common.WatchingActionState
 import com.filmax.feature.details.common.calculateSeriesData
 import com.filmax.feature.details.common.initials
 import com.filmax.feature.details.common.isSeries
+import com.filmax.feature.details.common.playLabel
 import com.filmax.feature.details.common.resolveCast
 import com.filmax.feature.details.common.resolveDirectors
 import com.filmax.feature.details.common.typeLabel
@@ -171,7 +173,6 @@ private const val NO_SEASON = -1
 
 private const val MAX_META_GENRES = 2
 private const val SECONDS_IN_MINUTE = 60
-private const val MINUTES_IN_HOUR = 60
 
 @Composable
 fun TvDetailsScreen(
@@ -181,7 +182,11 @@ fun TvDetailsScreen(
 ) {
     val state by screenModel.collectAsState()
     val item = state.item
-    LaunchedEffect(Unit) { screenModel.dispatch(DetailsEvent.RefreshWatching) }
+    var visited by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        screenModel.dispatch(DetailsEvent.RefreshWatching(returning = visited))
+        visited = true
+    }
 
     Box(
         modifier = modifier
@@ -198,6 +203,7 @@ fun TvDetailsScreen(
                 directorFilms = state.directorFilms,
                 cast = state.cast,
                 continuation = state.continuation,
+                continuationLoading = state.continuationLoading,
                 isWantToWatch = state.isWantToWatch,
                 watchingAction = state.watchingAction,
                 bookmarkFolders = state.bookmarkFolders,
@@ -321,6 +327,7 @@ private fun DetailsContent(
     directorFilms: List<Item>,
     cast: List<CastMember>,
     continuation: Continuation?,
+    continuationLoading: Boolean,
     isWantToWatch: Boolean,
     watchingAction: WatchingActionState,
     bookmarkFolders: List<BookmarkFolder>,
@@ -332,6 +339,13 @@ private fun DetailsContent(
         if (item.isSeries()) calculateSeriesData(item.tracklist, continuation) else null
     }
     var selectedSeason by rememberSaveable(item.id) { mutableIntStateOf(series?.resumeSeasonIndex ?: 0) }
+    var seasonPickedByUser by rememberSaveable(item.id) { mutableStateOf(false) }
+    val resumeSeasonIndex = series?.resumeSeasonIndex
+    LaunchedEffect(continuationLoading, resumeSeasonIndex) {
+        if (!continuationLoading && !seasonPickedByUser && resumeSeasonIndex != null) {
+            selectedSeason = resumeSeasonIndex
+        }
+    }
     val episodes = series?.seasons?.getOrNull(selectedSeason)?.second.orEmpty()
     var seasonsOpen by rememberSaveable(item.id) { mutableStateOf(false) }
 
@@ -369,9 +383,10 @@ private fun DetailsContent(
                     hasAnyFolder = folderMemberships.isNotEmpty(),
                     playback = HeroPlayback(
                         playModifier = focus.item(HERO_PLAY_KEY),
-                        playLabel = remember(continuation, series?.resume, target) {
-                            playLabel(continuation, series?.resume, target)
+                        playLabel = remember(continuation, continuationLoading, series?.resume, target) {
+                            playLabel(continuation, series?.resume, target, resolving = continuationLoading)
                         },
+                        resolvingContinuation = continuationLoading,
                         onPlay = {
                             playScope.launch {
                                 val resolved = actions.awaitContinuation()
@@ -436,7 +451,10 @@ private fun DetailsContent(
                     selectedSeason = selectedSeason,
                 ),
                 actions = actions,
-                onSelectSeason = { selectedSeason = it },
+                onSelectSeason = {
+                    selectedSeason = it
+                    seasonPickedByUser = true
+                },
                 focus = focus,
             )
         }
@@ -579,6 +597,7 @@ private data class HeroPlayback(
     val onHeroFocusChanged: (Boolean) -> Unit,
     val onTrailer: (() -> Unit)? = null,
     val onPrefetchPlayback: () -> Unit = {},
+    val resolvingContinuation: Boolean = false,
 )
 
 @Composable
@@ -716,6 +735,7 @@ private fun HeroButtons(
                     leadingIcon = Icons.Filled.Movie,
                 )
             }
+            if (playback.resolvingContinuation) ContinuationResolvingHint()
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             TvButton(
@@ -753,6 +773,27 @@ private fun WatchingHeartButton(playback: HeroPlayback) {
         leadingIcon = if (playback.isWantToWatch) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
         leadingIconTint = if (playback.isWantToWatch) TvError else null,
     )
+}
+
+@Composable
+private fun ContinuationResolvingHint() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(start = 4.dp),
+    ) {
+        CircularProgressIndicator(
+            color = TvOnSurfaceVariant,
+            strokeWidth = 2.dp,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            "Ищем, где вы остановились…",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TvOnSurfaceVariant,
+            maxLines = 1,
+        )
+    }
 }
 
 @Composable
@@ -1294,35 +1335,6 @@ private fun metaParts(item: Item, series: SeriesData?): List<String> = buildList
         add(item.genres.take(MAX_META_GENRES).joinToString(", ") { it.title })
     }
 }
-
-private fun playLabel(
-    continuation: Continuation?,
-    resume: MediaTrack?,
-    target: MediaTrack?,
-): String = when {
-    continuation?.isActualContinuation == true -> buildString {
-        append("Продолжить")
-        continuation.savedPositionSeconds.takeIf { it > 0 }?.let { append(" с ${formatResumePosition(it)}") }
-        resume?.let { append(" · ${episodeTag(it)}") }
-    }
-    target != null -> "Смотреть · ${episodeTag(target)}"
-    else -> "Смотреть"
-}
-
-internal fun formatResumePosition(positionSeconds: Int): String {
-    val totalMinutes = positionSeconds / SECONDS_IN_MINUTE
-    val seconds = positionSeconds % SECONDS_IN_MINUTE
-    if (totalMinutes < MINUTES_IN_HOUR) return "$totalMinutes:${seconds.twoDigits()}"
-
-    val hours = totalMinutes / MINUTES_IN_HOUR
-    val minutes = totalMinutes % MINUTES_IN_HOUR
-    return "$hours:${minutes.twoDigits()}:${seconds.twoDigits()}"
-}
-
-private fun Int.twoDigits(): String = toString().padStart(length = 2, padChar = '0')
-
-private fun episodeTag(track: MediaTrack): String =
-    if (track.seasonNumber > 0) "S${track.seasonNumber}E${track.number}" else "Серия ${track.number}"
 
 private fun episodeMeta(episode: MediaTrack): String? = buildList {
     if (episode.title.isNotBlank()) add("Серия ${episode.number}")

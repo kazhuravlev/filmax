@@ -63,6 +63,7 @@ import com.filmax.core.tv.designsystem.TvSurfaceContainerHighest
 import com.filmax.core.tv.designsystem.rememberTvScreenFocus
 import com.filmax.core.tv.designsystem.tvFocusGroup
 import com.filmax.core.ui.components.PosterImage
+import com.filmax.feature.details.common.formatResumePosition
 
 private val ColumnGap = 8.dp
 

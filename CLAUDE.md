@@ -93,6 +93,13 @@ Network (Ktor Client)
 - Pass **only** `Continuation.isActualContinuation` to UI
 - `PlayerRoute.resumePositionSeconds` gets the saved position only from actual continuations
 - Normal series launch from details = zero position, starts from beginning
+- Details resolves the continuation from `/history` **in parallel** with `items/{id}` (the repository
+  caches history for 5 min, so a title opened from Home/Library usually resolves instantly). While
+  `continuationLoading` is true the Play button says plain "Смотреть" and shows a "looking for where
+  you stopped" hint — never a guessed `S1E1`. The season rail follows the resolved season unless the
+  user picked one. `RefreshWatching(returning = true)` (screen re-entered, e.g. back from the player)
+  re-reads both history and the title; the Play-focus `forceRefresh` prefetch is applied to the state
+  so per-episode `watching.status` is fresh even for titles outside the history window.
 
 ### Typed contracts (no "text contracts")
 
